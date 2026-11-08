@@ -21,8 +21,6 @@ pub struct BarEd {
     pub rects: std::cell::RefCell<Vec<(usize, usize, R)>>,
     /// ряды сторон (куда можно бросить)
     pub areas: std::cell::Cell<[R; 3]>,
-    /// раздел вкладки: false — модули, true — вид (форма, отступы, разделители)
-    pub look: bool,
     /// открытое окошко: настройки модуля (имя) или список «добавить» для колонки
     pub gear: Option<String>,
     pub add: Option<usize>,
@@ -78,14 +76,7 @@ pub(crate) fn tab_bar(ui: &mut Ui, st: &State, b: R) {
     let s = &st.set;
     let ed = &st.bar_ed;
     let drag = ed.drag.as_ref();
-    let bw = 86;
-    ui.button(R::new(b.right() - 2 * bw - 6, b.y - 3, bw, 22), "модули", "menu", Tone::Ghost, !ed.look, true, Act::SCycle("bar_page_mods"));
-    ui.button(R::new(b.right() - bw, b.y - 3, bw, 22), "вид", "eye", Tone::Ghost, ed.look, true, Act::SCycle("bar_page_look"));
-    if ed.look {
-        tab_bar_look(ui, st, b);
-        return;
-    }
-    let y0 = title(ui, b.x, b.y, b.w - 2 * bw - 12, "модули бара");
+    let y0 = title(ui, b.x, b.y, b.w, "модули бара");
     let sides = [&s.bar_left, &s.bar_center, &s.bar_right];
     let cw = (b.w - 24) / 3;
     let mut areas = [R::new(0, 0, 0, 0); 3];
@@ -127,6 +118,8 @@ pub(crate) fn tab_bar(ui: &mut Ui, st: &State, b: R) {
     }
     *ed.rects.borrow_mut() = hit;
     ed.areas.set(areas);
+    let low = areas.iter().map(|r| r.bottom()).max().unwrap_or(y0);
+    bar_layout(ui, st, b, low + 16);
     // строка в руке — поверх всего
     if let Some(d) = drag {
         let r = R::new(d.x - d.off.0, d.y - d.off.1 - 2, cw - 12, ROW);
@@ -210,7 +203,8 @@ fn gear_dialog(ui: &mut Ui, st: &State, b: R, m: &str) {
     let s = &st.set;
     ui.zone(R::new(b.x - 40, b.y - 40, b.w + 80, b.h + 400), Act::SBarClose, Cur::Default);
     let w = 380.min(b.w);
-    let d = R::new(b.x + (b.w - w) / 2, b.y + 40, w, 280);
+    // окошко — в видимой части вкладки, как бы её ни пролистали
+    let d = R::new(b.x + (b.w - w) / 2, b.y + crate::settings::scroll_of(st) + 40, w, 280);
     ui.cv.pxbox(d, &BoxStyle::new(t.glass_panel(), t.red).shadow(6));
     ui.zone(d, Act::Block, Cur::Default);
     ui.cv.icon("gear", d.x + 12, d.y + 12, 2, t.red);
@@ -241,7 +235,16 @@ fn gear_dialog(ui: &mut Ui, st: &State, b: R, m: &str) {
         "cpu" | "ram" | "gpu" | "disk" => opt(ui, &mut y, "вид", pick(&[("gauge", "шкала"), ("graph", "график"), ("number", "число")], &s.cpu_style), Act::SCycle("cpu_style")),
         "temp" => opt(ui, &mut y, "вид", if s.temp_style == "compact" { "коротко" } else { "как у процессора" }, Act::SCycle("temp_style")),
         "tray" => {
-            opt(ui, &mut y, "вид", if s.tray_mode == "arrow" { "стрелкой" } else { "значки в ряд" }, Act::SCycle("tray_mode"));
+            let mode = match s.tray_mode.as_str() {
+                "arrow" => "всё под стрелкой",
+                "hybrid" => "закреплённые в баре, остальные под стрелкой",
+                _ => "все значки в баре",
+            };
+            opt(ui, &mut y, "вид", mode, Act::SCycle("tray_mode"));
+            if s.tray_mode == "hybrid" {
+                ui.text_in(PX, R::new(x, y - 4, rw, 18), "закрепить — правый щелчок по значку", t.text_faint);
+                y += 18;
+            }
             tog(ui, &mut y, "значки клетками", s.tray_pixel, "tray_pixel");
         }
         "media" => {
@@ -279,20 +282,20 @@ fn gear_dialog(ui: &mut Ui, st: &State, b: R, m: &str) {
     let _ = y;
 }
 
-/// вкладка «бар» → вид: форма бара, отступы, разделители, вид часов и процессора
-fn tab_bar_look(ui: &mut Ui, st: &State, b: R) {
+/// вкладка «бар» под модулями: форма бара, отступы, плитки панели управления и схема. Вид самих
+/// модулей — в их настройках (шестерёнка), здесь не повторяется
+fn bar_layout(ui: &mut Ui, st: &State, b: R, y: i32) -> i32 {
     let t = ui.t;
     let s = &st.set;
-    // форма: полоса во всю ширину, плашка уже экрана, плавающая с отступом от краёв
-    let mut y = title(ui, b.x, b.y, b.w - 2 * 86 - 12, "форма бара");
+    let mut y = title(ui, b.x, y, b.w, "форма бара");
     let cw = (b.w - 24) / 3;
     let col = |i: i32| b.x + i * (cw + 12);
     ui.toggle(R::new(col(0), y, cw, 40), "плавает", "отступ от краёв, тень", s.bar_float, Act::SBool("bar_float"));
     num_btn(ui, R::new(col(1), y + 6, cw, 26), "ширина, %", s.num("bar_width_pc"), "bar_width_pc");
     num_btn(ui, R::new(col(2), y + 6, cw, 26), "отступ", s.num("bar_margin"), "bar_margin");
     y += 46;
-    let align = if s.bar_center_align == "after-left" { "за левыми" } else { "по центру" };
-    opt_btn(ui, R::new(col(0), y, cw, 26), "модули середины", align, Act::SCycle("bar_center_align"));
+    let align = if s.bar_center_align == "after-left" { "за началом" } else { "по центру" };
+    opt_btn(ui, R::new(col(0), y, cw, 26), "середина", align, Act::SCycle("bar_center_align"));
     let pos = if crate::bar::low(s) { "снизу" } else { "сверху" };
     opt_btn(ui, R::new(col(1), y, cw, 26), "край экрана", pos, Act::SCycle("bar_pos"));
     let shape = if crate::bar::strip(s) {
@@ -304,55 +307,12 @@ fn tab_bar_look(ui: &mut Ui, st: &State, b: R) {
     };
     ui.text_in(PX, R::new(col(2) + 4, y, cw - 4, 26), shape, t.text_faint);
     y += 40;
-    y = title(ui, b.x, y, b.w, "отступы и разделители");
-    let style = match s.bar_sep.as_str() {
-        "line" => "черта",
-        "blocks" => "клетки",
-        "gap" => "пусто",
-        _ => "точки",
-    };
-    let color = match s.bar_sep_color.as_str() {
-        "accent" => "акцент",
-        "dim" => "тусклый",
-        _ => "рамка",
-    };
-    let cpu = match s.cpu_style.as_str() {
-        "graph" => "график",
-        "number" => "число",
-        _ => "шкала",
-    };
-    // три столбца: разделитель, края и модули, окна; числа — стрелками или колесом
-    opt_btn(ui, R::new(col(0), y, cw, 26), "разделитель", style, Act::SCycle("bar_sep"));
-    opt_btn(ui, R::new(col(1), y, cw, 26), "цвет", color, Act::SCycle("bar_sep_color"));
-    num_btn(ui, R::new(col(2), y, cw, 26), "ширина", s.num("bar_sep_w"), "bar_sep_w");
-    y += 32;
-    for (i, (k, label)) in [("bar_pad_l", "край слева"), ("bar_pad_r", "край справа"), ("bar_gap", "промежуток")].into_iter().enumerate() {
+    y = title(ui, b.x, y, b.w, "отступы");
+    for (i, (k, label)) in [("bar_pad_l", "край в начале"), ("bar_pad_r", "край в конце"), ("bar_gap", "между модулями")].into_iter().enumerate() {
         num_btn(ui, R::new(col(i as i32), y, cw, 26), label, s.num(k), k);
     }
     y += 32;
-    for (i, (k, label)) in [("bar_mid", "до окон"), ("bar_task_gap", "зазор окон"), ("task_width", "кнопка окна")].into_iter().enumerate() {
-        num_btn(ui, R::new(col(i as i32), y, cw, 26), label, s.num(k), k);
-    }
-    y += 34;
-    let ws = if s.ws_style == "dots" { "точки" } else { "квадраты" };
-    opt_btn(ui, R::new(col(0), y, cw * 2 + (col(1) - col(0) - cw), 26), "рабочие столы", ws, Act::SCycle("ws_style"));
-    y += 32;
-    opt_btn(ui, R::new(col(0), y, cw, 26), "цп/память", cpu, Act::SCycle("cpu_style"));
-    ui.toggle(R::new(col(1), y, cw, 26), "часы с секундами", "", s.clock_seconds, Act::SBool("clock_seconds"));
-    ui.toggle(R::new(col(2), y, cw, 26), "дата в часах", "", s.clock_date, Act::SBool("clock_date"));
-    y += 32;
-    // #11: трей одной стрелкой, температура столбиком
-    opt_btn(ui, R::new(col(0), y, cw, 26), "трей", if s.tray_mode == "arrow" { "стрелкой" } else { "значки" }, Act::SCycle("tray_mode"));
-    opt_btn(ui, R::new(col(1), y, cw, 26), "температура", if s.temp_style == "compact" { "коротко" } else { "как цп" }, Act::SCycle("temp_style"));
-    // #13: эквалайзер модуля и всплывашки музыки, что всплывашка показывает
-    let eq = if s.media_viz == "off" { "выкл" } else { crate::widgets::name_of(crate::widgets::STYLES, &s.media_viz) };
-    opt_btn(ui, R::new(col(2), y, cw, 26), "эквалайзер", eq, Act::SCycle("media_viz"));
-    y += 32;
-    opt_btn(ui, R::new(col(0), y, cw * 2 + (col(1) - col(0) - cw), 26), "всплывашка музыки", crate::widgets::name_of(crate::config::MEDIA_VIEWS, &s.media_view), Act::SCycle("media_view"));
-    ui.toggle(R::new(col(2), y, cw, 26), "трей клетками", "", s.tray_pixel, Act::SBool("tray_pixel"));
-    y += 32;
-    // #21: ноутбук от сети — заряженная батарея в баре не нужна
-    ui.toggle(R::new(col(0), y, cw * 2 + (col(1) - col(0) - cw), 26), "прятать полную батарею", "", s.bat_hide_full, Act::SBool("bat_hide_full"));
+    num_btn(ui, R::new(col(0), y, cw, 26), "до середины", s.num("bar_mid"), "bar_mid");
     y += 40;
     // панель управления открывается правым щелчком по бару
     y = title(ui, b.x, y, b.w, "панель управления");
@@ -364,7 +324,8 @@ fn tab_bar_look(ui: &mut Ui, st: &State, b: R) {
     }
     y += (crate::control::TILES.len() as i32 + 2) / 3 * 32 + 8;
     y = title(ui, b.x, y, b.w, "как выглядит");
-    shape_preview(ui, st, R::new(b.x, y, b.w, (b.bottom() - y).clamp(40, 96)));
+    shape_preview(ui, st, R::new(b.x, y, b.w, 72));
+    y + 80
 }
 
 /// схема края экрана 1920 px с баром (верх или низ): бар (полоса, плашка или плавающий), его

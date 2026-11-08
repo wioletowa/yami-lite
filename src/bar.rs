@@ -34,7 +34,8 @@ pub fn geo(s: &Settings, ow: i32) -> (i32, i32, i32) {
         let w = (ow * pc / 100).clamp(240.min(hi), hi);
         ((ow - w - SHADE) / 2).max(m)
     };
-    (m, side, H + SHADE)
+    // прижатый к нижнему краю: тень ушла бы вниз и оставила щель под баром — без неё
+    (m, side, if low(s) && !s.bar_float { H } else { H + SHADE })
 }
 
 #[cfg(test)]
@@ -83,9 +84,11 @@ pub fn draw(ui: &mut Ui, st: &State, out: &str, w: i32) {
         ui.cv.fill(R::new(0, if low(set) { 0 } else { H - 1 }, w, 1), t.border);
         w
     } else {
-        // плашка: рамка со всех сторон, фаска на углах, жёсткая тень (место под неё — справа и снизу)
-        let pw = w - SHADE;
-        ui.cv.pxbox(R::new(0, 0, pw, H), &BoxStyle::new(t.glass_panel(), t.border).shadow(SHADE));
+        // плашка: рамка со всех сторон, фаска на углах, жёсткая тень (место под неё — справа и снизу);
+        // прижатая к нижнему краю — без тени, вплотную к краю
+        let flush = low(set) && !set.bar_float;
+        let pw = w - if flush { 0 } else { SHADE };
+        ui.cv.pxbox(R::new(0, 0, pw, H), &BoxStyle::new(t.glass_panel(), t.border).shadow(if flush { 0 } else { SHADE }));
         pw
     };
 
@@ -316,32 +319,17 @@ fn module(ui: &mut Ui, st: &State, out: &str, m: &str, x: i32, measure: bool) ->
             w
         }
         // трей стрелкой: одна кнопка, значки — во всплывашке (popups.rs `tray`); точка — кто-то зовёт
-        "tray" if st.set.tray_mode == "arrow" => {
-            if crate::popups::tray_items(st).next().is_none() {
-                return 0;
-            }
-            if !measure {
-                let r = R::new(x, cy - 11, 22, 22);
-                let open = st.popup_is("tray");
-                let hov = ui.hover(r);
-                if hov || open {
-                    ui.cv.pxbox(r, &BoxStyle::new(t.surface_hi, if open { t.red } else { t.border }));
-                }
-                ui.cv.icon(if open { "up" } else { "down" }, x + 4, cy - 7, 2, if hov || open { t.text_hi } else { t.text_dim });
-                if crate::popups::tray_items(st).any(|i| i.status == "NeedsAttention") {
-                    ui.cv.fill(R::new(x + 17, cy - 9, 4, 4), t.ember);
-                }
-                ui.zone(r, Act::Popup("tray"), Cur::Pointer);
-            }
-            22
-        }
+        // трей: значки в баре (все или закреплённые) и стрелка со всплывашкой для остальных
         "tray" => {
-            let w = crate::popups::tray_items(st).count() as i32 * 24 - 2;
+            let icons: Vec<&crate::dbus::TrayItem> = crate::popups::tray_items(st).filter(|it| crate::popups::tray_in_bar(st, it)).collect();
+            let rest: Vec<&crate::dbus::TrayItem> = crate::popups::tray_items(st).filter(|it| !crate::popups::tray_in_bar(st, it)).collect();
+            let arrow = !rest.is_empty();
+            let w = icons.len() as i32 * 24 + if arrow { 22 + if icons.is_empty() { 0 } else { 2 } } else { -2 };
             if measure || w <= 0 {
                 return w.max(0);
             }
             let mut ix = x;
-            for it in crate::popups::tray_items(st) {
+            for it in &icons {
                 let r = R::new(ix, cy - 11, 22, 22);
                 if ui.hover(r) {
                     ui.cv.pxbox(r, &BoxStyle::new(t.surface_hi, t.red));
@@ -349,6 +337,20 @@ fn module(ui: &mut Ui, st: &State, out: &str, m: &str, x: i32, measure: bool) ->
                 tray_icon(ui, it, ix + 3, cy - 8, st.set.tray_pixel);
                 ui.zone(r, Act::Tray(it.service.clone()), Cur::Pointer);
                 ix += 24;
+            }
+            if arrow {
+                // стрелка: точка — кто-то из спрятанных зовёт
+                let r = R::new(ix, cy - 11, 22, 22);
+                let open = st.popup_is("tray");
+                let hov = ui.hover(r);
+                if hov || open {
+                    ui.cv.pxbox(r, &BoxStyle::new(t.surface_hi, if open { t.red } else { t.border }));
+                }
+                ui.cv.icon(if open { "up" } else { "down" }, ix + 4, cy - 7, 2, if hov || open { t.text_hi } else { t.text_dim });
+                if rest.iter().any(|i| i.status == "NeedsAttention") {
+                    ui.cv.fill(R::new(ix + 17, cy - 9, 4, 4), t.ember);
+                }
+                ui.zone(r, Act::Popup("tray"), Cur::Pointer);
             }
             w
         }

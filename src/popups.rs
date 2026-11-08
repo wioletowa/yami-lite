@@ -79,7 +79,7 @@ pub fn size(kind: &str, st: &State) -> (i32, i32) {
         }
         "bt" => (380, 44 + 40 + if st.bt.msg.is_empty() { 0 } else { 24 } + if st.bt.powered { st.bt.devices.len().clamp(1, 8) as i32 * 34 } else { 30 } + 50),
         "sys" => (440, 44 + 4 * 74 + 40 + 50),
-        "tray" => (300, 66 + tray_items(st).count().clamp(1, 12) as i32 * 32),
+        "tray" => (300, 66 + tray_items(st).filter(|it| !tray_in_bar(st, it)).count().clamp(1, 12) as i32 * 32),
         "bat" => (340, 44 + 40),
         "control" => (crate::control::SIZE.0 + 38, crate::control::SIZE.1 + 30),
         _ => (300, 200),
@@ -341,6 +341,20 @@ fn lyrics(ui: &mut Ui, st: &State, r: R) {
 // ── трей ────────────────────────────────────────────────────────────────────
 // trayMode = arrow: в баре одна стрелка, программы — здесь. ЛКМ, ПКМ, СКМ и колесо — как у значка
 // в баре; меню программы открывается под её строкой
+/// ключ программы трея для закрепления: Id, иначе процесс (имя на шине меняется с каждым запуском)
+pub fn tray_key(it: &crate::dbus::TrayItem) -> String {
+    if it.id.is_empty() { it.app.clone() } else { it.id.clone() }
+}
+
+/// значок стоит в баре: все — в режиме «значки», закреплённые — в смешанном
+pub fn tray_in_bar(st: &State, it: &crate::dbus::TrayItem) -> bool {
+    match st.set.tray_mode.as_str() {
+        "arrow" => false,
+        "hybrid" => st.set.tray_pinned.contains(&tray_key(it)),
+        _ => true,
+    }
+}
+
 pub fn tray_items(st: &State) -> impl Iterator<Item = &crate::dbus::TrayItem> {
     // сеть показывает модуль `net`: апплет сети в трее её повторял бы (#16)
     let net = st.set.on_bar("net");
@@ -371,13 +385,13 @@ pub fn tray_name(st: &State, it: &crate::dbus::TrayItem) -> String {
 
 fn tray(ui: &mut Ui, st: &State, b: R) {
     let t = ui.t;
-    let n = tray_items(st).count();
+    let n = tray_items(st).filter(|it| !tray_in_bar(st, it)).count();
     let mut y = head(ui, b, "menu", "трей", &n.to_string());
     if n == 0 {
         ui.text_in(PX, R::new(b.x, y, b.w, 28), "в трее никого", t.text_faint);
         return;
     }
-    for it in tray_items(st).take(12) {
+    for it in tray_items(st).filter(|it| !tray_in_bar(st, it)).take(12) {
         let r = R::new(b.x, y, b.w, 28);
         ui.button(r, "", "", Tone::Ghost, false, true, Act::Tray(it.service.clone()));
         crate::bar::tray_icon(ui, it, r.x + 6, r.cy() - 8, st.set.tray_pixel);

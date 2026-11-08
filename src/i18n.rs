@@ -48,6 +48,19 @@ fn table() -> &'static HashMap<&'static str, &'static str> {
 
 const PAIRS: &[(&str, &str)] = &[
     // yami-lite
+    ("закрепить в баре", "pin to the bar"),
+    ("убрать под стрелку", "move under the arrow"),
+    ("всё под стрелкой", "all under the arrow"),
+    ("закреплённые в баре, остальные под стрелкой", "pinned in the bar, the rest under the arrow"),
+    ("все значки в баре", "all icons in the bar"),
+    ("закрепить — правый щелчок по значку", "pin with a right click on an icon"),
+    ("за началом", "after the start"),
+    ("середина", "middle"),
+    ("отступы", "spacing"),
+    ("край в начале", "start edge"),
+    ("край в конце", "end edge"),
+    ("между модулями", "between modules"),
+    ("до середины", "to the middle"),
     ("начало", "start"),
     ("центр", "center"),
     ("конец", "end"),

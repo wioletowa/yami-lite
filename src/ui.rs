@@ -65,6 +65,7 @@ pub enum Act {
     CtlVol,
     CtlBright,
     CtlTile(String),
+    CtlWall,
     /// настройки → бар: плитка панели управления вкл/выкл
     SCtlTile(&'static str),
     /// индикатор приватности в баре: «mic», «screen», «cam» (наведение — кто)

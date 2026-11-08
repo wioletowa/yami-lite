@@ -14,6 +14,8 @@ pub enum MAct {
     Widget(u32, &'static str, String),
     WidgetDel(u32),
     Dock(&'static str, &'static str),
+    /// смешанный трей: закрепить или открепить программу (ключ — popups::tray_key)
+    TrayPin(String),
 }
 
 #[derive(Clone, Debug, Default)]
@@ -52,13 +54,15 @@ pub struct MenuState {
     pub output: String,
     pub x: i32,
     pub y: i32,
+    /// y — низ меню (меню встаёт над точкой), а не верх
+    pub above: bool,
     pub stack: Vec<(String, Vec<MItem>)>,
     pub cur: Option<usize>,
 }
 
 impl MenuState {
     pub fn new(output: &str, x: i32, y: i32, title: &str, items: Vec<MItem>) -> MenuState {
-        MenuState { output: output.into(), x, y, stack: vec![(title.into(), items)], cur: None }
+        MenuState { output: output.into(), x, y, above: false, stack: vec![(title.into(), items)], cur: None }
     }
     fn top(&self) -> &(String, Vec<MItem>) {
         self.stack.last().unwrap()
@@ -194,6 +198,20 @@ impl App {
                 self.settings_changed();
             }
             MAct::Dock(id, op) => self.dock_op(id, op),
+            MAct::TrayPin(key) => {
+                let p = &mut self.st.set.tray_pinned;
+                match p.iter().position(|x| *x == key) {
+                    Some(i) => {
+                        p.remove(i);
+                    }
+                    None => p.push(key),
+                }
+                self.settings_changed();
+                if self.st.popup_is("tray") {
+                    self.resize_popup();
+                    self.dirty(&SKind::Popup);
+                }
+            }
             MAct::WidgetDel(id) => {
                 self.st.set.widgets.retain(|w| w.id != id);
                 self.settings_changed();
@@ -302,13 +320,24 @@ impl App {
         if items.is_empty() {
             return;
         }
-        let (out, x, y) = self.tray_anchor.clone().unwrap_or_else(|| {
+        let (out, x, y, above) = self.tray_anchor.clone().unwrap_or_else(|| {
             let out = self.focus_out();
             // бар снизу — меню встанет над ним (open_menu прижимает к нему)
             let y = if crate::bar::low(&self.st.set) { i32::MAX / 2 } else { self.bar_bottom(&out) + 2 };
-            (out, 100, y)
+            (out, 100, y, false)
         });
-        let title = self.st.tray.iter().find(|t| t.service == svc).map(|t| t.title.clone()).unwrap_or_default();
-        self.open_menu(MenuState::new(&out, x, y, &title, items));
+        let it = self.st.tray.iter().find(|t| t.service == svc);
+        let title = it.map(|t| crate::popups::tray_name(&self.st, t)).unwrap_or_default();
+        let mut items = items;
+        // смешанный трей: закрепить в баре или убрать под стрелку
+        if let (Some(t), "hybrid") = (it, self.st.set.tray_mode.as_str()) {
+            let key = crate::popups::tray_key(t);
+            let pinned = self.st.set.tray_pinned.contains(&key);
+            items.push(MItem::sep());
+            items.push(MItem::new(if pinned { "убрать под стрелку" } else { "закрепить в баре" }, "pin", MAct::TrayPin(key)));
+        }
+        let mut m = MenuState::new(&out, x, y, &title, items);
+        m.above = above;
+        self.open_menu(m);
     }
 }

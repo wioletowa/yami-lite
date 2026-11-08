@@ -229,8 +229,9 @@ impl App {
         }
         let _ = buffer.attach_to(&surf);
         s.layer.commit();
-        // обои рисуются один раз: буфер у композитора, свой не держим
-        if s.kind == SKind::Wall {
+        // обои рисуются один раз: буфер у композитора, свой не держим. Пока идёт смена обоев,
+        // кадры нужны дальше — буфер остаётся до последнего
+        if s.kind == SKind::Wall && !s.anim {
             s.release_pool = true;
         }
         if done_closing {

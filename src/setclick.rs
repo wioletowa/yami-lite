@@ -145,7 +145,12 @@ impl App {
                     self.media_sync();
                 }
                 "tray_mode" => {
-                    s.tray_mode = if s.tray_mode == "arrow" { "icons" } else { "arrow" }.into();
+                    s.tray_mode = match s.tray_mode.as_str() {
+                        "icons" => "hybrid",
+                        "hybrid" => "arrow",
+                        _ => "icons",
+                    }
+                    .into();
                     self.settings_changed();
                 }
                 "temp_style" => {
@@ -164,10 +169,6 @@ impl App {
                     self.dirty_panels();
                 }
                 "theme_save" => self.theme_do("save", 0),
-                "bar_page_mods" | "bar_page_look" => {
-                    self.st.bar_ed.look = *k == "bar_page_look";
-                    self.dirty_panels();
-                }
                 "bar_center_align" => {
                     s.bar_center_align = if s.bar_center_align == "after-left" { "center" } else { "after-left" }.into();
                     self.settings_changed();

@@ -170,8 +170,9 @@ impl App {
         let (w, h) = menu::size(&m, &mut self.res.fonts);
         let (ow, oh) = self.output_size(&out);
         let x = m.x.clamp(4, (ow - w - 8).max(4));
-        // нижний бар не закрываем: меню из него встаёт над ним
-        let y = m.y.clamp(4, (oh - h - 8 - self.bar_reserve_bottom(&out)).max(4));
+        // над точкой (из списка трея) — низ меню у курсора; нижний бар не закрываем
+        let y = if m.above { m.y - h } else { m.y };
+        let y = y.clamp(4, (oh - h - 8 - self.bar_reserve_bottom(&out)).max(4));
         self.st.menu = Some(m);
         self.mk_catcher(&out);
         self.mk(SKind::Menu, &out, Layer::Overlay, "yami-menu", Anchor::TOP | Anchor::LEFT, (w, h + 4), (y, 0, 0, x), -1, KeyboardInteractivity::OnDemand);

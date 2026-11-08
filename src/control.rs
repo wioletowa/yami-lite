@@ -112,6 +112,12 @@ pub fn draw(ui: &mut Ui, st: &State, b: R) {
     }
     ui.cv.fill(inner, yami_px::face::veil(&t, Some(0.45)));
     ui.cv.pop_clip();
+    // щелчок по обоям — выбор обоев
+    if ui.hover(card) {
+        ui.cv.outline(card, t.red, 2);
+        ui.cv.icon("image", card.right() - 26, card.y + 10, 2, t.text);
+    }
+    ui.zone(card, Act::CtlWall, Cur::Pointer);
     let tm = local_now();
     let face = font::px(48);
     // формат — как у часов бара (настройки → бар → вид: часы с секундами)

@@ -56,6 +56,10 @@ impl App {
             Act::Launcher | Act::DockLauncher => App::sh(&self.st.set.launcher_cmd.clone()),
             Act::NightToggle => self.night_toggle(),
             Act::CtlTile(k) => self.control_tile(&k),
+            Act::CtlWall => {
+                self.close_popup();
+                self.walls_open(false, false);
+            }
             Act::ReplySend => self.reply_send(),
             Act::Power => self.toggle_modal(Modal::Power),
             Act::Settings => self.toggle_settings(),
@@ -74,7 +78,13 @@ impl App {
                 let (bus, path, menu, is_menu) = (it.bus.clone(), it.path.clone(), it.menu.clone(), it.is_menu);
                 // меню программы: под значком в баре или под её строкой во всплывашке трея
                 let in_popup = kind == Some(SKind::Popup);
-                self.tray_anchor = Some(if in_popup { (out.clone(), ax - zone.w / 2 + 8, ay + 2) } else { (out.clone(), ax - 20, if crate::bar::low(&self.st.set) { ay } else { self.bar_bottom(&out) + 2 }) });
+                // из списка трея — меню над курсором; из бара — под баром (над нижним)
+                let at_ptr = self.ptr.filter(|p| p.0 == sid).zip(self.surfs.get(&sid)).map(|(p, s)| (s.margin.0 + p.1 as i32, s.margin.1 + p.2 as i32));
+                self.tray_anchor = Some(match (in_popup, at_ptr) {
+                    (true, Some((px, py))) => (out.clone(), px - 12, py - 4, true),
+                    (true, None) => (out.clone(), ax - zone.w / 2 + 8, ay - zone.h, true),
+                    _ => (out.clone(), ax - 20, if crate::bar::low(&self.st.set) { ay } else { self.bar_bottom(&out) + 2 }, false),
+                });
                 if button == RMB || (button == LMB && is_menu) {
                     if !menu.is_empty() {
                         crate::dbus::tray_menu(&svc, &bus, &menu, self.tx.clone());

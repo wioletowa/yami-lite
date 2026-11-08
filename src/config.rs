@@ -138,6 +138,8 @@ pub struct Settings {
     pub tray_mode: String,
     /// значки трея клетками в тонах палитры, как пиксельные значки дока и лаунчера (#19)
     pub tray_pixel: bool,
+    /// трей «смешанный»: эти программы (по Id или процессу) — значками в баре, остальные под стрелкой
+    pub tray_pinned: Vec<String>,
     /// модуль bat прячется от сети без зарядки: полная или держит порог заряда (#21)
     pub bat_hide_full: bool,
     /// чужие программы в цветах палитры (recolor::APPS; настройки → цвет → программы); по умолчанию
@@ -374,6 +376,7 @@ impl Default for Settings {
             temp_style: "full".into(),
             tray_mode: "icons".into(),
             tray_pixel: false,
+            tray_pinned: vec![],
             bat_hide_full: false,
             theme_apps: vec![],
             clock_seconds: false,
@@ -516,7 +519,7 @@ impl Settings {
         self.theme_apps.retain(|a| crate::recolor::APPS.iter().any(|t| t.0 == a));
         self.theme_apps.sort_by_key(|a| crate::recolor::APPS.iter().position(|t| t.0 == a));
         self.theme_apps.dedup();
-        if self.tray_mode != "arrow" {
+        if !matches!(self.tray_mode.as_str(), "arrow" | "hybrid") {
             self.tray_mode = "icons".into();
         }
         if self.media_viz != "off" && !crate::widgets::STYLES.iter().any(|(k, _)| *k == self.media_viz) {
