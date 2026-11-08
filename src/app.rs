@@ -70,6 +70,8 @@ pub enum SKind {
     /// окно настроек (xdg-shell, не слой)
     Settings,
     EditBar,
+    /// подсказка у индикатора приватности (privacy.rs)
+    Tip,
     Dock,
     DockEdge,
 }
@@ -145,6 +147,8 @@ pub enum Msg {
     Pam(bool),
     /// яркость и лампочки клавиатуры (leds.rs)
     Leds(crate::leds::Leds),
+    /// кто держит камеру (camera.rs)
+    Camera(Vec<String>),
     Art(String, Option<crate::gfx::Img>),
     /// текст песни нашёлся (или нет) для трека Lyrics.key
     Lyrics(crate::lyrics::Lyrics),
@@ -199,6 +203,9 @@ pub struct State {
     pub notifs: notif::Notifs,
     pub osd: Option<(&'static str, Instant)>,
     pub leds: crate::leds::Leds,
+    pub camera: Vec<String>,
+    /// подсказка индикатора приватности: что и над какой зоной
+    pub tip: Option<(&'static str, R)>,
     pub audio: audio::AudioState,
     /// показанный плеер (media_pick_sync), все живые и выбранный в шапке всплывашки (#24)
     pub media: media::MediaState,
@@ -382,6 +389,8 @@ impl State {
             notifs: notif::Notifs::default(),
             osd: None,
             leds: Default::default(),
+            camera: vec![],
+            tip: None,
             audio: audio::AudioState::default(),
             media: media::MediaState::default(),
             players: Vec::new(),
@@ -543,6 +552,7 @@ pub fn run() {
     media::spawn(tx.clone());
     net::spawn_bt(tx.clone());
     crate::leds::spawn(tx.clone());
+    crate::camera::spawn(tx.clone());
     app.write_palette();
     // обои: при старте палитра обычно та же, theme.py не запускается — готовим картинку сами
     app.sync_wall();

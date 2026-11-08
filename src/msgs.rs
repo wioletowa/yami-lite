@@ -108,6 +108,10 @@ impl App {
                 self.dirty_where(|k| matches!(k, SKind::Popup | SKind::Bar));
             }
             Msg::Pam(ok) => self.on_pam(ok),
+            Msg::Camera(u) => {
+                self.st.camera = u;
+                self.dirty(&SKind::Bar);
+            }
             Msg::Leds(l) => {
                 let old = std::mem::replace(&mut self.st.leds, l);
                 if self.st.started.elapsed() > Duration::from_millis(2500) {

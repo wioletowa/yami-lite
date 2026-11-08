@@ -41,6 +41,8 @@ pub struct AudioState {
     pub mic: f64,
     pub mic_muted: bool,
     pub streams: Vec<Stream>,
+    /// кто пишет с микрофона (записи не с мониторов: эквалайзер шелла, cava и пики — мимо)
+    pub recorders: Vec<String>,
 }
 
 fn pactl_json(args: &[&str]) -> Value {
@@ -109,21 +111,39 @@ fn streams() -> Vec<Stream> {
         .unwrap_or_default()
 }
 
+fn recorders() -> Vec<String> {
+    let monitors: Vec<u64> = pactl_json(&["list", "sources"]).as_array().map(|a| a.iter().filter(|s| s["name"].as_str().is_some_and(|n| n.ends_with(".monitor"))).filter_map(|s| s["index"].as_u64()).collect()).unwrap_or_default();
+    let mut out: Vec<String> = vec![];
+    for x in pactl_json(&["list", "source-outputs"]).as_array().into_iter().flatten() {
+        if x["source"].as_u64().is_some_and(|s| monitors.contains(&s)) {
+            continue;
+        }
+        let p = &x["properties"];
+        let name: String = p["application.name"].as_str().or(p["application.process.binary"].as_str()).unwrap_or("?").into();
+        if !out.contains(&name) {
+            out.push(name);
+        }
+    }
+    out
+}
+
 /// что поменялось (по строкам `pactl subscribe`): переспрашивается только оно
 const SINK: u8 = 1;
 const SOURCE: u8 = 2;
 const STREAM: u8 = 4;
 const SERVER: u8 = 8;
-const ALL: u8 = SINK | SOURCE | STREAM | SERVER;
+const REC: u8 = 16;
+const ALL: u8 = SINK | SOURCE | STREAM | SERVER | REC;
 
-/// «Event 'change' on sink-input #12» → что переспросить; записи программ (source-output),
-/// клиенты и модули шеллу не нужны — на них ни одного запуска pactl
+/// «Event 'change' on sink-input #12» → что переспросить; записи программ (source-output) — для
+/// индикатора микрофона, только появление и уход; клиенты и модули шеллу не нужны
 fn facility(l: &str) -> u8 {
     match l.split(" on ").nth(1).and_then(|r| r.split_whitespace().next()) {
         Some("sink") => SINK,
         Some("source") => SOURCE,
         Some("sink-input") => STREAM,
         Some("server") | Some("card") => SERVER,
+        Some("source-output") if !l.contains("'change'") => REC,
         _ => 0,
     }
 }
@@ -141,6 +161,9 @@ fn refresh(mut a: AudioState, what: u8) -> AudioState {
     }
     if what & STREAM != 0 {
         a.streams = streams();
+    }
+    if what & REC != 0 {
+        a.recorders = recorders();
     }
     let d = a.sinks.iter().find(|s| s.name == a.sink).cloned().unwrap_or_default();
     let m = a.sources.iter().find(|s| s.name == a.source).cloned().unwrap_or_default();

@@ -83,6 +83,9 @@ impl App {
                 }
             }
             PointerEventKind::Leave { .. } => {
+                if self.st.tip.is_some() && self.surf_kind(sid) == Some(SKind::Bar) {
+                    self.privacy_tip_close();
+                }
                 if self.surf_kind(sid) == Some(SKind::Dock) {
                     self.dock_hover(false);
                 }
@@ -103,6 +106,11 @@ impl App {
                     return;
                 }
                 let after = self.zone_at(sid, x, y);
+                match after.as_ref().map(|z| (&z.act, z.r)) {
+                    Some((Act::Privacy(k), r)) => self.privacy_tip(k, sid, r),
+                    _ if self.st.tip.is_some() => self.privacy_tip_close(),
+                    _ => {}
+                }
                 let c = after.as_ref().map(|z| z.cur).unwrap_or(Cur::Default);
                 self.set_cursor(c);
                 if before.as_ref().map(|z| (&z.act, z.r)) != after.as_ref().map(|z| (&z.act, z.r)) {

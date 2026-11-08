@@ -49,6 +49,8 @@ pub enum Act {
     SModDrag(usize, usize),
     SModNew(String),
     NightToggle,
+    /// индикатор приватности в баре: «mic», «screen», «cam» (наведение — кто)
+    Privacy(&'static str),
     ReplySend,
     SModDel(usize, usize),
     /// свои темы: применить, удалить (themetab.rs)

@@ -568,6 +568,23 @@ fn module(ui: &mut Ui, st: &State, out: &str, m: &str, x: i32, measure: bool) ->
             }
             14
         }
+        // индикаторы: видны, только пока кто-то пишет микрофон, показывает экран или держит камеру
+        "privacy_mic" | "privacy_screen" | "privacy_cam" => {
+            let (kind, icon) = match m {
+                "privacy_mic" => ("mic", "mic"),
+                "privacy_screen" => ("screen", "screen"),
+                _ => ("cam", "camera"),
+            };
+            if crate::privacy::users(st, kind).is_empty() {
+                return 0;
+            }
+            if !measure {
+                let r = R::new(x - 2, 0, 18, H - 1);
+                ui.cv.icon(icon, x, cy - 7, 2, crate::privacy::RED);
+                ui.zone(r, Act::Privacy(kind), Cur::Default);
+            }
+            14
+        }
         "notif" => {
             let n = st.notifs.history.len();
             let w = 14 + if n > 0 { 4 + ui.w(PX, &n.to_string()) } else { 0 };
