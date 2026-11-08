@@ -212,9 +212,10 @@ pub struct TrayItem {
     pub service: String,
     pub bus: String,
     pub path: String,
-    /// Id программы (nm-applet, steam…) и подпись для людей
+    /// Id программы (nm-applet, steam…), подпись от неё и имя её процесса (discord, telegram-desktop)
     pub id: String,
     pub title: String,
+    pub app: String,
     pub status: String,
     pub icon: String,
     /// файл значка программы: IconName путём или из её IconThemePath (найден в нити D-Bus)
@@ -234,15 +235,15 @@ impl TrayItem {
 }
 
 pub enum TrayEv {
-    Upsert { service: String, bus: String, path: String, id: String, title: String, status: String, icon: String, file: Option<String>, pixmap: Option<Img>, menu: String, is_menu: bool },
+    Upsert { service: String, bus: String, path: String, id: String, title: String, app: String, status: String, icon: String, file: Option<String>, pixmap: Option<Img>, menu: String, is_menu: bool },
     Remove(String),
 }
 
 pub fn apply(list: &mut Vec<TrayItem>, e: TrayEv) {
     match e {
         TrayEv::Remove(s) => list.retain(|i| i.service != s),
-        TrayEv::Upsert { service, bus, path, id, title, status, icon, file, pixmap, menu, is_menu } => {
-            let it = TrayItem { service: service.clone(), bus, path, id, title, status, icon, file, pixmap: pixmap.map(std::rc::Rc::new), menu, is_menu };
+        TrayEv::Upsert { service, bus, path, id, title, app, status, icon, file, pixmap, menu, is_menu } => {
+            let it = TrayItem { service: service.clone(), bus, path, id, title, app, status, icon, file, pixmap: pixmap.map(std::rc::Rc::new), menu, is_menu };
             if let Some(x) = list.iter_mut().find(|i| i.service == service) {
                 *x = it;
             } else {
@@ -377,6 +378,8 @@ fn pixmap(v: Option<OwnedValue>) -> Option<Img> {
 fn refresh_item(bus: &str, path: &str, tx: &Sender<Msg>) {
     let Some(c) = CONN.get() else { return };
     let Ok(p) = Proxy::new(c, bus.to_string(), path.to_string(), "org.kde.StatusNotifierItem") else { return };
+    // программа уже ушла или объекта нет (зарегистрировалась и не ответила): без значка-призрака
+    let Ok(id) = p.get_property::<String>("Id") else { return };
     let s = |k: &str| p.get_property::<String>(k).unwrap_or_default();
     let menu = p.get_property::<zbus::zvariant::OwnedObjectPath>("Menu").map(|m| m.to_string()).unwrap_or_default();
     let status = s("Status");
@@ -393,12 +396,16 @@ fn refresh_item(bus: &str, path: &str, tx: &Sender<Msg>) {
     if pm.is_none() && file.is_none() {
         pm = pixmap(p.get_property::<OwnedValue>("IconPixmap").ok());
     }
-    let id = s("Id");
+    // ни значка, ни картинки, ни имени — показывать нечего
+    if icon.is_empty() && pm.is_none() && file.is_none() && id.is_empty() && s("Title").is_empty() {
+        return;
+    }
     let _ = tx.send(Msg::Tray(TrayEv::Upsert {
         service: format!("{bus}{path}"),
         bus: bus.into(),
         path: path.into(),
         title: { let t = s("Title"); if t.is_empty() { id.clone() } else { t } },
+        app: owner_name(c, bus),
         id,
         status,
         icon,
@@ -407,6 +414,23 @@ fn refresh_item(bus: &str, path: &str, tx: &Sender<Msg>) {
         menu,
         is_menu: p.get_property::<bool>("ItemIsMenu").unwrap_or(false),
     }));
+}
+
+/// имя процесса, которому принадлежит имя на шине: исполняемый файл (у Electron — каталог программы,
+/// не «electron»), иначе comm
+fn owner_name(c: &zbus::blocking::Connection, bus: &str) -> String {
+    let Ok(d) = zbus::blocking::fdo::DBusProxy::new(c) else { return String::new() };
+    let Ok(name) = zbus::names::BusName::try_from(bus) else { return String::new() };
+    let Ok(pid) = d.get_connection_unix_process_id(name) else { return String::new() };
+    let exe = std::fs::read_link(format!("/proc/{pid}/exe")).ok();
+    let base = exe.as_ref().and_then(|e| e.file_name()).map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+    if matches!(base.as_str(), "electron" | "python3" | "python" | "java" | "node" | "") {
+        // у обёрток — каталог программы или comm
+        let dir = exe.as_ref().and_then(|e| e.parent()).and_then(|p| p.file_name()).map(|n| n.to_string_lossy().to_string());
+        let comm = std::fs::read_to_string(format!("/proc/{pid}/comm")).unwrap_or_default().trim().to_string();
+        return dir.filter(|d| !matches!(d.as_str(), "bin" | "electron")).unwrap_or(comm);
+    }
+    base
 }
 
 /// файл значка трея: IconName — путь к файлу, или имя в IconThemePath программы (прямо в

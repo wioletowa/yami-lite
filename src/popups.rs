@@ -345,6 +345,28 @@ pub fn tray_items(st: &State) -> impl Iterator<Item = &crate::dbus::TrayItem> {
     st.tray.iter().filter(move |i| i.status != "Passive" && !(net && i.net_applet()))
 }
 
+/// имя программы трея для людей: из её .desktop (по процессу или Id), иначе подпись, если она не
+/// служебная («discord_status_icon_1», «chrome_status_icon_1»), иначе процесс. Как есть, без перевода
+pub fn tray_name(st: &State, it: &crate::dbus::TrayItem) -> String {
+    let norm = |s: &str| s.to_lowercase().replace(['-', '_', '.', ' '], "");
+    let keys: Vec<String> = [it.app.as_str(), it.id.as_str()].iter().map(|k| norm(k)).filter(|k| k.len() >= 3).collect();
+    let app = st.apps.iter().find(|a| {
+        let ids = [norm(&a.id), norm(&a.wm_class), norm(a.exec.split_whitespace().next().unwrap_or("").rsplit('/').next().unwrap_or(""))];
+        keys.iter().any(|k| ids.iter().any(|i| !i.is_empty() && (i == k || i.ends_with(k.as_str()) || k.starts_with(i.as_str()))))
+    });
+    if let Some(a) = app {
+        return a.name.clone();
+    }
+    let service_like = |s: &str| s.is_empty() || s.contains("status_icon") || s.contains("StatusNotifier") || s.starts_with(':') || s.chars().last().is_some_and(|c| c.is_ascii_digit()) && s.contains('_');
+    if !service_like(&it.title) {
+        return it.title.clone();
+    }
+    let raw = if !it.app.is_empty() { it.app.as_str() } else { it.id.as_str() };
+    let clean = raw.split(['_', '-']).next().unwrap_or(raw);
+    let mut c = clean.chars();
+    c.next().map(|f| f.to_uppercase().collect::<String>() + c.as_str()).unwrap_or_else(|| it.icon.clone())
+}
+
 fn tray(ui: &mut Ui, st: &State, b: R) {
     let t = ui.t;
     let n = tray_items(st).count();
@@ -357,11 +379,9 @@ fn tray(ui: &mut Ui, st: &State, b: R) {
         let r = R::new(b.x, y, b.w, 28);
         ui.button(r, "", "", Tone::Ghost, false, true, Act::Tray(it.service.clone()));
         crate::bar::tray_icon(ui, it, r.x + 6, r.cy() - 8, st.set.tray_pixel);
-        // имя даёт сама программа: как есть, без перевода
-        let name = if it.title.is_empty() { it.icon.as_str() } else { it.title.as_str() };
-        let name = if name.is_empty() { it.service.as_str() } else { name };
+        let name = tray_name(st, it);
         let hov = ui.hover(r);
-        ui.cv.text_in(ui.f, PX, R::new(r.x + 30, r.y, r.w - 46, r.h), name, if hov { t.text_hi } else { t.text });
+        ui.cv.text_in(ui.f, PX, R::new(r.x + 30, r.y, r.w - 46, r.h), &name, if hov { t.text_hi } else { t.text });
         if it.status == "NeedsAttention" {
             ui.cv.fill(R::new(r.right() - 12, r.cy() - 2, 4, 4), t.ember);
         }

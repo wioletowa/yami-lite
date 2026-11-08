@@ -34,14 +34,76 @@ pub fn color(t: &Theme, c: &str) -> C {
     }
 }
 
-pub fn size_of(w: &Widget) -> (i32, i32) {
+/// чернила строки: сдвиг от верха строки до первого закрашенного ряда, высота, сдвиг слева и
+/// ширина закрашенного (без пустого хвоста последней буквы)
+fn ink(f: &mut crate::font::Fonts, face: crate::font::Face, s: &str) -> (i32, i32, i32, i32) {
+    let asc = f.ascent(face);
+    let (mut top, mut bot, mut left, mut right, mut pen) = (i32::MAX, i32::MIN, i32::MAX, i32::MIN, 0);
+    for ch in s.chars() {
+        if let Some(g) = f.glyph(face, ch) {
+            if g.w > 0 && g.h > 0 {
+                top = top.min(asc + g.top);
+                bot = bot.max(asc + g.top + g.h);
+                left = left.min(pen + g.left);
+                right = right.max(pen + g.left + g.w);
+            }
+        }
+        pen += f.advance(face, ch);
+    }
+    if top == i32::MAX {
+        return (0, f.line(face), 0, pen);
+    }
+    (top, bot - top, left, right - left)
+}
+
+/// раскладка часов по пикселям букв: поля со всех сторон одинаковые, размер — по содержимому
+struct ClockLay {
+    face: crate::font::Face,
+    pad: i32,
+    time: (i32, i32, i32, i32),
+    date: Option<(String, (i32, i32, i32, i32))>,
+    w: i32,
+    h: i32,
+}
+
+const GAP: i32 = 10;
+
+fn clock_lay(w: &Widget, f: &mut crate::font::Fonts) -> ClockLay {
+    let face = font::px(match w.size.as_str() {
+        "s" => 48,
+        "l" => 96,
+        _ => 64,
+    });
+    let pad = if w.frame { 16 } else { 4 };
+    let time = ink(f, face, "00:00");
+    let tm = local_now();
+    let date = w.date.then(|| {
+        let s = crate::tf!("{}, {} {}", "{}, {} {}", crate::i18n::tr(RU_DAY_FULL[tm.wday as usize]), tm.day, crate::i18n::tr(RU_MON[(tm.mon - 1) as usize]));
+        let i = ink(f, PX, &s);
+        (s, i)
+    });
+    let cw = time.3.max(date.as_ref().map_or(0, |d| d.1 .3));
+    let mut h = time.1;
+    if let Some(d) = &date {
+        h += GAP + d.1 .1;
+    }
+    if w.seconds {
+        h += GAP + 4;
+    }
+    ClockLay { face, pad, time, date, w: cw + 2 * pad, h: h + 2 * pad }
+}
+
+pub fn size_of(w: &Widget, f: &mut crate::font::Fonts) -> (i32, i32) {
+    if w.kind == "clock" {
+        let l = clock_lay(w, f);
+        return (l.w + 4, l.h + 4);
+    }
     let k = match w.size.as_str() {
         "s" => 0,
         "l" => 2,
         _ => 1,
     };
     let (a, b, c) = match w.kind.as_str() {
-        "clock" => ((260, 100), (360, 128), (540, 190)),
         "graph" | "net" => ((220, 96), (300, 124), (440, 180)),
         "media" => ((320, 112), (400, 136), (500, 170)),
         "cal" => ((236, 220), (280, 252), (350, 316)),
@@ -315,31 +377,30 @@ fn draw_widget(ui: &mut Ui, st: &State, w: &Widget, sw: i32, sh: i32) {
         "clock" => {
             panel(ui, w, r);
             let tm = local_now();
-            let big = match w.size.as_str() {
-                "s" => 48,
-                "l" => 96,
-                _ => 64,
-            };
-            let face = font::px(big);
-            let pad = if w.frame { 14 } else { 4 };
-            let mut x = pad;
-            let y = pad;
-            x += ui.text(face, x, y, &format!("{:02}", tm.hour), t.text);
+            let l = clock_lay(w, ui.f);
+            let (pad, (top, th, left, _)) = (l.pad, l.time);
+            let mut x = r.x + pad - left;
+            let y = r.y + pad - top;
+            x += ui.text(l.face, x, y, &format!("{:02}", tm.hour), t.text);
             let colon = if w.seconds && tm.sec % 2 == 1 { t.dim } else { c };
-            x += ui.text(face, x, y, ":", colon);
-            ui.text(face, x, y, &format!("{:02}", tm.min), t.text);
-            let mut yy = y + ui.f.line(face) + 6;
-            if w.date {
-                let s = crate::tf!("{}, {} {}", "{}, {} {}", crate::i18n::tr(RU_DAY_FULL[tm.wday as usize]), tm.day, crate::i18n::tr(RU_MON[(tm.mon - 1) as usize]));
-                ui.text(PX, pad, yy, &s, t.text_dim);
-                yy += 24;
+            x += ui.text(l.face, x, y, ":", colon);
+            ui.text(l.face, x, y, &format!("{:02}", tm.min), t.text);
+            let mut yy = r.y + pad + th;
+            if let Some((s, (dt, dh, dl, _))) = &l.date {
+                yy += GAP;
+                ui.text(PX, r.x + pad - dl, yy - dt, s, t.text_dim);
+                yy += dh;
             }
             if w.seconds {
-                // секунды: 12 клеток по 5 секунд
-                let cw = ((r.w - 2 * pad) / 12 - 2).clamp(6, 22);
+                yy += GAP;
+                // секунды: 12 клеток по 5 секунд, во всю ширину цифр
+                let full = r.w - 2 * pad;
+                let cw = (full + 2) / 12 - 2;
+                // остаток от деления — поровну по краям, чтобы полоса стояла ровно под цифрами
+                let off = (full - (12 * (cw + 2) - 2)) / 2;
                 for i in 0..12 {
                     let on = i < (tm.sec / 5) as i32 + 1;
-                    ui.cv.fill(R::new(pad + i * (cw + 2), yy, cw, 4), if on { c } else { t.border.fade(0.7) });
+                    ui.cv.fill(R::new(r.x + pad + off + i * (cw + 2), yy, cw, 4), if on { c } else { t.border.fade(0.7) });
                 }
             }
         }
@@ -614,7 +675,7 @@ impl App {
         let top = self.bar_bottom(&out);
         let mut auto_y = top + 40;
         for w in want {
-            let (ww, wh) = size_of(&w);
+            let (ww, wh) = size_of(&w, &mut self.res.fonts);
             let (mut x, mut y) = (w.x, w.y);
             if x < 0 || y < 0 {
                 // место по умолчанию
@@ -672,7 +733,7 @@ impl App {
     pub fn open_widget_menu(&mut self, id: u32) {
         let Some(w) = self.st.set.widgets.iter().find(|w| w.id == id).cloned() else { return };
         let (x, y) = self.surfs.values().find(|s| s.kind == SKind::Widget(id)).map(|s| s.margin).unwrap_or((100, 100));
-        let (ww, _) = size_of(&w);
+        let (ww, _) = size_of(&w, &mut self.res.fonts);
         let out = self.focus_out();
         let title = crate::tf!("виджет: {}", "widget: {}", crate::i18n::tr(name_of(KINDS, &w.kind)));
         self.open_menu(MenuState::new(&out, x + ww - 30, y + 30, &title, widget_menu(&w)));

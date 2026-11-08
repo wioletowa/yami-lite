@@ -47,8 +47,10 @@ pub struct Niri {
     pub kb_names: Vec<String>,
     pub kb_idx: usize,
     pub overview: bool,
-    /// идёт показ экрана (запись, трансляция, демонстрация): niri CastsChanged
+    /// идёт показ экрана (запись, трансляция, демонстрация): потоки niri по номерам и кто
+    /// показывает (pid программы, если niri его знает)
     pub casting: bool,
+    pub casts: Vec<(u64, Option<u32>)>,
     /// спрятанные «свёрнутые» окна
     pub hidden: Vec<u64>,
     pub min_order: Vec<u64>,
@@ -64,6 +66,15 @@ pub enum Ev {
 
 
 
+
+/// номер потока показа экрана: stream_id (или id — у разных версий niri)
+fn cast_id(v: &Value) -> Option<u64> {
+    v["stream_id"].as_u64().or_else(|| v["id"].as_u64())
+}
+
+fn cast_of(v: &Value) -> Option<(u64, Option<u32>)> {
+    Some((cast_id(v)?, v["pid"].as_u64().map(|p| p as u32)))
+}
 
 fn socket() -> Option<String> {
     std::env::var("NIRI_SOCKET").ok()
@@ -393,8 +404,22 @@ impl Niri {
                 self.kb_idx = d["idx"].as_u64().unwrap_or(0) as usize;
                 out.push(Ev::KbSwitched);
             }
+            // весь список — в начале потока, дальше по одному: начался (или сменился) и кончился
             "CastsChanged" => {
-                self.casting = d["casts"].as_array().is_some_and(|c| !c.is_empty());
+                self.casts = d["casts"].as_array().map(|a| a.iter().filter_map(cast_of).collect()).unwrap_or_default();
+                self.casting = !self.casts.is_empty();
+            }
+            "CastStartedOrChanged" => {
+                if let Some(c) = cast_of(&d["cast"]) {
+                    self.casts.retain(|x| x.0 != c.0);
+                    self.casts.push(c);
+                }
+                self.casting = !self.casts.is_empty();
+            }
+            "CastStopped" => {
+                let id = cast_id(&d);
+                self.casts.retain(|x| Some(x.0) != id);
+                self.casting = !self.casts.is_empty();
             }
             "OverviewOpenedOrClosed" => {
                 self.overview = d["is_open"].as_bool().unwrap_or(false);
