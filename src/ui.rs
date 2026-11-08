@@ -29,6 +29,11 @@ pub enum Act {
     SSideScroll,
     SPreset(usize),
     SBool(&'static str),
+    /// выпадающий список (dropdown.rs): открыть по ключу, выбрать значение, закрыть, листать
+    Drop(&'static str),
+    DropPick(String),
+    DropClose,
+    DropScroll,
     /// настройки → уведомления: отвечает ли OSD на это (notif::OSD_KINDS)
     SOsd(&'static str),
     /// шрифт шелла из списка ("" — Tiny5, "sans" — системный); колесо над списком
@@ -71,16 +76,15 @@ pub enum Act {
     CtlBright,
     CtlTile(String),
     CtlWall,
-    /// Wallhaven: искать, категория, чистота, сортировка, порядок, стороны, «от/ровно», страница, картинка
+    /// Wallhaven: искать, категория, чистота, порядок, «от/ровно», страница, картинка
     WhSearch,
     WhCat(usize),
     WhPurity(usize),
-    WhSort,
     WhOrder,
-    WhRatio,
     WhExact,
     WhPage(i32),
     WhPick(String),
+    WhScroll,
     /// настройки → бар: плитка панели управления вкл/выкл
     SCtlTile(&'static str),
     /// индикатор приватности в баре: «mic», «screen», «cam» (наведение — кто)

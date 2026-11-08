@@ -30,6 +30,12 @@ impl App {
             }
             return;
         }
+        match &a {
+            Act::Drop(k) => return self.drop_open(k, sid, zone),
+            Act::DropPick(v) => return self.drop_pick(v.clone()),
+            Act::DropClose | Act::DropScroll => return self.drop_close(),
+            _ => {}
+        }
         if self.settings_click(&a) || self.wh_click(&a) {
             return;
         }
@@ -233,6 +239,8 @@ impl App {
             Act::CtlBright => self.ctl_brightness(self.st.leds.bright.unwrap_or(0.5) + if up { 0.05 } else { -0.05 }),
             Act::CtlVol => self.ctl_volume((self.st.audio.volume + if up { 0.05 } else { -0.05 }).clamp(0.0, 1.0)),
             Act::WallPick(_) | Act::WallsScroll => self.walls_scroll(if up { -1 } else { 1 }),
+            Act::WhPick(_) | Act::WhScroll => self.wh_scroll(if up { -1 } else { 1 }),
+            Act::DropPick(_) | Act::DropScroll => self.drop_scroll(if up { -1 } else { 1 }),
             Act::SFont(_) | Act::SFontScroll => self.font_scroll(if up { -1 } else { 1 }),
             Act::MicSlider | Act::MicMute => {
                 let v = (self.st.audio.mic + if up { 0.05 } else { -0.05 }).clamp(0.0, 1.0);

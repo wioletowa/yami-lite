@@ -85,10 +85,6 @@ fn name_of(list: &[(&str, &'static str)], id: &str) -> &'static str {
     list.iter().find(|x| x.0 == id).map(|x| x.1).unwrap_or(list[0].1)
 }
 
-fn next_of(list: &[(&'static str, &str)], id: &str) -> &'static str {
-    let i = list.iter().position(|x| x.0 == id).unwrap_or(0);
-    list[(i + 1) % list.len()].0
-}
 
 /// всё, от чего зависит готовая картинка; одинаковый ключ — пересчитывать нечего
 pub struct Job {
@@ -320,6 +316,20 @@ fn shrink(img: &Img, max: i32) -> Img {
     Img { w, h, px }
 }
 
+/// картинка в другом размере ближайшим соседом (прошлые обои для смены, если были уменьшены)
+fn stretch(img: &Img, w: i32, h: i32) -> Img {
+    let mut px = Vec::with_capacity((w * h) as usize);
+    for y in 0..h {
+        let sy = ((y as i64 * img.h as i64) / h.max(1) as i64) as i32;
+        let row = (sy.min(img.h - 1) * img.w) as usize;
+        for x in 0..w {
+            let sx = ((x as i64 * img.w as i64) / w.max(1) as i64) as usize;
+            px.push(img.px[row + sx.min(img.w as usize - 1)]);
+        }
+    }
+    Img { w, h, px }
+}
+
 /// обои на весь экран «как обложка» (картинка уже в пропорциях экрана — без обрезки)
 pub fn cover(ui: &mut Ui, img: &Img, w: i32, h: i32) {
     yami_px::face::cover(ui, img, w, h);
@@ -491,8 +501,8 @@ pub fn tab(ui: &mut Ui, st: &State, b: R) {
     ui.button(R::new(b.right() - 120, y + 2, 120, 26), "применить", "check", Tone::Primary, false, true, Act::SCycle("wall_apply"));
     y += 44;
     y = title(ui, b.x, y, b.w, "как показывать");
-    opt_btn(ui, R::new(b.x, y, half, 26), "подгонка", name_of(FITS, &s.wall_fit), Act::SWall("fit"));
-    opt_btn(ui, R::new(b.x + half + 20, y, half, 26), "окраска", name_of(TONES, &s.wall_tone), Act::SWall("tone"));
+    opt_btn(ui, R::new(b.x, y, half, 26), "подгонка", name_of(FITS, &s.wall_fit), Act::Drop("wall_fit"));
+    opt_btn(ui, R::new(b.x + half + 20, y, half, 26), "окраска", name_of(TONES, &s.wall_tone), Act::Drop("wall_tone"));
     y += 38;
     let c = cell(s.wall_pixel);
     let ct = if c == 1 { crate::i18n::tr("как есть").to_string() } else { format!("{c} px") };
@@ -504,7 +514,7 @@ pub fn tab(ui: &mut Ui, st: &State, b: R) {
     ui.toggle(R::new(b.x + half + 20, y, half, 40), "иероглиф на обоях", "в правом нижнем углу", s.wall_kanji, Act::SBool("wall_kanji"));
     y += 50;
     y = title(ui, b.x, y, b.w, "смена обоев");
-    opt_btn(ui, R::new(b.x, y, half, 26), "узор", name_of(FADES, &s.wall_fade), Act::SWall("fade"));
+    opt_btn(ui, R::new(b.x, y, half, 26), "узор", name_of(FADES, &s.wall_fade), Act::Drop("wall_fade"));
     num_btn(ui, R::new(b.x + half + 20, y, half, 26), "клетка", s.num("wall_fade_cell"), "wall_fade_cell");
     y += 34;
     if s.wall_fade != "none" {
@@ -555,8 +565,16 @@ impl App {
             return;
         }
         let new = img.map(std::rc::Rc::new);
-        // смена обоев: новые проступают клетками сквозь прошлые (если размер тот же и анимации включены)
-        let old = self.st.wall.take().filter(|o| self.st.set.anim() && !self.st.wall_parked && new.as_ref().is_some_and(|n| n.w == o.w && n.h == o.h));
+        // смена обоев: новые проступают клетками сквозь прошлые. Прошлые могли быть отложены в
+        // уменьшенной копии (wall_park, пока листали выбор обоев) — растянуть её до размера новых
+        let old = self.st.wall.take().filter(|_| self.st.set.anim() && self.st.set.wall_fade != "none").and_then(|o| {
+            let n = new.as_ref()?;
+            if o.w == n.w && o.h == n.h {
+                Some(o)
+            } else {
+                Some(std::rc::Rc::new(stretch(&o, n.w, n.h)))
+            }
+        });
         self.st.wall_fade = old.is_some().then(std::time::Instant::now);
         self.st.wall_step.set(0);
         self.st.wall_prev = old;
@@ -642,9 +660,6 @@ impl App {
                 self.set_wall("");
                 return true;
             }
-            "fit" => s.wall_fit = next_of(FITS, &s.wall_fit).into(),
-            "tone" => s.wall_tone = next_of(TONES, &s.wall_tone).into(),
-            "fade" => s.wall_fade = next_of(FADES, &s.wall_fade).into(),
             "accent" => s.wall_accent = !s.wall_accent,
             _ => return false,
         }

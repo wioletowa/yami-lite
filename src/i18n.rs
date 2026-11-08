@@ -48,6 +48,7 @@ fn table() -> &'static HashMap<&'static str, &'static str> {
 
 const PAIRS: &[(&str, &str)] = &[
     // yami-lite
+    ("пиксели", "pixels"),
     ("Wallhaven не ответил (сеть или неверный ключ)", "Wallhaven did not answer (network or a wrong key)"),
     ("нужен curl", "curl is needed"),
     ("непонятный ответ Wallhaven", "an unreadable answer from Wallhaven"),

@@ -143,7 +143,14 @@ pub(crate) fn tab_widgets(ui: &mut Ui, st: &State, b: R) {
     ui.toggle(R::new(px, y, pw, 26), "показывать", "", w.on, Act::SWidgetOpt(id, "on"));
     y += 34;
     let row = |ui: &mut Ui, y: &mut i32, label: &str, val: &str, key: &'static str| {
-        opt_btn(ui, R::new(px, *y, pw, 26), label, val, Act::SWidgetOpt(id, key));
+        let drop = match key {
+            "source" => "w_source",
+            "style" => "w_style",
+            "anim" => "w_anim",
+            "size" => "w_size",
+            _ => "w_color",
+        };
+        opt_btn(ui, R::new(px, *y, pw, 26), label, val, Act::Drop(drop));
         *y += 30;
     };
     match w.kind.as_str() {
@@ -209,7 +216,7 @@ pub(crate) fn tab_look(ui: &mut Ui, st: &State, b: R) {
     y += 34;
     ui.slider(R::new(b.x, y, b.w, 40), "скорость анимаций (меньше — быстрее)", (s.anim_speed - 0.3) / 1.7, &format!("×{:.1}", s.anim_speed), 17, Act::SSlider("anim_speed", 0.3, 2.0, 17));
     y += 50;
-    opt_btn(ui, R::new(b.x, y, half, 26), "появление", reveal_name(&s.reveal), Act::SCycle("reveal"));
+    opt_btn(ui, R::new(b.x, y, half, 26), "появление", reveal_name(&s.reveal), Act::Drop("reveal"));
     num_btn(ui, R::new(b.x + half + 20, y, half, 26), "размер клеток", s.num("reveal_grain"), "reveal_grain");
     y += 34;
     ui.toggle(R::new(b.x, y, b.w, 26), "строки развёртки на панелях (как на старом мониторе)", "", s.scanlines, Act::SBool("scanlines"));
@@ -259,7 +266,7 @@ pub(crate) fn tab_system(ui: &mut Ui, st: &State, b: R) {
         "en" => "English",
         _ => "авто",
     };
-    opt_btn(ui, R::new(lx, y, half, 26), "язык", lang, Act::SCycle("lang"));
+    opt_btn(ui, R::new(lx, y, half, 26), "язык", lang, Act::Drop("lang"));
     y += 34;
     ui.toggle(R::new(lx, y, half, 40), "обложки из сети", "если плеер не дал свою", s.media_art_net, Act::SBool("media_art_net"));
     ui.toggle(R::new(rx, y, half, 40), "тексты песен из сети", "lrclib.net", s.lyrics_net, Act::SBool("lyrics_net"));
@@ -292,10 +299,10 @@ pub(crate) fn tab_notif(ui: &mut Ui, st: &State, b: R) {
     ui.toggle(R::new(rx, y, half, 40), "время от программы", "если программа просит своё (до минуты)", s.notif_app_timeout, Act::SBool("notif_app_timeout"));
     y += 52;
     y = title(ui, b.x, y, b.w, "карточки");
-    opt_btn(ui, R::new(lx, y, half, 26), "на экране сразу", &s.notif_max.to_string(), Act::SCycle("notif_max"));
-    opt_btn(ui, R::new(rx, y, half, 26), "в истории", &s.notif_history.to_string(), Act::SCycle("notif_history"));
+    opt_btn(ui, R::new(lx, y, half, 26), "на экране сразу", &s.notif_max.to_string(), Act::Drop("notif_max"));
+    opt_btn(ui, R::new(rx, y, half, 26), "в истории", &s.notif_history.to_string(), Act::Drop("notif_history"));
     y += 32;
-    opt_btn(ui, R::new(lx, y, half, 26), "место", crate::widgets::name_of(crate::notif::POS, &s.notif_pos), Act::SCycle("notif_pos"));
+    opt_btn(ui, R::new(lx, y, half, 26), "место", crate::widgets::name_of(crate::notif::POS, &s.notif_pos), Act::Drop("notif_pos"));
     num_btn(ui, R::new(rx, y, half, 26), "отступ", s.num("notif_offset"), "notif_offset");
     y += 32;
     ui.toggle(R::new(lx, y, b.w, 26), "картинки и значки программ", "", s.notif_images, Act::SBool("notif_images"));
@@ -309,7 +316,7 @@ pub(crate) fn tab_notif(ui: &mut Ui, st: &State, b: R) {
     }
     y += 70;
     ui.slider(R::new(lx, y, half, 40), "время на экране", (s.osd_time - 0.5) / 4.5, &crate::tf!("{:.1} с", "{:.1} s", s.osd_time), 9, Act::SSlider("osd_time", 0.5, 5.0, 9));
-    opt_btn(ui, R::new(rx, y + 8, half, 26), "место", crate::widgets::name_of(crate::notif::OSD_POS, &s.osd_pos), Act::SCycle("osd_pos"));
+    opt_btn(ui, R::new(rx, y + 8, half, 26), "место", crate::widgets::name_of(crate::notif::OSD_POS, &s.osd_pos), Act::Drop("osd_pos"));
     y += 48;
     ui.button(R::new(lx, y, half, 26), "показать", "eye", Tone::Plain, false, true, Act::SCycle("osd_test"));
     if s.osd_pos != "center" {
@@ -346,9 +353,9 @@ pub(crate) fn tab_dock(ui: &mut Ui, st: &State, b: R) {
         "always" => "всегда — выезжает у края",
         _ => "умно — виден на пустом столе",
     };
-    opt_btn(ui, R::new(b.x, y, b.w, 26), "край экрана", side, Act::SCycle("dock_side"));
+    opt_btn(ui, R::new(b.x, y, b.w, 26), "край экрана", side, Act::Drop("dock_side"));
     y += 32;
-    opt_btn(ui, R::new(b.x, y, b.w, 26), "прятать", hide, Act::SCycle("dock_hide"));
+    opt_btn(ui, R::new(b.x, y, b.w, 26), "прятать", hide, Act::Drop("dock_hide"));
     y += 32;
     let anim = match s.dock_anim.as_str() {
         "wave" => "волна — соседи тоже растут",
@@ -356,7 +363,7 @@ pub(crate) fn tab_dock(ui: &mut Ui, st: &State, b: R) {
         "none" => "нет",
         _ => "рост и подъём",
     };
-    opt_btn(ui, R::new(b.x, y, b.w, 26), "при наведении", anim, Act::SCycle("dock_anim"));
+    opt_btn(ui, R::new(b.x, y, b.w, 26), "при наведении", anim, Act::Drop("dock_anim"));
     y += 34;
     ui.slider(R::new(b.x, y, b.w, 40), "размер значков", (s.dock_size as f32 - 24.0) / 40.0, &format!("{} px", s.dock_size), 10, Act::SSlider("dock_size", 24.0, 64.0, 10));
     y += 50;

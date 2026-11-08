@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::{Arc, Condvar, Mutex};
 
-pub const SIZE: (i32, i32) = (780, 560);
+pub const SIZE: (i32, i32) = (780, 574);
 const COLS: usize = 4;
 const ROWS: usize = 4;
 /// клетка 16:9 и зазор между клетками
@@ -28,7 +28,7 @@ const TH: i32 = 97;
 const GAP: i32 = 12;
 /// откуда начинается сетка
 const GX: i32 = 25;
-const GY: i32 = 76;
+const GY: i32 = 90;
 /// больше картинок из одной папки не показываем
 const MAX: usize = 500;
 /// строк про запас сверху и снизу видимых
@@ -194,7 +194,8 @@ pub fn draw(ui: &mut Ui, st: &State, w: i32, h: i32) {
     let loading = wl.tiles.is_empty();
     let fr = R::new(0, 0, w - 6, h - 6);
     ui.frame(fr, false);
-    ui.header(R::new(1, 1, fr.w - 2, 30), "image", "обои", "");
+    // путь папки — в шапке, как есть (не переводится)
+    ui.header(R::new(1, 1, fr.w - 2, 30), "image", "обои", &yami_px::paths::pretty(&wl.dir));
     ui.ghost(R::new(fr.right() - 28, 5, 24, 22), "close", Act::WallsBack);
     // папка — как есть (путь не переводится), кнопки справа: «вверх» и (режим «папка») «эта папка»
     let up_w = ui.w(PX, "вверх") + 36;
@@ -202,17 +203,23 @@ pub fn draw(ui: &mut Ui, st: &State, w: i32, h: i32) {
     let mut bx = fr.right() - GX;
     if wl.dir_mode {
         bx -= here_w;
-        ui.button(R::new(bx, 39, here_w, 24), "эта папка", "check", Tone::Primary, false, !loading, Act::WallsHere);
+        ui.button(R::new(bx, 48, here_w, 26), "эта папка", "check", Tone::Primary, false, !loading, Act::WallsHere);
         bx -= 8;
     }
     bx -= up_w;
-    ui.button(R::new(bx, 39, up_w, 24), "вверх", "up", Tone::Plain, false, wl.dir.parent().is_some(), Act::WallsUp);
+    ui.button(R::new(bx, 48, up_w, 26), "вверх", "up", Tone::Plain, false, wl.dir.parent().is_some(), Act::WallsUp);
     let sort = if st.set.walls_sort == "name" { "по имени" } else { "сначала новые" };
     let sort_w = ui.w(PX, sort) + 36;
     bx -= sort_w + 8;
-    ui.button(R::new(bx, 39, sort_w, 24), sort, "menu", Tone::Ghost, false, true, Act::WallsSort);
-    ui.cv.icon("folder", GX, 44, 2, t.text_faint);
-    ui.cv.text_in(ui.f, PX, R::new(GX + 22, 38, bx - GX - 30, 26), &yami_px::paths::pretty(&wl.dir), t.text_dim);
+    ui.button(R::new(bx, 48, sort_w, 26), sort, "menu", Tone::Ghost, false, true, Act::WallsSort);
+    // слева — как показывать: окраска и пиксели, как во вкладке «обои»
+    let s = &st.set;
+    let room = bx - GX - 12;
+    let tw = (room * 5 / 9).min(240);
+    crate::settings::opt_btn(ui, R::new(GX, 48, tw, 26), "окраска", crate::widgets::name_of(crate::wall::TONES, &s.wall_tone), Act::Drop("wall_tone"));
+    let c = crate::wall::cell(s.wall_pixel);
+    let ct = if c == 1 { crate::i18n::tr("как есть").to_string() } else { format!("{c} px") };
+    ui.slider(R::new(GX + tw + 12, 38, (room - tw - 12).max(80), 40), "пиксели", (s.wall_pixel as f32 - 1.0) / 7.0, &ct, 7, Act::SSlider("wall_pixel", 1.0, 8.0, 7));
     // сетка: под клетками — зона для колеса
     let grid = R::new(GX, GY, COLS as i32 * (TW + GAP) - GAP, ROWS as i32 * (TH + GAP) - GAP);
     ui.zone(grid, Act::WallsScroll, Cur::Default);
@@ -290,6 +297,7 @@ pub fn draw(ui: &mut Ui, st: &State, w: i32, h: i32) {
         crate::i18n::tr("Enter — поставить или войти, Backspace — вверх, Esc — закрыть").to_string()
     };
     ui.cv.text_right(ui.f, PX, R::new(fr.w / 2, fy, fr.w / 2 - GX, 24), &hint, t.text_faint);
+    crate::dropdown::draw(ui, st, &SKind::Modal, w, h);
 }
 
 impl App {
@@ -497,6 +505,9 @@ impl App {
 
 
     pub fn walls_key(&mut self, e: &KeyEvent) {
+        if self.st.drop.is_some() && e.keysym == Keysym::Escape {
+            return self.drop_close();
+        }
         let n = self.st.walls.tiles.len();
         let cur = self.st.walls.cur;
         let to = match e.keysym {

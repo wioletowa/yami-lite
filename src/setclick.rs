@@ -113,49 +113,11 @@ impl App {
             Act::SFontOpen(k) => self.font_toggle(k),
             Act::SFont(n) => self.font_pick(n.clone()),
             Act::SCycle(k) => match *k {
-                "cpu_style" => {
-                    s.cpu_style = cycle(&[("gauge", ""), ("graph", ""), ("number", "")], &s.cpu_style).into();
-                    self.settings_changed();
-                }
                 "osd_test" => {
                     // первое включённое: выключенные OSD не показываются и для пробы
                     if let Some(k) = crate::notif::OSD_KINDS.iter().map(|k| k.0).find(|k| self.st.set.osd_kinds.iter().any(|x| x == k)) {
                         self.show_osd(k);
                     }
-                }
-                "ws_style" => {
-                    s.ws_style = if s.ws_style == "dots" { "boxes" } else { "dots" }.into();
-                    self.settings_changed();
-                }
-                "notif_pos" => {
-                    s.notif_pos = cycle(crate::notif::POS, &s.notif_pos).into();
-                    self.settings_changed();
-                    self.renew_notif(SKind::Notifs);
-                }
-                "osd_pos" => {
-                    s.osd_pos = cycle(crate::notif::OSD_POS, &s.osd_pos).into();
-                    self.settings_changed();
-                    self.renew_notif(SKind::Osd);
-                }
-                "media_view" => self.media_view_next(),
-                "media_viz" => {
-                    let mut l = crate::widgets::STYLES.to_vec();
-                    l.push(("off", "выкл"));
-                    s.media_viz = cycle(&l, &s.media_viz).into();
-                    self.media_sync();
-                }
-                "tray_mode" => {
-                    s.tray_mode = match s.tray_mode.as_str() {
-                        "icons" => "hybrid",
-                        "hybrid" => "arrow",
-                        _ => "icons",
-                    }
-                    .into();
-                    self.settings_changed();
-                }
-                "temp_style" => {
-                    s.temp_style = if s.temp_style == "compact" { "full" } else { "compact" }.into();
-                    self.settings_changed();
                 }
                 "color_page_pal" | "color_page_themes" | "color_page_apps" => {
                     self.st.color_page = match *k {
@@ -169,37 +131,9 @@ impl App {
                     self.dirty_panels();
                 }
                 "theme_save" => self.theme_do("save", 0),
-                "bar_center_align" => {
-                    s.bar_center_align = if s.bar_center_align == "after-left" { "center" } else { "after-left" }.into();
-                    self.settings_changed();
-                }
-                "bar_pos" => {
-                    s.bar_pos = if s.bar_pos == "bottom" { "top" } else { "bottom" }.into();
-                    self.settings_changed();
-                }
-                "bar_sep" => {
-                    s.bar_sep = cycle(&[("dots", ""), ("line", ""), ("blocks", ""), ("gap", "")], &s.bar_sep).into();
-                    self.settings_changed();
-                }
-                "bar_sep_color" => {
-                    s.bar_sep_color = cycle(&[("border", ""), ("accent", ""), ("dim", "")], &s.bar_sep_color).into();
-                    self.settings_changed();
-                }
-                "reveal" => {
-                    s.reveal = cycle(&[("dither", ""), ("scan", ""), ("noise", ""), ("wipe", ""), ("blocks", "")], &s.reveal).into();
-                    self.settings_changed();
-                }
-                "dock_anim" => {
-                    s.dock_anim = cycle(&[("grow", ""), ("wave", ""), ("lift", ""), ("none", "")], &s.dock_anim).into();
-                    self.settings_changed();
-                }
                 "hex_apply" => self.apply_hex(),
                 "theme_dark" | "theme_light" => {
                     s.light = *k == "theme_light";
-                    self.settings_changed();
-                }
-                "lang" => {
-                    s.lang = yami_px::i18n::next(&s.lang).into();
                     self.settings_changed();
                 }
                 "wh_key_apply" => {
@@ -218,37 +152,6 @@ impl App {
                 "wall_apply" => {
                     let p = self.st.wall_field.text.clone();
                     self.set_wall(&p);
-                }
-                "dock_side" => {
-                    s.dock_side = match s.dock_side.as_str() {
-                        "bottom" => "left",
-                        "left" => "right",
-                        "right" => "top",
-                        _ => "bottom",
-                    }
-                    .into();
-                    // край сменился — пересоздать
-                    for k in [SKind::Dock, SKind::DockEdge] {
-                        for id in self.find(&k) {
-                            self.destroy(id);
-                        }
-                    }
-                    self.settings_changed();
-                }
-                "dock_hide" => {
-                    let s = &mut self.st.set;
-                    s.dock_hide = match s.dock_hide.as_str() {
-                        "smart" => "always",
-                        "always" => "never",
-                        _ => "smart",
-                    }
-                    .into();
-                    for k in [SKind::Dock, SKind::DockEdge] {
-                        for id in self.find(&k) {
-                            self.destroy(id);
-                        }
-                    }
-                    self.settings_changed();
                 }
                 "geo_apply" => {
                     let g = self.st.geo_field.text.trim().to_string();

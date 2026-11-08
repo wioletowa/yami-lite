@@ -59,6 +59,7 @@ impl App {
         if self.st.modal.is_none() {
             return;
         }
+        self.st.drop = None;
         // следующее окно снова откроется по центру
         self.modal_at = None;
         if self.st.modal == Some(Modal::Walls) {
@@ -137,6 +138,7 @@ impl App {
 
     pub fn close_popup(&mut self) {
         if self.st.popup.take().is_some() {
+            self.st.drop = None;
             self.dirty(&SKind::Bar);
             self.st.field_focus = None;
             self.close_kind(&SKind::Popup);

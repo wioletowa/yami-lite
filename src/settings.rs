@@ -157,6 +157,7 @@ pub fn draw(ui: &mut Ui, st: &State, w: i32, h: i32) {
     st.sscroll_h.set(full);
     ui.cv.pop_clip();
     scrollbar(ui, R::new(body.right() + 18, body.y, 4, body.h), body.h, full, off);
+    crate::dropdown::draw(ui, st, &SKind::Settings, w, h);
 }
 
 impl App {
@@ -195,6 +196,7 @@ impl App {
         }
         self.st.settings_shown = false;
         self.st.field_focus = None;
+        self.st.drop = None;
         // код настроек велик, а нужен изредка: через полминуты — из памяти
         self.shed_at = Some(std::time::Instant::now() + std::time::Duration::from_secs(30));
         self.dirty(&SKind::Bar);
@@ -202,6 +204,7 @@ impl App {
 
     /// колесо над вкладкой: листать, если есть куда (true — пролистали)
     pub fn settings_scroll(&mut self, d: i32) -> bool {
+        self.drop_close();
         let (w, h) = self.settings_size();
         let view = body_rect(w, h).h;
         let max = (self.st.sscroll_h.get() - view).max(0);
@@ -260,7 +263,8 @@ pub fn opt_btn(ui: &mut Ui, r: R, label: &str, val: &str, act: Act) {
     let vw = ui.f.width(PX, &v);
     ui.text_in(PX, R::new(r.x + 8, r.y, r.w - 32 - vw - 12, r.h), label, t.text_dim);
     ui.cv.text_right(ui.f, PX, R::new(r.x, r.y, r.w - 24, r.h), &v, t.text);
-    ui.cv.icon("right", r.right() - 18, r.cy() - 7, 2, t.red);
+    // список — стрелка вниз, переход (шрифты) — вправо
+    ui.cv.icon(if matches!(act, Act::Drop(_)) { "down" } else { "right" }, r.right() - 18, r.cy() - 7, 2, t.red);
     ui.zone(r, act, Cur::Pointer);
 }
 
@@ -279,6 +283,9 @@ impl App {
     }
 
     pub fn settings_key(&mut self, e: &KeyEvent) {
+        if self.st.drop.is_some() && e.keysym == Keysym::Escape {
+            return self.drop_close();
+        }
         if let Some(f) = self.st.field_focus {
             match e.keysym {
                 Keysym::Escape => self.st.field_focus = None,

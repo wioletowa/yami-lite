@@ -11,11 +11,11 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::Rc;
 
-pub const SIZE: (i32, i32) = (760, 560);
+pub const SIZE: (i32, i32) = (760, 700);
 const API: &str = "https://wallhaven.cc/api/v1/search";
-const COLS: i32 = 6;
-/// страница API — 24 картинки: сетка 6×4 показывает её целиком
-const ROWS: i32 = 4;
+/// сетка 4 в ширину, 5 рядов на виду; страница API (24) листается колесом
+const COLS: i32 = 4;
+const ROWS: i32 = 5;
 
 pub const SORTS: &[(&str, &str)] = &[("date_added", "дата добавления"), ("relevance", "по запросу"), ("random", "случайно"), ("views", "просмотры"), ("favorites", "в избранном"), ("toplist", "лучшие"), ("hot", "популярное")];
 pub const RATIOS: &[(&str, &str)] = &[("", "любое"), ("landscape", "широкие"), ("portrait", "вертикальные"), ("16x9", "16:9"), ("16x10", "16:10"), ("21x9", "21:9"), ("32x9", "32:9"), ("9x16", "9:16"), ("1x1", "1:1"), ("3x2", "3:2"), ("4x3", "4:3")];
@@ -26,6 +26,8 @@ pub struct Item {
     pub thumb: String,
     pub full: String,
     pub res: String,
+    /// sfw | sketchy | nsfw: рамка у миниатюры
+    pub purity: String,
 }
 
 /// состояние окна: фильтры, страница, найденное, миниатюры
@@ -51,11 +53,13 @@ pub struct Wh {
     pub applying: Option<String>,
     /// номер запроса: ответы прошлых — мимо
     pub gen: u64,
+    /// первый видимый ряд сетки
+    pub top: i32,
 }
 
 impl Default for Wh {
     fn default() -> Wh {
-        Wh { query: Field::default(), width: Field::default(), height: Field::default(), cats: [true, true, false], purity: [true, false, false], sort: 0, desc: true, ratio: 0, exact: false, page: 1, last: 1, items: vec![], thumbs: HashMap::new(), loading: false, err: String::new(), applying: None, gen: 0 }
+        Wh { query: Field::default(), width: Field::default(), height: Field::default(), cats: [true, true, false], purity: [true, false, false], sort: 0, desc: true, ratio: 1, exact: false, page: 1, last: 1, items: vec![], thumbs: HashMap::new(), loading: false, err: String::new(), applying: None, gen: 0, top: 0 }
     }
 }
 
@@ -99,7 +103,7 @@ fn search(params: Vec<(&'static str, String)>, key: String) -> Result<(Vec<Item>
                     let full = s("path").filter(|u| u.starts_with("https://w.wallhaven.cc/"))?;
                     let thumb = x["thumbs"]["small"].as_str().filter(|u| u.starts_with("https://th.wallhaven.cc/"))?.to_string();
                     let id = s("id").filter(|i| i.chars().all(|c| c.is_ascii_alphanumeric()))?;
-                    Some(Item { id, thumb, full, res: s("resolution").unwrap_or_default() })
+                    Some(Item { id, thumb, full, res: s("resolution").unwrap_or_default(), purity: s("purity").unwrap_or_default() })
                 })
                 .collect()
         })
@@ -126,11 +130,19 @@ fn thumb(it: &Item, w: u32, h: u32) -> Option<Img> {
     Some(crate::icons::from_rgba(&image::imageops::resize(&crop, w, h, image::imageops::FilterType::Triangle)))
 }
 
-/// клетки сетки в области
-fn cells(area: R) -> Vec<R> {
+/// клетка i сетки при первом видимом ряде top; не на виду — None
+fn cell(area: R, i: i32, top: i32) -> Option<R> {
     let (gap, cw) = (10, (area.w - (COLS - 1) * 10) / COLS);
     let ch = (area.h - (ROWS - 1) * gap) / ROWS;
-    (0..COLS * ROWS).map(|i| R::new(area.x + (i % COLS) * (cw + gap), area.y + (i / COLS) * (ch + gap), cw, ch)).collect()
+    let row = i / COLS - top;
+    (0..ROWS).contains(&row).then(|| R::new(area.x + (i % COLS) * (cw + gap), area.y + row * (ch + gap), cw, ch))
+}
+
+/// окно миниатюры (клетка без рамки) — под него режутся картинки
+fn thumb_size() -> (u32, u32) {
+    let g = grid(R::new(0, 0, SIZE.0, SIZE.1));
+    let r = cell(g, 0, 0).map(|r| r.inset(3)).unwrap_or(R::new(0, 0, 170, 96));
+    (r.w as u32, r.h as u32)
 }
 
 fn grid(b: R) -> R {
@@ -168,9 +180,9 @@ pub fn draw(ui: &mut Ui, st: &State, b: R) {
     // сортировка, соотношение, разрешение
     let y2 = y + 32;
     let third = (b.w - 20) / 3;
-    crate::settings::opt_btn(ui, R::new(b.x, y2, third - 30, 26), "сортировка", crate::widgets::name_of(SORTS, SORTS[wh.sort].0), Act::WhSort);
+    crate::settings::opt_btn(ui, R::new(b.x, y2, third - 30, 26), "сортировка", crate::widgets::name_of(SORTS, SORTS[wh.sort].0), Act::Drop("wh_sort"));
     ui.button(R::new(b.x + third - 26, y2, 26, 26), "", if wh.desc { "down" } else { "up" }, Tone::Plain, false, true, Act::WhOrder);
-    crate::settings::opt_btn(ui, R::new(b.x + third + 10, y2, third, 26), "стороны", RATIOS[wh.ratio].1, Act::WhRatio);
+    crate::settings::opt_btn(ui, R::new(b.x + third + 10, y2, third, 26), "стороны", RATIOS[wh.ratio].1, Act::Drop("wh_ratio"));
     let rx = b.x + 2 * (third + 10);
     let rw = b.right() - rx;
     ui.button(R::new(rx, y2, 72, 26), if wh.exact { "ровно" } else { "от" }, "", Tone::Ghost, false, true, Act::WhExact);
@@ -190,10 +202,22 @@ pub fn draw(ui: &mut Ui, st: &State, b: R) {
         };
         ui.text_center(PX, R::new(g.x, g.y + g.h / 2 - 10, g.w, 20), &msg, if wh.err.is_empty() { t.text_faint } else { t.ember });
     }
-    for (r, it) in cells(g).into_iter().zip(&wh.items) {
+    ui.zone(g, Act::WhScroll, Cur::Default);
+    for (i, it) in wh.items.iter().enumerate() {
+        let Some(r) = cell(g, i as i32, wh.top) else { continue };
         let hov = ui.hover(r);
         let busy = wh.applying.as_deref() == Some(it.id.as_str());
-        ui.cv.pxbox(r, &BoxStyle::new(t.code_bg, if busy { t.ember } else if hov { t.red } else { t.border }).shadow(if hov { 2 } else { 0 }));
+        // рамка по чистоте: сомнительные — жёлтая, NSFW — красная
+        let edge = match it.purity.as_str() {
+            "nsfw" => crate::privacy::RED,
+            "sketchy" => t.warn,
+            _ if hov => t.red,
+            _ => t.border,
+        };
+        ui.cv.pxbox(r, &BoxStyle::new(t.code_bg, if busy { t.ember } else { edge }).shadow(if hov { 2 } else { 0 }));
+        if it.purity != "sfw" && !it.purity.is_empty() {
+            ui.cv.outline(r.inset(1), edge, 1);
+        }
         let inner = r.inset(3);
         match wh.thumbs.get(&it.id) {
             Some(Some(img)) => ui.cv.image(img, inner.x, inner.y, 1.0),
@@ -207,6 +231,13 @@ pub fn draw(ui: &mut Ui, st: &State, b: R) {
             ui.cv.text_in(ui.f, PX, R::new(band.x + 6, band.y, band.w - 8, band.h), &label, t.text);
         }
         ui.zone(r, Act::WhPick(it.id.clone()), Cur::Pointer);
+    }
+    // полоса прокрутки, если рядов больше, чем видно
+    let rows = (wh.items.len() as i32 + COLS - 1) / COLS;
+    if rows > ROWS {
+        let th = g.h * ROWS / rows;
+        let ty = g.y + (g.h - th) * wh.top / (rows - ROWS);
+        ui.cv.fill(R::new(g.right() + 6, ty, 3, th), t.red);
     }
     // страницы
     let fy = b.bottom() - 28;
@@ -259,9 +290,10 @@ impl App {
             let r = search(p, key);
             let items = r.as_ref().map(|x| x.0.clone()).unwrap_or_default();
             let _ = tx.send(Msg::WhResults(gen, r));
-            // миниатюры по одной, ровно под окно клетки сетки (112×91)
+            // миниатюры по одной, ровно под окно клетки сетки
+            let (tw, th) = thumb_size();
             for it in items {
-                let img = thumb(&it, 112, 91);
+                let img = thumb(&it, tw, th);
                 if tx.send(Msg::WhThumb(gen, it.id.clone(), img)).is_err() {
                     return;
                 }
@@ -277,11 +309,12 @@ impl App {
         }
         wh.loading = false;
         wh.thumbs.clear();
+        wh.top = 0;
         match r {
             Ok((items, last)) => {
                 let rel = SORTS[wh.sort].0 == "relevance" && wh.query.text.trim().is_empty();
                 wh.last = if rel { last.saturating_sub(1).max(1) } else { last };
-                wh.items = items.into_iter().take((COLS * ROWS) as usize).collect();
+                wh.items = items;
             }
             Err(e) => {
                 wh.items.clear();
@@ -344,9 +377,7 @@ impl App {
             Act::WhSearch => {}
             Act::WhCat(i) => wh.cats[*i] = !wh.cats[*i],
             Act::WhPurity(i) => wh.purity[*i] = !wh.purity[*i],
-            Act::WhSort => wh.sort = (wh.sort + 1) % SORTS.len(),
             Act::WhOrder => wh.desc = !wh.desc,
-            Act::WhRatio => wh.ratio = (wh.ratio + 1) % RATIOS.len(),
             Act::WhExact => wh.exact = !wh.exact,
             Act::WhPage(d) => {
                 let p = (wh.page as i32 + d).clamp(1, wh.last as i32) as u32;
@@ -363,6 +394,14 @@ impl App {
         self.st.field_focus = None;
         self.wh_search(1);
         true
+    }
+
+    /// колесо над сеткой: ряд за шаг
+    pub fn wh_scroll(&mut self, d: i32) {
+        let wh = &mut self.st.wh;
+        let rows = (wh.items.len() as i32 + COLS - 1) / COLS;
+        wh.top = (wh.top + d).clamp(0, (rows - ROWS).max(0));
+        self.dirty(&SKind::Popup);
     }
 
     /// ввод в полях поиска: Enter — искать

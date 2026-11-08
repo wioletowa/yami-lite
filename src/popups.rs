@@ -108,6 +108,7 @@ pub fn draw(ui: &mut Ui, st: &State, w: i32, h: i32) {
         "wallhaven" => crate::wallhaven::draw(ui, st, body),
         _ => {}
     }
+    crate::dropdown::draw(ui, st, &crate::app::SKind::Popup, w, h);
 }
 
 fn head(ui: &mut Ui, r: R, icon: &str, title: &str, sub: &str) -> i32 {
@@ -570,6 +571,9 @@ fn sys(ui: &mut Ui, st: &State, b: R) {
 
 impl App {
     pub fn popup_key(&mut self, e: &KeyEvent) {
+        if self.st.drop.is_some() && e.keysym == Keysym::Escape {
+            return self.drop_close();
+        }
         if self.wh_key(e) {
             return;
         }

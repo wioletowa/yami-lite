@@ -19,6 +19,7 @@ mod clock;
 mod cmd;
 mod dbus;
 mod dock;
+mod dropdown;
 mod fonttab;
 mod games;
 mod i18n;

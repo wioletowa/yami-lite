@@ -227,20 +227,20 @@ fn gear_dialog(ui: &mut Ui, st: &State, b: R, m: &str) {
     };
     let pick = |list: &[(&'static str, &'static str)], cur: &str| -> &'static str { list.iter().find(|v| v.0 == cur).map_or(list[0].1, |v| v.1) };
     match m {
-        "workspaces" => opt(ui, &mut y, "вид", pick(&[("boxes", "квадраты с номером"), ("dots", "точки")], &s.ws_style), Act::SCycle("ws_style")),
+        "workspaces" => opt(ui, &mut y, "вид", pick(&[("boxes", "квадраты с номером"), ("dots", "точки")], &s.ws_style), Act::Drop("ws_style")),
         "clock" => {
             tog(ui, &mut y, "секунды", s.clock_seconds, "clock_seconds");
             tog(ui, &mut y, "дата", s.clock_date, "clock_date");
         }
-        "cpu" | "ram" | "gpu" | "disk" => opt(ui, &mut y, "вид", pick(&[("gauge", "шкала"), ("graph", "график"), ("number", "число")], &s.cpu_style), Act::SCycle("cpu_style")),
-        "temp" => opt(ui, &mut y, "вид", if s.temp_style == "compact" { "коротко" } else { "как у процессора" }, Act::SCycle("temp_style")),
+        "cpu" | "ram" | "gpu" | "disk" => opt(ui, &mut y, "вид", pick(&[("gauge", "шкала"), ("graph", "график"), ("number", "число")], &s.cpu_style), Act::Drop("cpu_style")),
+        "temp" => opt(ui, &mut y, "вид", if s.temp_style == "compact" { "коротко" } else { "как у процессора" }, Act::Drop("temp_style")),
         "tray" => {
             let mode = match s.tray_mode.as_str() {
                 "arrow" => "всё под стрелкой",
                 "hybrid" => "закреплённые в баре, остальные под стрелкой",
                 _ => "все значки в баре",
             };
-            opt(ui, &mut y, "вид", mode, Act::SCycle("tray_mode"));
+            opt(ui, &mut y, "вид", mode, Act::Drop("tray_mode"));
             if s.tray_mode == "hybrid" {
                 ui.text_in(PX, R::new(x, y - 4, rw, 18), "закрепить — правый щелчок по значку", t.text_faint);
                 y += 18;
@@ -249,8 +249,8 @@ fn gear_dialog(ui: &mut Ui, st: &State, b: R, m: &str) {
         }
         "media" => {
             let eq = if s.media_viz == "off" { "выкл" } else { crate::widgets::name_of(crate::widgets::STYLES, &s.media_viz) };
-            opt(ui, &mut y, "эквалайзер", eq, Act::SCycle("media_viz"));
-            opt(ui, &mut y, "всплывашка", crate::widgets::name_of(crate::config::MEDIA_VIEWS, &s.media_view), Act::SCycle("media_view"));
+            opt(ui, &mut y, "эквалайзер", eq, Act::Drop("media_viz"));
+            opt(ui, &mut y, "всплывашка", crate::widgets::name_of(crate::config::MEDIA_VIEWS, &s.media_view), Act::Drop("media_view"));
         }
         "bat" => tog(ui, &mut y, "прятать полную батарею", s.bat_hide_full, "bat_hide_full"),
         "tasks" => {
@@ -259,8 +259,8 @@ fn gear_dialog(ui: &mut Ui, st: &State, b: R, m: &str) {
         }
         "sep" => {
             let style = pick(&[("dots", "точки"), ("line", "черта"), ("blocks", "клетки"), ("gap", "пусто")], &s.bar_sep);
-            opt(ui, &mut y, "вид", style, Act::SCycle("bar_sep"));
-            opt(ui, &mut y, "цвет", pick(&[("border", "рамка"), ("accent", "акцент"), ("dim", "тусклый")], &s.bar_sep_color), Act::SCycle("bar_sep_color"));
+            opt(ui, &mut y, "вид", style, Act::Drop("bar_sep"));
+            opt(ui, &mut y, "цвет", pick(&[("border", "рамка"), ("accent", "акцент"), ("dim", "тусклый")], &s.bar_sep_color), Act::Drop("bar_sep_color"));
             num(ui, &mut y, "ширина", "bar_sep_w");
         }
         "launcher" => {
@@ -295,9 +295,9 @@ fn bar_layout(ui: &mut Ui, st: &State, b: R, y: i32) -> i32 {
     num_btn(ui, R::new(col(2), y + 6, cw, 26), "отступ", s.num("bar_margin"), "bar_margin");
     y += 46;
     let align = if s.bar_center_align == "after-left" { "за началом" } else { "по центру" };
-    opt_btn(ui, R::new(col(0), y, cw, 26), "середина", align, Act::SCycle("bar_center_align"));
+    opt_btn(ui, R::new(col(0), y, cw, 26), "середина", align, Act::Drop("bar_center_align"));
     let pos = if crate::bar::low(s) { "снизу" } else { "сверху" };
-    opt_btn(ui, R::new(col(1), y, cw, 26), "край экрана", pos, Act::SCycle("bar_pos"));
+    opt_btn(ui, R::new(col(1), y, cw, 26), "край экрана", pos, Act::Drop("bar_pos"));
     let shape = if crate::bar::strip(s) {
         "полоса во всю ширину"
     } else if s.bar_float {

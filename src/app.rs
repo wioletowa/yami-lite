@@ -216,6 +216,8 @@ pub struct State {
     /// ползунок панели управления тянут: до этого времени на экране — его значение (ответ системы
     /// приходит позже и со старым), и OSD громкости и яркости молчит
     pub ctl_hold: Option<Instant>,
+    /// открытый выпадающий список
+    pub drop: Option<crate::dropdown::Drop>,
     pub wh: crate::wallhaven::Wh,
     /// поля ключа Wallhaven и его папки во вкладке «обои»
     pub wh_key_field: Field,
@@ -421,6 +423,7 @@ impl State {
             leds: Default::default(),
             camera: vec![],
             ctl_hold: None,
+            drop: None,
             wh: Default::default(),
             wh_key_field: Field::default(),
             wh_dir_field: Field::default(),
