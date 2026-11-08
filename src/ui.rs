@@ -29,6 +29,8 @@ pub enum Act {
     SSideScroll,
     SPreset(usize),
     SBool(&'static str),
+    /// настройки → уведомления: отвечает ли OSD на это (notif::OSD_KINDS)
+    SOsd(&'static str),
     /// настройки → цвет → программы: красить ли эту программу (recolor::APPS)
     SThemeApp(&'static str),
     SSlider(&'static str, f32, f32, i32),

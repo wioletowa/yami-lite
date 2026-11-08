@@ -50,9 +50,9 @@ impl App {
         self.st.game.game = game;
     }
 
-    /// уведомления сейчас только в историю: «не беспокоить» или игра на весь экран
+    /// уведомления сейчас только в историю: «не беспокоить», игра на весь экран или показ экрана
     pub fn quiet(&self) -> bool {
-        self.st.set.dnd || (self.st.set.game_dnd && (self.st.game.game || self.st.game.fullscreen))
+        self.st.quiet()
     }
 }
 

@@ -238,6 +238,9 @@ fn tab_bar_look(ui: &mut Ui, st: &State, b: R) {
         num_btn(ui, R::new(col(i as i32), y, cw, 26), label, s.num(k), k);
     }
     y += 34;
+    let ws = if s.ws_style == "dots" { "точки" } else { "квадраты" };
+    opt_btn(ui, R::new(col(0), y, cw * 2 + (col(1) - col(0) - cw), 26), "рабочие столы", ws, Act::SCycle("ws_style"));
+    y += 32;
     opt_btn(ui, R::new(col(0), y, cw, 26), "цп/память", cpu, Act::SCycle("cpu_style"));
     ui.toggle(R::new(col(1), y, cw, 26), "часы с секундами", "", s.clock_seconds, Act::SBool("clock_seconds"));
     ui.toggle(R::new(col(2), y, cw, 26), "дата в часах", "", s.clock_date, Act::SBool("clock_date"));

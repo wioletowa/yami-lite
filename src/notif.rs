@@ -179,13 +179,35 @@ pub fn draw_osd(ui: &mut Ui, st: &State, w: i32, _h: i32) {
     let Some((kind, _)) = st.osd else { return };
     let fr = R::new(0, 0, w - 8, 56);
     ui.cv.pxbox(fr, &BoxStyle::new(t.glass_panel(), t.border).shadow(4));
+    // шкала: значок, подпись, значение справа, полоса
+    let gauge = |ui: &mut Ui, icon: &str, label: &str, val: &str, k: f32, off: bool| {
+        ui.cv.icon(icon, 12, 11, 2, if off { t.text_faint } else { t.red });
+        ui.text_in(PX, R::new(34, 8, 140, 20), label, t.text_dim);
+        ui.text_right(PX, R::new(12, 8, fr.w - 24, 20), val, if off { t.text_faint } else { t.text });
+        ui.cv.gauge(R::new(12, 34, fr.w - 24, 10), 20, if off { 0.0 } else { k.min(1.0) }, if k > 1.0 { t.ember } else { t.red }, t.surface_hi.lerp(t.border, 0.45), 2);
+    };
+    // вкл/выкл: значок в плашке и надпись
+    let state = |ui: &mut Ui, icon: &str, label: &str, on: bool| {
+        let b = R::new(10, 12, 44, 32);
+        ui.cv.pxbox(b, &BoxStyle::new(if on { t.red } else { t.surface }, if on { t.ember } else { t.border }).bevel(true));
+        ui.cv.icon(icon, b.x + 15, b.y + 9, 2, if on { t.on_accent } else { t.text_faint });
+        ui.text_in(PX, R::new(66, 10, fr.w - 76, 20), label, t.text);
+        ui.text_in(PX, R::new(66, 30, fr.w - 76, 18), if on { "включён" } else { "выключен" }, if on { t.red } else { t.text_faint });
+    };
+    let pct = |v: f64| format!("{}%", (v * 100.0).round());
     if kind == "volume" {
         let a = &st.audio;
-        ui.cv.icon(if a.muted { "mute" } else { "speaker" }, 12, 11, 2, t.red);
-        ui.text_in(PX, R::new(34, 8, 100, 20), "звук", t.text_dim);
-        let v = if a.muted { "тишина".to_string() } else { format!("{}%", (a.volume * 100.0).round()) };
-        ui.text_right(PX, R::new(12, 8, fr.w - 24, 20), &v, if a.muted { t.text_faint } else { t.text });
-        ui.cv.gauge(R::new(12, 34, fr.w - 24, 10), 20, if a.muted { 0.0 } else { a.volume as f32 }, if a.volume > 1.0 { t.ember } else { t.red }, t.surface_hi.lerp(t.border, 0.45), 2);
+        gauge(ui, if a.muted { "mute" } else { "speaker" }, "звук", &if a.muted { crate::i18n::tr("тишина").to_string() } else { pct(a.volume) }, a.volume as f32, a.muted);
+    } else if kind == "mic" {
+        let a = &st.audio;
+        gauge(ui, "mic", "микрофон", &if a.mic_muted { crate::i18n::tr("выключен").to_string() } else { pct(a.mic) }, a.mic as f32, a.mic_muted);
+    } else if kind == "bright" {
+        let b = st.leds.bright.unwrap_or(0.0);
+        gauge(ui, "sun", "яркость", &pct(b as f64), b, false);
+    } else if kind == "caps" {
+        state(ui, "up", "Caps Lock", st.leds.caps);
+    } else if kind == "num" {
+        state(ui, "calc", "Num Lock", st.leds.num);
     } else {
         let b = R::new(10, 12, 44, 32);
         ui.cv.pxbox(b, &BoxStyle::new(t.red, t.ember).bevel(true));
@@ -354,11 +376,13 @@ impl App {
 pub const POS: &[(&str, &str)] =
     &[("top-right", "справа сверху"), ("top-left", "слева сверху"), ("top", "сверху по центру"), ("bottom-right", "справа снизу"), ("bottom-left", "слева снизу"), ("bottom", "снизу по центру")];
 pub const OSD_POS: &[(&str, &str)] = &[("bottom", "снизу"), ("top", "сверху"), ("center", "по центру")];
+/// на что OSD может отвечать: ключ, подпись в настройках
+pub const OSD_KINDS: &[(&str, &str)] = &[("volume", "громкость"), ("mic", "микрофон"), ("bright", "яркость"), ("layout", "раскладка"), ("caps", "Caps Lock"), ("num", "Num Lock")];
 
 impl App {
-    /// OSD громкости, яркости, раскладки, таймера снимка (osdPos)
+    /// OSD громкости, микрофона, яркости, раскладки, Caps и Num Lock — если включён (osdKinds, osdPos)
     pub fn show_osd(&mut self, kind: &'static str) {
-        if self.st.locked {
+        if self.st.locked || !self.st.set.osd_kinds.iter().any(|k| k == kind) {
             return;
         }
         let fresh = self.st.osd.is_none();

@@ -134,7 +134,7 @@ fn cal(ui: &mut Ui, st: &State, b: R) {
     let nr = R::new(nx, b.y, b.right() - nx, b.h);
     let n = st.notifs.history.len();
     let sub = if n == 0 { String::new() } else { format!("{n}") };
-    ui.cv.icon(if st.set.dnd { "bellx" } else { "bell" }, nr.x, nr.y + 3, 2, t.red);
+    ui.cv.icon(if st.quiet() { "bellx" } else { "bell" }, nr.x, nr.y + 3, 2, t.red);
     ui.text_in(PX, R::new(nr.x + 22, nr.y, 160, 20), &crate::tf!("уведомления {sub}", "notifications {sub}"), t.text);
     ui.button(R::new(nr.right() - 172, nr.y - 2, 104, 24), "не беспокоить", "", Tone::Ghost, st.set.dnd, true, Act::Dnd);
     ui.button(R::new(nr.right() - 64, nr.y - 2, 64, 24), "очистить", "", Tone::Ghost, false, n > 0, Act::NotifClear);

@@ -29,10 +29,17 @@ impl App {
             }
             Msg::Ipc(cmd) => self.ipc(&cmd),
             Msg::Audio(a) => {
-                let touched = self.st.audio.ready && (a.volume != self.st.audio.volume || a.muted != self.st.audio.muted);
+                let old = &self.st.audio;
+                let touched = old.ready && (a.volume != old.volume || a.muted != old.muted);
+                let mic = old.ready && (a.mic != old.mic || a.mic_muted != old.mic_muted);
                 self.st.audio = a;
-                if touched && self.st.started.elapsed() > Duration::from_millis(2500) {
-                    self.show_osd("volume");
+                // первые секунды — состояние при старте, а не действие человека
+                if self.st.started.elapsed() > Duration::from_millis(2500) {
+                    if touched {
+                        self.show_osd("volume");
+                    } else if mic {
+                        self.show_osd("mic");
+                    }
                 }
                 self.dirty_where(|k| matches!(k, SKind::Bar | SKind::Popup | SKind::Osd));
             }
@@ -101,6 +108,18 @@ impl App {
                 self.dirty_where(|k| matches!(k, SKind::Popup | SKind::Bar));
             }
             Msg::Pam(ok) => self.on_pam(ok),
+            Msg::Leds(l) => {
+                let old = std::mem::replace(&mut self.st.leds, l);
+                if self.st.started.elapsed() > Duration::from_millis(2500) {
+                    if old.caps != l.caps {
+                        self.show_osd("caps");
+                    } else if old.num != l.num {
+                        self.show_osd("num");
+                    } else if old.bright.is_some() && old.bright != l.bright {
+                        self.show_osd("bright");
+                    }
+                }
+            }
             Msg::Wall(n, img, accent) => self.wall_ready(n, img, accent),
             Msg::WallsListed(gen, dir, files, more) => self.walls_listed(gen, dir, files, more),
             Msg::WallThumb(gen, i, img) => self.walls_thumb(gen, i, img),

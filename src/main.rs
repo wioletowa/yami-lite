@@ -25,6 +25,7 @@ mod config;
 mod ipc;
 mod keys;
 mod lyrics;
+mod leds;
 mod lock;
 mod media;
 mod menu;

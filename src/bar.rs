@@ -5,7 +5,7 @@ use crate::app::{App, SKind, State, BAR_H};
 use crate::clock::{local_now, RU_DAY};
 use crate::config::Settings;
 use crate::font::{self, PX};
-use crate::gfx::{BoxStyle, R};
+use crate::gfx::{BoxStyle, C, R};
 use crate::icons;
 use crate::theme::CLEAR;
 use crate::ui::{Act, Cur, Tone, Ui};
@@ -203,6 +203,56 @@ pub fn tray_icon(ui: &mut Ui, it: &crate::dbus::TrayItem, x: i32, y: i32, pixel:
     }
 }
 
+/// красный пиксельный треугольник «требует внимания» (срочное окно на столе): вершиной вверх, 7×4
+fn attention(ui: &mut Ui, x: i32, y: i32) {
+    let red = C(0xffe0302a);
+    for row in 0..4 {
+        ui.cv.fill(R::new(x + 3 - row, y + row * 2, 1 + row * 2, 2), red);
+    }
+}
+
+/// столы точками: пустой — тусклая точка, с окнами — светлая, активный — квадрат цвета акцента,
+/// в который точка вырастает ступенями по 2 px (и обратно у прошлого); в обзоре — тире
+fn workspace_dots(ui: &mut Ui, st: &State, list: &[crate::niri::Ws], x: i32, cy: i32) {
+    let t = ui.t;
+    let active = list.iter().find(|w| w.active).map_or(0, |w| w.id);
+    let (mut cur, mut prev, mut at) = st.ws_anim.get();
+    if active != cur {
+        (prev, cur, at) = (cur, active, std::time::Instant::now());
+        st.ws_anim.set((cur, prev, at));
+    }
+    let dur = if st.set.anim() { 180.0 * st.set.anim_speed.max(0.1) } else { 0.0 };
+    let k = if dur == 0.0 { 1.0 } else { (at.elapsed().as_millis() as f32 / dur).min(1.0) };
+    if k < 1.0 {
+        ui.anim = true;
+    }
+    // размер ступенями: точка 4 px → квадрат 14 px
+    let size = |grow: f32| 4 + ((grow * 5.0).round() as i32) * 2;
+    for (i, ws) in list.iter().enumerate() {
+        let r = R::new(x + i as i32 * 18, cy - 9, 18, 18);
+        let busy = st.niri.has_windows(ws.id);
+        let hov = ui.hover(r);
+        let grow = if ws.id == cur { k } else if ws.id == prev { 1.0 - k } else { 0.0 };
+        let (cx, cyy) = (r.x + 7, r.cy());
+        if ws.active && st.niri.overview {
+            ui.cv.fill(R::new(cx - 6, cyy - 1, 14, 4), t.red);
+        } else {
+            let sz = size(grow);
+            let base = if hov { t.text } else if busy { t.text_dim } else { t.border };
+            let c = if grow > 0.0 { base.lerp(t.red, grow) } else { base };
+            ui.cv.fill(R::new(cx + 1 - sz / 2, cyy + 1 - sz / 2, sz, sz), c);
+            if grow >= 1.0 {
+                // у активного — светлая фаска сверху слева, как у пиксельных кнопок
+                ui.cv.fill(R::new(cx + 1 - sz / 2, cyy + 1 - sz / 2, sz, 2), t.ember);
+            }
+        }
+        if ws.urgent && !ws.active {
+            attention(ui, cx - 2, r.y - 1);
+        }
+        ui.zone(r, Act::Ws(ws.id), Cur::Pointer);
+    }
+}
+
 /// модуль бара: рисует (или только меряет) с левого края x, возвращает ширину
 fn module(ui: &mut Ui, st: &State, out: &str, m: &str, x: i32, measure: bool) -> i32 {
     let t = ui.t;
@@ -226,30 +276,37 @@ fn module(ui: &mut Ui, st: &State, out: &str, m: &str, x: i32, measure: bool) ->
         }
         "workspaces" => {
             let list = st.niri.bar_ws(out);
-            let w = list.len() as i32 * 26 - 4;
+            let dots = st.set.ws_style == "dots";
+            let step = if dots { 18 } else { 26 };
+            let w = list.len() as i32 * step - 4;
             if measure {
                 return w.max(0);
             }
-            let mut wx = x;
-            for ws in list {
-                let r = R::new(wx, cy - 11, 22, 22);
-                let busy = st.niri.has_windows(ws.id);
-                let hov = ui.hover(r);
-                let fill = if ws.active { t.red } else if hov { t.surface_hi } else if busy { t.surface } else { CLEAR };
-                let outline = if ws.urgent || ws.active { t.ember } else if busy { t.border } else { t.border.fade(0.5) };
-                // срочный стол мигает
-                let blink = ws.urgent && !ws.active && (st.started.elapsed().as_millis() / 400) % 2 == 1;
-                if !blink {
-                    ui.cv.pxbox(r, &BoxStyle::new(fill, outline).bevel(ws.active || busy).shadow(if ws.active { 2 } else { 0 }));
-                    let label = ws.name.as_ref().and_then(|n| n.chars().next()).map(|c| c.to_string()).unwrap_or_else(|| ws.idx.to_string());
-                    let c = if ws.active { t.on_accent } else if busy { t.text } else { t.text_faint };
-                    ui.text_center(PX, r, &label, c);
+            if dots {
+                workspace_dots(ui, st, &list, x, cy);
+            } else {
+                let mut wx = x;
+                for ws in list {
+                    let r = R::new(wx, cy - 11, 22, 22);
+                    let busy = st.niri.has_windows(ws.id);
+                    let hov = ui.hover(r);
+                    if ws.active && st.niri.overview {
+                        // обзор: активный стол — пиксельное тире
+                        ui.cv.fill(R::new(r.x + 3, r.cy() - 2, 16, 4), t.red);
+                    } else {
+                        let fill = if ws.active { t.red } else if hov { t.surface_hi } else if busy { t.surface } else { CLEAR };
+                        let outline = if ws.active { t.ember } else if busy { t.border } else { t.border.fade(0.5) };
+                        ui.cv.pxbox(r, &BoxStyle::new(fill, outline).bevel(ws.active || busy).shadow(if ws.active { 2 } else { 0 }));
+                        // номер — позиция стола, как у Mod+N (focus-workspace N)
+                        let c = if ws.active { t.on_accent } else if busy { t.text } else { t.text_faint };
+                        ui.text_center(PX, r, &ws.idx.to_string(), c);
+                    }
+                    if ws.urgent && !ws.active {
+                        attention(ui, r.right() - 7, r.y - 2);
+                    }
+                    ui.zone(r, Act::Ws(ws.id), Cur::Pointer);
+                    wx += step;
                 }
-                if ws.urgent && !ws.active {
-                    ui.anim = true;
-                }
-                ui.zone(r, Act::Ws(ws.id), Cur::Pointer);
-                wx += 26;
             }
             w
         }
@@ -517,8 +574,9 @@ fn module(ui: &mut Ui, st: &State, out: &str, m: &str, x: i32, measure: bool) ->
             if !measure {
                 let r = R::new(x - 2, 0, w + 4, H - 1);
                 let hov = ui.hover(r);
-                let c = if st.set.dnd { t.text_faint } else if hov { t.text_hi } else if n > 0 { t.red } else { t.text_dim };
-                ui.cv.icon(if st.set.dnd { "bellx" } else { "bell" }, x, cy - 7, 2, c);
+                let quiet = st.quiet();
+                let c = if quiet { t.text_faint } else if hov { t.text_hi } else if n > 0 { t.red } else { t.text_dim };
+                ui.cv.icon(if quiet { "bellx" } else { "bell" }, x, cy - 7, 2, c);
                 if n > 0 {
                     ui.text_in(PX, R::new(x + 18, 0, 30, H - 1), &n.to_string(), t.text);
                 }

@@ -46,6 +46,15 @@ impl App {
                 self.settings_changed();
                 return true;
             }
+            Act::SOsd(k) => {
+                match s.osd_kinds.iter().position(|x| x == k) {
+                    Some(i) => {
+                        s.osd_kinds.remove(i);
+                    }
+                    None => s.osd_kinds.push(k.to_string()),
+                }
+                self.settings_changed();
+            }
             Act::SBool(k) => {
                 match *k {
                     "animations" => s.animations = !s.animations,
@@ -62,6 +71,7 @@ impl App {
                     "bat_hide_full" => s.bat_hide_full = !s.bat_hide_full,
                     "clock_date" => s.clock_date = !s.clock_date,
                     "dnd" => s.dnd = !s.dnd,
+                    "cast_dnd" => s.cast_dnd = !s.cast_dnd,
                     "dock" => s.dock = !s.dock,
                     "dock_bounce" => s.dock_bounce = !s.dock_bounce,
                     "dock_running" => s.dock_running = !s.dock_running,
@@ -87,6 +97,16 @@ impl App {
             Act::SCycle(k) => match *k {
                 "cpu_style" => {
                     s.cpu_style = cycle(&[("gauge", ""), ("graph", ""), ("number", "")], &s.cpu_style).into();
+                    self.settings_changed();
+                }
+                "osd_test" => {
+                    // первое включённое: выключенные OSD не показываются и для пробы
+                    if let Some(k) = crate::notif::OSD_KINDS.iter().map(|k| k.0).find(|k| self.st.set.osd_kinds.iter().any(|x| x == k)) {
+                        self.show_osd(k);
+                    }
+                }
+                "ws_style" => {
+                    s.ws_style = if s.ws_style == "dots" { "boxes" } else { "dots" }.into();
                     self.settings_changed();
                 }
                 "notif_pos" => {

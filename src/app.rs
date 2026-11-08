@@ -142,6 +142,8 @@ pub enum Msg {
     Net(net::NetState),
     Bt(net::BtState),
     Pam(bool),
+    /// яркость и лампочки клавиатуры (leds.rs)
+    Leds(crate::leds::Leds),
     Art(String, Option<crate::gfx::Img>),
     /// текст песни нашёлся (или нет) для трека Lyrics.key
     Lyrics(crate::lyrics::Lyrics),
@@ -193,6 +195,7 @@ pub struct State {
     pub editing: bool,
     pub notifs: notif::Notifs,
     pub osd: Option<(&'static str, Instant)>,
+    pub leds: crate::leds::Leds,
     pub audio: audio::AudioState,
     /// показанный плеер (media_pick_sync), все живые и выбранный в шапке всплывашки (#24)
     pub media: media::MediaState,
@@ -247,6 +250,8 @@ pub struct State {
     /// наведение в доке для анимации: (сейчас, до этого, когда сменилось)
     pub dock_hov: std::cell::Cell<(Option<usize>, Option<usize>, Instant)>,
     pub trash_full: bool,
+    /// столы-точки: активный стол сейчас, прошлый и когда сменился (анимация в баре)
+    pub ws_anim: std::cell::Cell<(u64, u64, Instant)>,
     /// выбор обоев: папка, клетки, миниатюры видимых строк
     pub walls: crate::walls::Walls,
 }
@@ -338,6 +343,14 @@ pub struct App {
 pub(crate) const LOCK_BASE: u32 = u32::MAX - 64;
 
 impl State {
+    /// «не беспокоить» на деле: включено руками, игра в фокусе или идёт показ экрана — после игры и
+    /// демонстрации уведомления снова приходят сами
+    pub fn quiet(&self) -> bool {
+        self.set.dnd || (self.set.game_dnd && (self.game.game || self.game.fullscreen)) || (self.set.cast_dnd && self.niri.casting)
+    }
+}
+
+impl State {
     pub fn new(set: Settings, niri: Niri) -> State {
         yami_px::gfx::set_reveal(yami_px::gfx::Reveal::from_id(&set.reveal), set.reveal_grain);
         State {
@@ -362,6 +375,7 @@ impl State {
             editing: false,
             notifs: notif::Notifs::default(),
             osd: None,
+            leds: Default::default(),
             audio: audio::AudioState::default(),
             media: media::MediaState::default(),
             players: Vec::new(),
@@ -404,6 +418,7 @@ impl State {
             dock_bounce: vec![],
             dock_hov: std::cell::Cell::new((None, None, Instant::now())),
             trash_full: false,
+            ws_anim: std::cell::Cell::new((0, 0, Instant::now())),
             walls: Default::default(),
             set,
         }
@@ -519,6 +534,7 @@ pub fn run() {
     audio::spawn(tx.clone());
     media::spawn(tx.clone());
     net::spawn_bt(tx.clone());
+    crate::leds::spawn(tx.clone());
     app.write_palette();
     // обои: при старте палитра обычно та же, theme.py не запускается — готовим картинку сами
     app.sync_wall();

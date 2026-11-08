@@ -47,6 +47,8 @@ pub struct Niri {
     pub kb_names: Vec<String>,
     pub kb_idx: usize,
     pub overview: bool,
+    /// идёт показ экрана (запись, трансляция, демонстрация): niri CastsChanged
+    pub casting: bool,
     /// спрятанные «свёрнутые» окна
     pub hidden: Vec<u64>,
     pub min_order: Vec<u64>,
@@ -390,6 +392,9 @@ impl Niri {
             "KeyboardLayoutSwitched" => {
                 self.kb_idx = d["idx"].as_u64().unwrap_or(0) as usize;
                 out.push(Ev::KbSwitched);
+            }
+            "CastsChanged" => {
+                self.casting = d["casts"].as_array().is_some_and(|c| !c.is_empty());
             }
             "OverviewOpenedOrClosed" => {
                 self.overview = d["is_open"].as_bool().unwrap_or(false);

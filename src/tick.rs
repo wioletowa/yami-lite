@@ -109,7 +109,7 @@ impl App {
         }
         self.dock_tick();
         if let Some((_, t)) = self.st.osd {
-            if t.elapsed() > Duration::from_millis(1500) {
+            if t.elapsed().as_secs_f32() > self.st.set.osd_time {
                 self.st.osd = None;
                 self.close_kind(&SKind::Osd);
             }

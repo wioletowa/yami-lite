@@ -276,27 +276,39 @@ pub(crate) fn tab_system(ui: &mut Ui, st: &State, b: R) {
 }
 
 /// уведомления: как ведут себя карточки, где они и где громкость с яркостью
+/// уведомления: как ведут себя карточки и где они; OSD — на что отвечает, где и сколько висит
 pub(crate) fn tab_notif(ui: &mut Ui, st: &State, b: R) {
     let s = &st.set;
     let half = (b.w - 20) / 2;
     let (lx, rx) = (b.x, b.x + half + 20);
     let mut y = title(ui, b.x, b.y, b.w, "карточки");
     ui.toggle(R::new(lx, y, half, 40), "не беспокоить", "только срочные", s.dnd, Act::SBool("dnd"));
-    ui.slider(R::new(rx, y, half, 40), "сколько висит", (s.notif_timeout as f32 - 2.0) / 28.0, &crate::tf!("{} с", "{} s", s.notif_timeout), 12, Act::SSlider("notif_timeout", 2.0, 30.0, 14));
+    ui.toggle(R::new(rx, y, half, 40), "тихо при показе экрана", "демонстрация или запись — в историю", s.cast_dnd, Act::SBool("cast_dnd"));
     y += 48;
-    ui.toggle(R::new(lx, y, half, 40), "картинки в карточках", "значки и превью от программ", s.notif_images, Act::SBool("notif_images"));
-    y += 46;
+    ui.slider(R::new(lx, y, half, 40), "сколько висит", (s.notif_timeout as f32 - 2.0) / 28.0, &crate::tf!("{} с", "{} s", s.notif_timeout), 12, Act::SSlider("notif_timeout", 2.0, 30.0, 14));
+    ui.toggle(R::new(rx, y, half, 40), "картинки в карточках", "значки и превью от программ", s.notif_images, Act::SBool("notif_images"));
+    y += 48;
     opt_btn(ui, R::new(lx, y, half, 26), "на экране сразу", &s.notif_max.to_string(), Act::SCycle("notif_max"));
     opt_btn(ui, R::new(rx, y, half, 26), "в истории", &s.notif_history.to_string(), Act::SCycle("notif_history"));
-    y += 40;
-    y = title(ui, b.x, y, b.w, "где на экране");
-    opt_btn(ui, R::new(lx, y, half, 26), "карточки", crate::widgets::name_of(crate::notif::POS, &s.notif_pos), Act::SCycle("notif_pos"));
-    opt_btn(ui, R::new(rx, y, half, 26), "громкость и яркость", crate::widgets::name_of(crate::notif::OSD_POS, &s.osd_pos), Act::SCycle("osd_pos"));
     y += 32;
-    num_btn(ui, R::new(lx, y, half, 26), "от края", s.num("notif_offset"), "notif_offset");
+    opt_btn(ui, R::new(lx, y, half, 26), "где", crate::widgets::name_of(crate::notif::POS, &s.notif_pos), Act::SCycle("notif_pos"));
+    num_btn(ui, R::new(rx, y, half, 26), "от края", s.num("notif_offset"), "notif_offset");
+    y += 40;
+    y = title(ui, b.x, y, b.w, "OSD — громкость, микрофон, яркость, клавиши");
+    let cw = (b.w - 24) / 3;
+    for (i, (k, name)) in crate::notif::OSD_KINDS.iter().enumerate() {
+        let on = s.osd_kinds.iter().any(|x| x == k);
+        let r = R::new(b.x + (i as i32 % 3) * (cw + 12), y + (i as i32 / 3) * 32, cw, 26);
+        ui.toggle(r, name, "", on, Act::SOsd(k));
+    }
+    y += 70;
+    ui.slider(R::new(lx, y, half, 40), "сколько висит", (s.osd_time - 0.5) / 4.5, &crate::tf!("{:.1} с", "{:.1} s", s.osd_time), 9, Act::SSlider("osd_time", 0.5, 5.0, 9));
+    opt_btn(ui, R::new(rx, y + 8, half, 26), "где", crate::widgets::name_of(crate::notif::OSD_POS, &s.osd_pos), Act::SCycle("osd_pos"));
+    y += 48;
     if s.osd_pos != "center" {
         num_btn(ui, R::new(rx, y, half, 26), "от края", s.num("osd_offset"), "osd_offset");
     }
+    ui.button(R::new(lx, y, half, 26), "показать", "eye", Tone::Plain, false, true, Act::SCycle("osd_test"));
     y += 40;
     y = title(ui, b.x, y, b.w, "сервер");
     ui.toggle(R::new(lx, y, half, 40), "сервер уведомлений", "выкл — mako, dunst (после перезапуска)", s.agent_notif, Act::SBool("agent_notif"));

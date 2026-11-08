@@ -128,6 +128,8 @@ pub struct Settings {
     pub bar_right: Vec<String>,
     /// gauge | graph | number
     pub cpu_style: String,
+    /// столы в баре: boxes — квадраты с номером, dots — точки, активный — квадрат
+    pub ws_style: String,
     /// модуль temp: "full" — как цп и память (подпись, шкала или график), "compact" — столбик и число
     pub temp_style: String,
     /// трей: "icons" — значки в баре, "arrow" — одна стрелка, значки во всплывашке
@@ -178,11 +180,17 @@ pub struct Settings {
     pub lock_after: u32,
     pub screen_off_after: u32,
     pub dnd: bool,
+    /// пока показывается экран (демонстрация, запись) — уведомления молча в историю
+    pub cast_dnd: bool,
     pub notif_timeout: u32,
     /// где карточки уведомлений: top-right | top-left | top | bottom-right | bottom-left | bottom
     pub notif_pos: String,
     /// где OSD громкости и яркости: bottom | top | center
     pub osd_pos: String,
+    /// на что OSD отвечает (OSD_KINDS): громкость, микрофон, яркость, раскладка, Caps, Num
+    pub osd_kinds: Vec<String>,
+    /// сколько OSD висит, секунд
+    pub osd_time: f32,
     /// отступ карточек уведомлений от края экрана (от бара, если он у того края), px (#8)
     pub notif_offset: i32,
     /// отступ OSD от края экрана (сверху — от низа бара), px; по центру не нужен (#8)
@@ -349,6 +357,7 @@ impl Default for Settings {
             bar_center: v(&["tasks"]),
             bar_right: v(&["tray", "sep", "net", "kb", "cpu", "ram", "bat", "sep", "vol", "sep", "clock", "sep", "settings", "power"]),
             cpu_style: "gauge".into(),
+            ws_style: "boxes".into(),
             temp_style: "full".into(),
             tray_mode: "icons".into(),
             tray_pixel: false,
@@ -375,9 +384,12 @@ impl Default for Settings {
             lock_after: 10,
             screen_off_after: 15,
             dnd: false,
+            cast_dnd: true,
             notif_timeout: 7,
             notif_pos: "top-right".into(),
             osd_pos: "bottom".into(),
+            osd_kinds: crate::notif::OSD_KINDS.iter().map(|k| k.0.to_string()).collect(),
+            osd_time: 1.5,
             notif_offset: 10,
             osd_offset: 64,
             dock: true,
@@ -472,6 +484,9 @@ impl Settings {
         if self.bar_pos != "bottom" {
             self.bar_pos = "top".into();
         }
+        if self.ws_style != "dots" {
+            self.ws_style = "boxes".into();
+        }
         if self.temp_style != "compact" {
             self.temp_style = "full".into();
         }
@@ -490,6 +505,8 @@ impl Settings {
         if !crate::notif::POS.iter().any(|(k, _)| *k == self.notif_pos) {
             self.notif_pos = "top-right".into();
         }
+        self.osd_kinds.retain(|k| crate::notif::OSD_KINDS.iter().any(|x| x.0 == k));
+        self.osd_time = self.osd_time.clamp(0.5, 5.0);
         if !crate::notif::OSD_POS.iter().any(|(k, _)| *k == self.osd_pos) {
             self.osd_pos = "bottom".into();
         }
