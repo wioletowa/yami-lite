@@ -24,7 +24,8 @@ pub struct Stream {
     pub idx: u32,
     pub app: String,
     pub title: String,
-    pub icon: String,
+    /// имена, по которым искать значок, — по порядку (icon_names)
+    pub icon: Vec<String>,
     pub vol: f64,
     pub muted: bool,
 }
@@ -101,7 +102,7 @@ fn streams() -> Vec<Stream> {
                         idx: x["index"].as_u64().unwrap_or(0) as u32,
                         app: p["application.name"].as_str().or(p["application.process.binary"].as_str()).unwrap_or("?").into(),
                         title: p["media.name"].as_str().unwrap_or("").into(),
-                        icon: p["application.icon_name"].as_str().or(p["application.process.binary"].as_str()).unwrap_or("").into(),
+                        icon: icon_names(p),
                         vol: vol_of(x),
                         muted: x["mute"].as_bool().unwrap_or(false),
                     }
@@ -414,4 +415,32 @@ fn viz_thread(tx: Sender<Msg>) {
             }
         })
         .ok();
+}
+
+/// имена значка потока по порядку: свой application.icon_name, бинарник (и он же без -bin —
+/// zen-bin это zen), имя программы, имя узла PipeWire. Не у всех есть первые: Spotify шлёт одно имя
+fn icon_names(p: &serde_json::Value) -> Vec<String> {
+    let mut v: Vec<String> = vec![];
+    let mut add = |s: &str| {
+        let s = s.trim().to_lowercase();
+        if !s.is_empty() && !v.contains(&s) {
+            v.push(s);
+        }
+    };
+    for k in ["application.icon_name", "application.process.binary"] {
+        if let Some(s) = p[k].as_str() {
+            add(s);
+            for suf in ["-bin", "-wrapped", ".bin"] {
+                if let Some(base) = s.strip_suffix(suf) {
+                    add(base);
+                }
+            }
+        }
+    }
+    for k in ["application.name", "node.name"] {
+        if let Some(s) = p[k].as_str() {
+            add(s);
+        }
+    }
+    v
 }

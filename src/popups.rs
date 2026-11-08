@@ -223,7 +223,9 @@ fn sound(ui: &mut Ui, st: &State, b: R) {
         ui.text_in(PX, R::new(b.x, y, b.w, 20), "программы", t.text_dim);
         y += 26;
         for s in a.streams.iter().take(6) {
-            let icon = crate::icons::icon_for(&st.apps, &s.icon.to_lowercase());
+            // первое имя, у которого есть свой значок (через .desktop или тему значков)
+            let names: Vec<String> = s.icon.iter().map(|n| crate::icons::icon_for(&st.apps, n)).collect();
+            let icon = names.iter().find(|n| ui.ic.has_app(n)).or(names.first()).cloned().unwrap_or_default();
             ui.app_icon(&icon, b.x + 4, y + 20, 16, if s.muted { 0.4 } else { 1.0 });
             let label = if s.title.is_empty() || s.title == s.app { s.app.clone() } else { format!("{} — {}", s.app, s.title) };
             let v = if s.muted { "тихо".to_string() } else { format!("{:.0}%", s.vol * 100.0) };

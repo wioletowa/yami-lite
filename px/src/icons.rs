@@ -238,6 +238,15 @@ impl Icons {
     }
 
     /// файл значка программы с запасными вариантами: имя, в нижнем регистре, «программа»
+    /// у программы есть свой значок (не общий «программа»): выбрать из нескольких имён
+    pub fn has_app(&mut self, name: &str) -> bool {
+        if name.is_empty() {
+            return false;
+        }
+        let low = name.to_lowercase();
+        self.find(name, 16).is_some() || (low != name && self.find(&low, 16).is_some())
+    }
+
     fn app_path(&mut self, name: &str, size: i32) -> Option<PathBuf> {
         let low = name.to_lowercase();
         self.find(name, size).or_else(|| if low != name { self.find(&low, size) } else { None }).or_else(|| self.find("application-x-executable", size))
