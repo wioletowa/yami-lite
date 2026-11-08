@@ -99,13 +99,13 @@ fn cell(st: &State) -> i32 {
 
 /// число мест: запуск, программы, корзина
 fn slots(st: &State, n: usize) -> i32 {
-    n as i32 + st.set.dock_launcher as i32 + st.set.dock_trash as i32
+    n as i32 + launcher(st) as i32 + st.set.dock_trash as i32
 }
 
 /// размер поверхности (длина вдоль края, толщина поперёк)
 pub fn size(st: &State) -> (i32, i32) {
     let n = items(st).len();
-    let len = slots(st, n) * cell(st) + 16 + if st.set.dock_launcher { 9 } else { 0 } + if st.set.dock_trash { 9 } else { 0 };
+    let len = slots(st, n) * cell(st) + 16 + if launcher(st) { 9 } else { 0 } + if st.set.dock_trash { 9 } else { 0 };
     let thick = st.set.dock_size + 24 + SPARE;
     if vertical(st) {
         (thick + 140, len)
@@ -136,6 +136,11 @@ fn bounce(st: &State, id: &str) -> i32 {
     } else {
         STEPS[i]
     }
+}
+
+/// кнопка лаунчера: включена и есть своя команда (launcherCmd)
+fn launcher(st: &State) -> bool {
+    st.set.dock_launcher && !st.set.launcher_cmd.trim().is_empty()
 }
 
 pub fn draw(ui: &mut Ui, st: &State, w: i32, h: i32) {
@@ -172,9 +177,9 @@ pub fn draw(ui: &mut Ui, st: &State, w: i32, h: i32) {
             _ => R::new(r.x, r.y - d, r.w, r.h),
         }
     };
-    if st.set.dock_launcher {
+    if launcher(st) {
         let r = slot(pos);
-        let hov = ui.hover(r) || st.modal == Some(crate::app::Modal::Launcher);
+        let hov = ui.hover(r);
         let ic = lift(R::new(r.x + (r.w - sz) / 2, r.y + (r.h - sz) / 2, sz, sz), if hov { 3 } else { 0 });
         let q = (sz / 2 - 3).max(4);
         for i in 0..4 {

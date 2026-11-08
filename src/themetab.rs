@@ -42,7 +42,7 @@ pub fn tab(ui: &mut Ui, st: &State, b: R, head_w: i32) {
         ui.zone(x, Act::SThemeDel(i), Cur::Pointer);
     }
     if st.themes.len() > shown {
-        let more = crate::tf!("ещё {} — yami theme list", "{} more: yami theme list", "mais {}: yami theme list", st.themes.len() - shown);
+        let more = crate::tf!("ещё {} — yami theme list", "{} more: yami theme list", st.themes.len() - shown);
         ui.cv.text_in(ui.f, PX, R::new(b.x, y + rows * (CARD_H + 8), b.w, 18), &more, t.text_faint);
     }
     y = b.bottom() - 80;
@@ -64,9 +64,9 @@ impl App {
         let tx = self.tx.clone();
         std::thread::spawn(move || {
             let r = match op {
-                "apply" => crate::bundle::apply(&name).map(|_| crate::tf!("применена: {}", "applied: {}", "aplicado: {}", name)),
-                "remove" => crate::bundle::remove(&name).map(|_| crate::tf!("удалена: {}", "removed: {}", "removido: {}", name)),
-                "save" => crate::bundle::save("").map(|n| crate::tf!("сохранена: {}", "saved: {}", "salvo: {}", n)),
+                "apply" => crate::bundle::apply(&name).map(|_| crate::tf!("применена: {}", "applied: {}", name)),
+                "remove" => crate::bundle::remove(&name).map(|_| crate::tf!("удалена: {}", "removed: {}", name)),
+                "save" => crate::bundle::save("").map(|n| crate::tf!("сохранена: {}", "saved: {}", n)),
                 _ => Ok(String::new()),
             };
             let _ = tx.send(Msg::Themes(crate::bundle::cards(), r.unwrap_or_else(|e| e), op == "apply"));

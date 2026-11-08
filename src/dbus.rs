@@ -185,7 +185,7 @@ impl Notif {
         ["actions", "body", "body-markup", "icon-static", "persistence", "inline-reply"].iter().map(|s| s.to_string()).collect()
     }
     fn get_server_information(&self) -> (String, String, String, String) {
-        ("yami-shell".into(), "YAMI".into(), env!("CARGO_PKG_VERSION").into(), "1.2".into())
+        ("yami-lite".into(), "YAMI".into(), env!("CARGO_PKG_VERSION").into(), "1.2".into())
     }
 }
 
@@ -565,7 +565,7 @@ pub fn spawn(tx: Sender<Msg>, notif: bool, tray: bool) {
         .name("dbus".into())
         .spawn(move || {
             let Ok(c) = Connection::session() else {
-                eprintln!("{}", crate::tf!("dbus: нет сессионной шины", "dbus: no session bus", "dbus: sem barramento de sessão"));
+                eprintln!("{}", crate::tf!("dbus: нет сессионной шины", "dbus: no session bus"));
                 return;
             };
             let _ = CONN.set(c.clone());
@@ -575,7 +575,7 @@ pub fn spawn(tx: Sender<Msg>, notif: bool, tray: bool) {
                 let _ = c.object_server().at("/org/freedesktop/Notifications", Notif { tx: tx.clone(), next });
                 let flags = RequestNameFlags::ReplaceExisting | RequestNameFlags::AllowReplacement;
                 if let Err(e) = c.request_name_with_flags("org.freedesktop.Notifications", flags) {
-                    eprintln!("{}", crate::tf!("dbus: уведомления заняты другим сервером: {e}", "dbus: notifications are owned by another server: {e}", "dbus: outro servidor controla as notificações: {e}"));
+                    eprintln!("{}", crate::tf!("dbus: уведомления заняты другим сервером: {e}", "dbus: notifications are owned by another server: {e}"));
                 }
             }
             if !tray {

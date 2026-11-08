@@ -14,7 +14,7 @@ use smithay_client_toolkit::seat::keyboard::{KeyEvent, Keysym};
 use smithay_client_toolkit::shell::wlr_layer::{Anchor, KeyboardInteractivity, Layer};
 use smithay_client_toolkit::shell::WaylandSurface;
 
-pub const KINDS: &[(&str, &str)] = &[("clock", "часы"), ("graph", "график"), ("net", "сеть"), ("media", "музыка"), ("cal", "календарь"), ("weather", "погода"), ("script", "скрипт")];
+pub const KINDS: &[(&str, &str)] = &[("clock", "часы"), ("graph", "график"), ("net", "сеть"), ("media", "музыка"), ("cal", "календарь")];
 pub const SOURCES: &[(&str, &str)] = &[("cpu", "процессор"), ("ram", "память"), ("temp", "температура"), ("gpu", "видеокарта")];
 pub const STYLES: &[(&str, &str)] = &[("bars", "столбики"), ("line", "линия"), ("blocks", "клетки"), ("wave", "волна"), ("dots", "точки")];
 pub const ANIMS: &[(&str, &str)] = &[("scroll", "бегущий"), ("rise", "рост"), ("flicker", "мерцание"), ("none", "без анимации")];
@@ -46,7 +46,6 @@ pub fn size_of(w: &Widget) -> (i32, i32) {
         "graph" | "net" => ((220, 96), (300, 124), (440, 180)),
         "media" => ((320, 112), (400, 136), (500, 170)),
         "cal" => ((236, 220), (280, 252), (350, 316)),
-        "weather" => ((230, 96), (300, 150), (390, 176)),
         "script" => ((220, 64), (300, 110), (400, 160)),
         _ => ((200, 100), (300, 140), (400, 200)),
     };
@@ -79,23 +78,16 @@ pub fn widget_menu(w: &Widget) -> Vec<MItem> {
     let mut items = vec![];
     match w.kind.as_str() {
         "graph" => {
-            items.push(MItem::sub(&crate::tf!("источник: {}", "source: {}", "origem: {}", crate::i18n::tr(name_of(SOURCES, &w.source))), "chart", pick("source", SOURCES, &w.source)));
-            items.push(MItem::sub(&crate::tf!("вид: {}", "style: {}", "estilo: {}", crate::i18n::tr(name_of(STYLES, &w.style))), "grid", pick("style", STYLES, &w.style)));
-            items.push(MItem::sub(&crate::tf!("анимация: {}", "animation: {}", "animação: {}", crate::i18n::tr(name_of(ANIMS, &w.anim))), "eye", pick("anim", ANIMS, &w.anim)));
+            items.push(MItem::sub(&crate::tf!("источник: {}", "source: {}", crate::i18n::tr(name_of(SOURCES, &w.source))), "chart", pick("source", SOURCES, &w.source)));
+            items.push(MItem::sub(&crate::tf!("вид: {}", "style: {}", crate::i18n::tr(name_of(STYLES, &w.style))), "grid", pick("style", STYLES, &w.style)));
+            items.push(MItem::sub(&crate::tf!("анимация: {}", "animation: {}", crate::i18n::tr(name_of(ANIMS, &w.anim))), "eye", pick("anim", ANIMS, &w.anim)));
         }
         "net" => {
-            items.push(MItem::sub(&crate::tf!("вид: {}", "style: {}", "estilo: {}", crate::i18n::tr(name_of(STYLES, &w.style))), "grid", pick("style", STYLES, &w.style)));
-            items.push(MItem::sub(&crate::tf!("анимация: {}", "animation: {}", "animação: {}", crate::i18n::tr(name_of(ANIMS, &w.anim))), "eye", pick("anim", ANIMS, &w.anim)));
+            items.push(MItem::sub(&crate::tf!("вид: {}", "style: {}", crate::i18n::tr(name_of(STYLES, &w.style))), "grid", pick("style", STYLES, &w.style)));
+            items.push(MItem::sub(&crate::tf!("анимация: {}", "animation: {}", crate::i18n::tr(name_of(ANIMS, &w.anim))), "eye", pick("anim", ANIMS, &w.anim)));
         }
         "media" => {
-            items.push(MItem::sub(&crate::tf!("эквалайзер: {}", "equalizer: {}", "equalizador: {}", crate::i18n::tr(name_of(STYLES, &w.style))), "music", pick("style", STYLES, &w.style)));
-        }
-        "script" => {
-            // скрипты — те же, что модули бара: ~/.config/yami/modules
-            let names: Vec<MItem> = crate::plugins::scripts().into_iter().map(|n| MItem::new(&n, "", MAct::Widget(id, "source", n.clone())).check(n == w.source)).collect();
-            if !names.is_empty() {
-                items.push(MItem::sub(&crate::tf!("скрипт: {}", "script: {}", "script: {}", if w.source.is_empty() { "—" } else { &w.source }), "term", names));
-            }
+            items.push(MItem::sub(&crate::tf!("эквалайзер: {}", "equalizer: {}", crate::i18n::tr(name_of(STYLES, &w.style))), "music", pick("style", STYLES, &w.style)));
         }
         "clock" => {
             items.push(MItem::new("секунды", "", MAct::Widget(id, "seconds", String::new())).check(w.seconds));
@@ -103,8 +95,8 @@ pub fn widget_menu(w: &Widget) -> Vec<MItem> {
         }
         _ => {}
     }
-    items.push(MItem::sub(&crate::tf!("размер: {}", "size: {}", "tamanho: {}", crate::i18n::tr(name_of(SIZES, &w.size))), "max", pick("size", SIZES, &w.size)));
-    items.push(MItem::sub(&crate::tf!("цвет: {}", "color: {}", "cor: {}", crate::i18n::tr(name_of(COLORS, &w.color))), "image", pick("color", COLORS, &w.color)));
+    items.push(MItem::sub(&crate::tf!("размер: {}", "size: {}", crate::i18n::tr(name_of(SIZES, &w.size))), "max", pick("size", SIZES, &w.size)));
+    items.push(MItem::sub(&crate::tf!("цвет: {}", "color: {}", crate::i18n::tr(name_of(COLORS, &w.color))), "image", pick("color", COLORS, &w.color)));
     items.push(MItem::new("подложка", "", MAct::Widget(id, "frame", String::new())).check(w.frame));
     if matches!(w.kind.as_str(), "graph" | "net" | "media") {
         items.push(MItem::new("подпись", "", MAct::Widget(id, "label", String::new())).check(w.label));
@@ -115,83 +107,7 @@ pub fn widget_menu(w: &Widget) -> Vec<MItem> {
     items
 }
 
-// ── погода и скрипт (#6) ────────────────────────────────────────────────────
-/// погода на столе: значок, температура, что за погода и где; средний и большой — ещё дни
-fn weather(ui: &mut Ui, st: &State, w: &Widget, r: R, c: C) {
-    let t = ui.t;
-    let Some(wt) = crate::weather::ready(st) else {
-        let msg = crate::weather::status(st, "погода: город — в настройках → службы → сеть");
-        ui.cv.icon("cloud", r.x, r.y + 2, 2, t.text_faint);
-        ui.wrap(PX, R::new(r.x + 22, r.y, r.w - 22, r.h), &msg, t.text_faint, 3);
-        return;
-    };
-    let (cell, face) = match w.size.as_str() {
-        "s" => (4, font::px(32)),
-        "l" => (7, font::px(64)),
-        _ => (5, font::px(48)),
-    };
-    ui.cv.icon(crate::weather::icon(wt.code, wt.day), r.x, r.y + 4, cell, c);
-    let x = r.x + cell * 7 + 12;
-    let tw = ui.cv.text(ui.f, face, x, r.y, &crate::weather::deg(wt.temp), t.text);
-    let tx = x + tw + 12;
-    ui.text_in(PX, R::new(tx, r.y + 2, r.right() - tx, 18), crate::weather::text(wt.code), t.text_dim);
-    ui.cv.text_in(ui.f, PX, R::new(tx, r.y + 22, r.right() - tx, 18), &wt.place, t.text_faint);
-    let n = match w.size.as_str() {
-        "s" => 0,
-        "l" => 5,
-        _ => 4,
-    }
-    .min(wt.days.len());
-    if n == 0 {
-        return;
-    }
-    let y = r.bottom() - 54;
-    let cw = r.w / n as i32;
-    for (i, d) in wt.days.iter().take(n).enumerate() {
-        let b = R::new(r.x + i as i32 * cw, y, cw, 54);
-        ui.text_center(PX, R::new(b.x, b.y, b.w, 16), crate::weather::day_name(i, d), t.text_dim);
-        ui.cv.icon(crate::weather::icon(d.code, true), b.x + b.w / 2 - 7, b.y + 18, 2, c);
-        ui.cv.text_center(ui.f, PX, R::new(b.x, b.y + 36, b.w, 16), &format!("{} {}", crate::weather::deg(d.hi), crate::weather::deg(d.lo)), t.text_faint);
-    }
-}
 
-/// вывод скрипта из ~/.config/yami/modules на столе: значок и строки текста (как модуль бара,
-/// «\n» в JSON-поле text — новая строка); click — по щелчку
-fn script(ui: &mut Ui, st: &State, w: &Widget, r: R, c: C) {
-    let t = ui.t;
-    let p = st.plugins.shown.get(&format!("x:{}", w.source));
-    let Some(p) = p.filter(|p| !p.text.is_empty() || !p.icon.is_empty()) else {
-        let msg = if w.source.is_empty() { crate::i18n::tr("скрипт не выбран: настройки виджета → скрипт").to_string() } else { crate::tf!("{}: ждёт вывода", "{}: waiting for output", "{}: aguardando saída", w.source) };
-        ui.cv.icon("term", r.x, r.y + 2, 2, t.text_faint);
-        ui.wrap(PX, R::new(r.x + 22, r.y, r.w - 22, r.h), &msg, t.text_faint, 3);
-        return;
-    };
-    let (cell, face) = match w.size.as_str() {
-        "s" => (2, PX),
-        "l" => (4, crate::font::PX24),
-        _ => (3, PX),
-    };
-    let col = if p.color.is_empty() { c } else { crate::plugins::color(&t, &p.color) };
-    let icon = !p.icon.is_empty() && crate::gfx::icon7(&p.icon).is_some();
-    let x = if icon {
-        ui.cv.icon(&p.icon, r.x, r.y + 2, cell, col);
-        r.x + cell * 7 + 10
-    } else {
-        r.x
-    };
-    let lh = ui.f.line(face) + 4;
-    let mut y = r.y;
-    for (i, l) in p.text.lines().enumerate() {
-        if y + lh > r.bottom() + 4 {
-            break;
-        }
-        ui.cv.text_in(ui.f, face, R::new(x, y, r.right() - x, lh), l, if i == 0 { col } else { t.text_dim });
-        y += lh;
-    }
-    if !p.click.is_empty() {
-        ui.zone(r, Act::Plug(p.click.clone()), Cur::Pointer);
-    }
-}
 
 // ── графики ─────────────────────────────────────────────────────────────────
 /// график по точкам 0..1 (старые слева). phase 0..1 — доля секунды до следующей точки.
@@ -415,7 +331,7 @@ fn draw_widget(ui: &mut Ui, st: &State, w: &Widget, sw: i32, sh: i32) {
             ui.text(face, x, y, &format!("{:02}", tm.min), t.text);
             let mut yy = y + ui.f.line(face) + 6;
             if w.date {
-                let s = crate::tf!("{}, {} {}", "{}, {} {}", "{}, {} de {}", crate::i18n::tr(RU_DAY_FULL[tm.wday as usize]), tm.day, crate::i18n::tr(RU_MON[(tm.mon - 1) as usize]));
+                let s = crate::tf!("{}, {} {}", "{}, {} {}", crate::i18n::tr(RU_DAY_FULL[tm.wday as usize]), tm.day, crate::i18n::tr(RU_MON[(tm.mon - 1) as usize]));
                 ui.text(PX, pad, yy, &s, t.text_dim);
                 yy += 24;
             }
@@ -433,7 +349,7 @@ fn draw_widget(ui: &mut Ui, st: &State, w: &Widget, sw: i32, sh: i32) {
             let (ser, full) = st.sys.series(&w.source);
             let data: Vec<f32> = ser.tail(160).iter().map(|v| v / full).collect();
             let (label, val) = match w.source.as_str() {
-                "ram" => ("память", crate::tf!("{:.0}%  {:.1}/{:.0} ГБ", "{:.0}%  {:.1}/{:.0} GB", "{:.0}%  {:.1}/{:.0} GB", st.sys.mem * 100.0, st.sys.mem_used, st.sys.mem_total)),
+                "ram" => ("память", crate::tf!("{:.0}%  {:.1}/{:.0} ГБ", "{:.0}%  {:.1}/{:.0} GB", st.sys.mem * 100.0, st.sys.mem_used, st.sys.mem_total)),
                 "temp" => ("температура", format!("{:.0}°C", st.sys.temp)),
                 "gpu" if st.sys.gpu_sleep => ("видеокарта", "сон".into()),
                 "gpu" => ("видеокарта", format!("{:.0}°C  {:.0}%", st.sys.gpu_temp, st.sys.gpu_load * 100.0)),
@@ -465,8 +381,8 @@ fn draw_widget(ui: &mut Ui, st: &State, w: &Widget, sw: i32, sh: i32) {
             let mut gy = pad;
             if w.label {
                 ui.cv.icon("net", pad, pad + 1, 2, c);
-                let s = crate::tf!("↓{}/с", "↓{}/s", "↓{}/s", crate::sys::rate(st.sys.rx));
-                let s2 = crate::tf!("↑{}/с", "↑{}/s", "↑{}/s", crate::sys::rate(st.sys.tx));
+                let s = crate::tf!("↓{}/с", "↓{}/s", crate::sys::rate(st.sys.rx));
+                let s2 = crate::tf!("↑{}/с", "↑{}/s", crate::sys::rate(st.sys.tx));
                 let w1 = ui.text_in(PX, R::new(pad + 20, pad, 120, 18), &s, c);
                 ui.text_in(PX, R::new(pad + 32 + w1, pad, 120, 18), &s2, t.text_dim);
                 ui.text_right(PX, R::new(pad, pad, r.w - 2 * pad, 18), &st.sys.iface, t.text_faint);
@@ -482,12 +398,6 @@ fn draw_widget(ui: &mut Ui, st: &State, w: &Widget, sw: i32, sh: i32) {
             panel(ui, w, r);
             let pad = if w.frame { 12 } else { 2 };
             calendar(ui, st, R::new(pad, pad, r.w - 2 * pad, r.h - 2 * pad), 0, c, false);
-        }
-        "weather" | "script" => {
-            panel(ui, w, r);
-            let pad = if w.frame { 12 } else { 4 };
-            let f = if w.kind == "weather" { weather } else { script };
-            f(ui, st, w, R::new(pad, pad, r.w - 2 * pad, r.h - 2 * pad), c);
         }
         _ => {}
     }
@@ -765,7 +675,7 @@ impl App {
         let (x, y) = self.surfs.values().find(|s| s.kind == SKind::Widget(id)).map(|s| s.margin).unwrap_or((100, 100));
         let (ww, _) = size_of(&w);
         let out = self.focus_out();
-        let title = crate::tf!("виджет: {}", "widget: {}", "widget: {}", crate::i18n::tr(name_of(KINDS, &w.kind)));
+        let title = crate::tf!("виджет: {}", "widget: {}", crate::i18n::tr(name_of(KINDS, &w.kind)));
         self.open_menu(MenuState::new(&out, x + ww - 30, y + 30, &title, widget_menu(&w)));
     }
 

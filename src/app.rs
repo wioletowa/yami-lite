@@ -8,7 +8,7 @@ use crate::niri::{self, Niri};
 use crate::sys::Sys;
 use crate::theme::Theme;
 use crate::ui::{Act, Field, Zone};
-use crate::{audio, dbus, font::Fonts, launcher, media, menu, net, notif};
+use crate::{audio, dbus, font::Fonts, media, menu, net, notif};
 
 use calloop::{
     channel::{self, Sender},
@@ -42,21 +42,14 @@ use wayland_protocols::ext::background_effect::v1::client::{ext_background_effec
 use wayland_protocols::ext::idle_notify::v1::client::{ext_idle_notification_v1, ext_idle_notifier_v1};
 use wayland_protocols::wp::cursor_shape::v1::client::wp_cursor_shape_device_v1::{Shape, WpCursorShapeDeviceV1};
 use wayland_protocols::wp::fractional_scale::v1::client::{wp_fractional_scale_manager_v1 as frac_mgr, wp_fractional_scale_v1 as frac};
-use wayland_protocols::wp::keyboard_shortcuts_inhibit::zv1::client::{zwp_keyboard_shortcuts_inhibit_manager_v1 as ksi_mgr, zwp_keyboard_shortcuts_inhibitor_v1 as ksi};
 use wayland_protocols::wp::viewporter::client::{wp_viewport, wp_viewporter};
 
 pub const BAR_H: i32 = 32;
-pub const TITLE_H: i32 = 26;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Modal {
-    Launcher,
     Power,
     Settings,
-    /// пароль для polkit (auth.rs)
-    Auth,
-    /// что показать при показе экрана (screen.rs)
-    Screen,
     /// ответ из уведомления (reply.rs)
     Reply,
     /// выбор обоев (walls.rs)
@@ -75,14 +68,7 @@ pub enum SKind {
     Notifs,
     Osd,
     Widget(u32),
-    Title(u64),
-    /// ручка размера в правом нижнем углу плавающего окна (titles.rs)
-    Grip(u64),
     EditBar,
-    Snap,
-    /// шторка для трансляций и значок «скрыто» (curtain.rs)
-    Curtain,
-    CurtainBadge,
     Dock,
     DockEdge,
 }
@@ -156,53 +142,17 @@ pub enum Msg {
     Net(net::NetState),
     Bt(net::BtState),
     Pam(bool),
-    Auth(crate::auth::Ev),
-    Prof(crate::profile::Prof),
-    /// портал спрашивает, что показать: типы источников и сокет для ответа
-    ScreenPick(u32, std::os::unix::net::UnixStream),
-    Clip(Vec<String>),
-    /// миниатюра картинки из буфера (launcher.rs thumbs_start)
-    ClipThumb(String, Option<crate::gfx::Img>),
-    /// строка модуля-скрипта бара (plugins.rs)
-    Plugin(String, crate::plugins::Plug),
-    /// файлы для «/» в лаунчере: запрос и найденное
-    LFiles(String, Vec<std::path::PathBuf>),
     Art(String, Option<crate::gfx::Img>),
     /// текст песни нашёлся (или нет) для трека Lyrics.key
     Lyrics(crate::lyrics::Lyrics),
-    /// ответ Open-Meteo (weather.rs)
-    Weather(crate::weather::Weather),
     /// свои темы (themetab.rs): список, что сделано, применена ли тема (перечитать настройки)
     Themes(Vec<crate::bundle::Card>, String, bool),
-    Theme,
-    /// theme.py --templates закончил: итог в restyle.json (restyle.rs)
-    Restyled,
-    /// превью наборов значков и курсоров (iconsets.rs)
-    Sets(Box<crate::iconsets::Sets>),
-    /// свой набор поставлен (имена) или нет; None — выбор отменён
-    SetAdded(Option<Result<Vec<String>, String>>),
-    /// кадры шторки готовы: номер включения, картинки по мониторам
-    Curtain(u64, HashMap<String, crate::gfx::Img>),
     /// обои готовы (wall.rs): номер задания, картинка, акцент из неё
     Wall(u64, Option<crate::gfx::Img>, Option<u32>),
     /// папка выбора обоев прочитана (walls.rs): номер открытия, папка, картинки, сколько сверх MAX
     WallsListed(u64, std::path::PathBuf, Vec<std::path::PathBuf>, usize),
     /// миниатюра для выбора обоев (walls.rs): номер открытия, клетка, картинка
     WallThumb(u64, usize, Option<crate::gfx::Img>),
-    /// ответ окна выбора yami-files из выбора обоев: папка ли, что выбрано, вернуться ли в настройки
-    WallsAsked(bool, Option<String>, bool),
-    /// мониторы, где обои рисует skwd-paper (skwd.rs, слои niri)
-    SkwdLayers(Vec<String>),
-    Snap(HashMap<String, crate::gfx::Img>, Vec<(String, R, String)>, crate::snap::Mode),
-    /// распознанное со снимка: QR или текст, None — ничего не нашлось
-    SnapText(bool, Option<String>),
-    /// проверка обновлений (update.rs)
-    Update(crate::update::Info),
-    SnapDone { path: Option<std::path::PathBuf>, copied: bool, err: Option<String>, thumb: Option<crate::gfx::Img> },
-    /// тома gio после события udev (automount.rs)
-    Volumes(Vec<crate::automount::Vol>),
-    /// том подключён сам: его локальная папка или ошибка
-    AutoMounted(crate::automount::Vol, Result<Option<String>, String>),
 }
 
 pub struct Res {
@@ -210,7 +160,7 @@ pub struct Res {
     pub icons: Icons,
     /// семейство, из которого собраны fonts (fontShell)
     pub font: String,
-    /// набор, из которого собраны icons (iconTheme, «авто» — уже разрешённый в системный)
+    /// набор значков системы, из которого собраны icons
     pub iset: String,
 }
 
@@ -228,7 +178,6 @@ pub struct State {
     pub popup: Option<Popup>,
     pub menu: Option<menu::MenuState>,
     pub bar_hidden: bool,
-    pub launcher: launcher::LState,
     pub power_cur: usize,
     pub stab: &'static str,
     /// прокрутка содержимого настроек: сдвиг и вкладка, к которой он относится
@@ -239,18 +188,11 @@ pub struct State {
     pub stab_h: std::cell::Cell<i32>,
     pub hex: Field,
     pub field_focus: Option<&'static str>,
-    /// запросы polkit: первый — в окне, остальные ждут
-    pub auth: Vec<crate::auth::Req>,
-    pub prof: crate::profile::Prof,
-    pub disp: crate::displays::Disp,
     pub bar_ed: crate::settings::BarEd,
-    pub screen_pick: Option<crate::screen::Pick>,
     pub sel_widget: u32,
     pub editing: bool,
     pub notifs: notif::Notifs,
     pub osd: Option<(&'static str, Instant)>,
-    /// шторка для трансляций опущена
-    pub curtain: Option<crate::curtain::Curtain>,
     pub audio: audio::AudioState,
     /// показанный плеер (media_pick_sync), все живые и выбранный в шапке всплывашки (#24)
     pub media: media::MediaState,
@@ -259,21 +201,9 @@ pub struct State {
     pub art: HashMap<String, Option<std::rc::Rc<crate::gfx::Img>>>,
     /// текст песни текущего трека (#13): ищется, только когда всплывашка его показывает
     pub lyrics: crate::lyrics::Lyrics,
-    /// погода (weather.rs): последний ответ, идёт ли запрос, когда спрашивали, поле города
-    pub weather: crate::weather::Weather,
-    pub weather_busy: bool,
-    pub weather_try: Option<Instant>,
-    pub weather_field: Field,
     /// вкладка «цвет»: страница «темы», свои темы и последнее действие с ними (themetab.rs)
     /// раздел вкладки «цвет»: 0 — палитра, 1 — свои темы, 2 — программы (#17)
     pub color_page: u8,
-    /// итог перекраски программ и своих шаблонов (restyle.rs) и слепок папки шаблонов
-    pub restyle: crate::restyle::Status,
-    pub tpl_stamp: Option<u64>,
-    /// наборы значков и курсоров для настроек → вид (None — не собраны), сборка идёт, итог установки своего
-    pub sets: Option<crate::iconsets::Sets>,
-    pub sets_busy: bool,
-    pub sets_note: String,
     pub themes: Vec<crate::bundle::Card>,
     pub theme_note: String,
     pub viz: Vec<f32>,
@@ -299,45 +229,26 @@ pub struct State {
     pub wall_stamp: u64,
     pub started: Instant,
     pub rss: f32,
-    pub titles: HashMap<u64, crate::titles::TitleGeo>,
     pub wall_field: Field,
-    pub keys: crate::keys::KeysUi,
     pub game: crate::games::GameMode,
-    /// что есть для игр (проверяется при открытии вкладки «игры»)
-    pub game_probe: crate::gameboost::Probe,
     pub night: crate::night::Night,
-    /// модули бара из скриптов (~/.config/yami/modules)
-    pub plugins: crate::plugins::Plugins,
-    pub session: crate::session::Session,
-    /// skwd-wall: что выбрано, его палитра, где рисует сам (skwd.rs)
-    pub skwd: crate::skwd::Skwd,
-    /// skwd-wall стоит на машине (проверяется при открытии настроек)
-    pub skwd_here: bool,
-    /// экран входа: стоит ли, включён ли greetd, как прошёл последний запуск (вкладка «экран входа»)
-    pub login_probe: crate::login::Probe,
     /// виджет без подложки стоит на светлых обоях (widgets.rs, widget_contrast)
     pub widget_bg: HashMap<u32, bool>,
-    pub game_field: Field,
     /// окно ответа из уведомления
     pub reply: crate::reply::Reply,
     /// координаты для ночного света
     pub geo_field: Field,
-    pub snap: Option<crate::snap::Snap>,
-    pub snap_countdown: Option<(Instant, u32)>,
-    pub shot_files: HashMap<u32, std::path::PathBuf>,
-    pub shot_field: Field,
-    pub float_field: Field,
+    /// своя команда лаунчера (настройки → бар)
+    pub launcher_field: Field,
+    pub game_field: Field,
     pub dock_hover: bool,
     pub dock_leave: Option<Instant>,
     pub dock_bounce: Vec<(String, Instant)>,
     /// наведение в доке для анимации: (сейчас, до этого, когда сменилось)
     pub dock_hov: std::cell::Cell<(Option<usize>, Option<usize>, Instant)>,
     pub trash_full: bool,
-    pub upd: crate::update::Upd,
     /// выбор обоев: папка, клетки, миниатюры видимых строк
     pub walls: crate::walls::Walls,
-    /// автоподключение флешек и телефонов (automount.rs)
-    pub am: crate::automount::Am,
 }
 
 pub struct Press {
@@ -373,9 +284,6 @@ pub struct App {
     pub(crate) cursor_now: Option<Shape>,
     pub(crate) viewporter: Option<wp_viewporter::WpViewporter>,
     pub(crate) fx_mgr: Option<ext_background_effect_manager_v1::ExtBackgroundEffectManagerV1>,
-    /// запись сочетаний во вкладке «клавиши»: niri отдаёт шеллу все клавиши
-    pub(crate) ksi_mgr: Option<ksi_mgr::ZwpKeyboardShortcutsInhibitManagerV1>,
-    pub(crate) ksi: Option<ksi::ZwpKeyboardShortcutsInhibitorV1>,
     pub(crate) frac_mgr: Option<frac_mgr::WpFractionalScaleManagerV1>,
     /// логический холст перед увеличением (HiDPI); большой — освобождается сразу
     pub(crate) scratch: Vec<u32>,
@@ -417,21 +325,15 @@ pub struct App {
     pub wall_reload: bool,
     /// иероглиф рисуется поверх готовой картинки: его переключение — только перерисовка
     pub wall_kanji: bool,
-    /// номер последнего включения шторки (поздний кадр от прошлого — мимо)
-    pub curtain_wanted: u64,
     pub quit: bool,
     /// выйти и запустить себя заново (тот же путь: после обновления — новый бинарь)
     pub restart: bool,
     /// где открыть меню программы трея: монитор, x, y
     pub tray_anchor: Option<(String, i32, i32)>,
-    /// окно, которое тянут за заголовок или угол, и сколько сдвига (размера) niri уже отправлено
-    pub tdrag: Option<(u64, (f64, f64))>,
     /// окно настроек сдвинуто за заголовок: его поверхность и левый верхний угол; mdrag —
     /// угол в начале текущего перетаскивания
     pub modal_at: Option<(u32, (i32, i32))>,
     pub mdrag: Option<(i32, i32)>,
-    /// ползунок пиксельности сменил шрифт программ / курсор, theme.py ещё не звали
-    pub look_pending: (bool, bool),
 }
 
 pub(crate) const LOCK_BASE: u32 = u32::MAX - 64;
@@ -448,7 +350,6 @@ impl State {
             popup: None,
             menu: None,
             bar_hidden: false,
-            launcher: launcher::LState::default(),
             power_cur: 0,
             stab: "color",
             sscroll: (0, ""),
@@ -457,32 +358,18 @@ impl State {
             stab_h: Default::default(),
             hex: Field::default(),
             field_focus: None,
-            auth: Vec::new(),
-            prof: Default::default(),
-            disp: Default::default(),
             bar_ed: Default::default(),
-            screen_pick: None,
             sel_widget: 0,
             editing: false,
             notifs: notif::Notifs::default(),
             osd: None,
-            curtain: None,
             audio: audio::AudioState::default(),
             media: media::MediaState::default(),
             players: Vec::new(),
             media_pick: String::new(),
             art: HashMap::new(),
             lyrics: Default::default(),
-            weather: crate::weather::cached(),
-            weather_busy: false,
-            weather_try: None,
-            weather_field: Field::default(),
             color_page: 0,
-            restyle: crate::restyle::load(),
-            tpl_stamp: None,
-            sets: None,
-            sets_busy: false,
-            sets_note: String::new(),
             themes: vec![],
             theme_note: String::new(),
             viz: vec![],
@@ -505,53 +392,31 @@ impl State {
             wall_stamp: 0,
             started: Instant::now(),
             rss: 0.0,
-            titles: HashMap::new(),
             wall_field: Field::default(),
-            keys: Default::default(),
             game: Default::default(),
-            game_probe: Default::default(),
             night: Default::default(),
-            plugins: Default::default(),
-            session: Default::default(),
-            skwd: Default::default(),
-            skwd_here: false,
-            login_probe: Default::default(),
             widget_bg: HashMap::new(),
-            game_field: Field::default(),
             reply: Default::default(),
             geo_field: Field::default(),
-            snap: None,
-            snap_countdown: None,
-            shot_files: HashMap::new(),
-            shot_field: Field::default(),
-            float_field: Field::default(),
+            launcher_field: Field::default(),
+            game_field: Field::default(),
             dock_hover: false,
             dock_leave: None,
             dock_bounce: vec![],
             dock_hov: std::cell::Cell::new((None, None, Instant::now())),
             trash_full: false,
-            upd: crate::update::Upd::load(),
             walls: Default::default(),
-            am: Default::default(),
             set,
         }
     }
 }
 
-/// набор значков шелла: выбранный (iconTheme) или, при «авто», тот, что сейчас у системы
-pub fn icon_set(theme: &str) -> String {
-    if theme.is_empty() {
-        crate::icons::system_theme()
-    } else {
-        theme.to_string()
-    }
-}
 
 pub fn run() {
     crate::proc::note_inherited();
     // из TTY или по ssh: понятная строка вместо паники
     let Ok(conn) = Connection::connect_to_env() else {
-        eprintln!("yami-shell: no Wayland display (start it inside niri, or set WAYLAND_DISPLAY)");
+        eprintln!("yami-lite: no Wayland display (start it inside niri, or set WAYLAND_DISPLAY)");
         std::process::exit(1);
     };
     let (globals, mut queue) = registry_queue_init::<App>(&conn).expect("wayland registry");
@@ -575,19 +440,17 @@ pub fn run() {
     let viewporter: Option<wp_viewporter::WpViewporter> = globals.bind(&qh, 1..=1, ()).ok();
     let fx_mgr: Option<ext_background_effect_manager_v1::ExtBackgroundEffectManagerV1> = globals.bind(&qh, 1..=1, ()).ok();
     let idle: Option<ext_idle_notifier_v1::ExtIdleNotifierV1> = globals.bind(&qh, 1..=1, ()).ok();
-    let ksi_mgr: Option<ksi_mgr::ZwpKeyboardShortcutsInhibitManagerV1> = globals.bind(&qh, 1..=1, ()).ok();
     let frac_mgr: Option<frac_mgr::WpFractionalScaleManagerV1> = globals.bind(&qh, 1..=1, ()).ok();
 
     let set = Settings::load();
     crate::i18n::set(&set.lang);
-    let iset = icon_set(&set.icon_theme);
+    let iset = icons::system_theme();
     let mut icons = Icons::new(&iset);
     icons.set_style(Theme::new(set.accent_rgb(), set.tint, set.glass, set.lift, set.inner, set.light).icon_ramp(), set.icon_pixel, set.icon_tint);
     let set_saved = set.to_json();
     let set_font = set.font_shell.clone();
 
-    let mut niri = Niri::new();
-    niri.stacking = niri.stacking || set.stacking;
+    let niri = Niri::new();
 
     let st = State::new(set, niri);
 
@@ -607,8 +470,6 @@ pub fn run() {
         cursor_now: None,
         viewporter,
         fx_mgr,
-        ksi_mgr,
-        ksi: None,
         frac_mgr,
         scratch: vec![],
         shed_at: Some(Instant::now() + Duration::from_secs(30)),
@@ -641,12 +502,9 @@ pub fn run() {
         wall_at: Instant::now(),
         wall_reload: false,
         wall_kanji: true,
-        curtain_wanted: 0,
         quit: false,
         restart: false,
         tray_anchor: None,
-        tdrag: None,
-        look_pending: (false, false),
         modal_at: None,
         mdrag: None,
     };
@@ -660,23 +518,14 @@ pub fn run() {
     }
     crate::ipc::serve(tx.clone());
     dbus::spawn(tx.clone(), app.st.set.agent_notif, app.st.set.agent_tray);
-    crate::auth::spawn(tx.clone(), app.st.set.agent_polkit);
-    crate::agents::write_portals(&app.st.set);
-    crate::profile::refresh(None, tx.clone());
-    // копия theme.py рядом с состоянием — сразу свежая, а не после следующей смены палитры
-    let _ = crate::proc::theme_script();
     audio::spawn(tx.clone());
     media::spawn(tx.clone());
     net::spawn_bt(tx.clone());
     app.write_palette();
     // обои: при старте палитра обычно та же, theme.py не запускается — готовим картинку сами
     app.sync_wall();
-    app.write_fx();
-    crate::keys::write(&app.st.set);
     app.setup_idle();
     app.side_sync();
-    app.automount_sync();
-    // «стол» при входе включится, когда придёт список окон (см. on_msg)
 
     handle
         .insert_source(Timer::from_duration(Duration::from_millis(300)), |_, _, app: &mut App| {
@@ -738,8 +587,6 @@ impl App {
 
     #[allow(clippy::too_many_arguments)]
     pub fn mk(&mut self, kind: SKind, output: &str, layer: Layer, ns: &str, anchor: Anchor, size: (i32, i32), margin: (i32, i32, i32, i32), excl: i32, kb: KeyboardInteractivity) -> u32 {
-        // панель поверх опущенной шторки: шторку — выше неё (см. curtain_raise)
-        let over_curtain = layer == Layer::Overlay && !matches!(kind, SKind::Curtain | SKind::CurtainBadge) && self.st.curtain.is_some();
         let surface = self.compositor.create_surface(&self.qh);
         let out = self.output_obj(output);
         let ls = self.layer_shell.create_layer_surface(&self.qh, surface, layer, Some(ns), out.as_ref());
@@ -785,9 +632,6 @@ impl App {
                 drawn: 0,
             },
         );
-        if over_curtain {
-            self.curtain_raise();
-        }
         id
     }
 
@@ -886,13 +730,8 @@ impl App {
         for id in gone {
             self.destroy(id);
         }
-        // обои на этом мониторе рисует skwd-paper — свои убрать
-        let skwd: Vec<u32> = self.surfs.iter().filter(|(_, s)| s.kind == SKind::Wall && self.skwd_draws(&s.output)).map(|(i, _)| *i).collect();
-        for id in skwd {
-            self.destroy(id);
-        }
         for n in names {
-            if self.find_on(&SKind::Wall, &n).is_none() && !self.skwd_draws(&n) {
+            if self.find_on(&SKind::Wall, &n).is_none() {
                 let id = self.mk(SKind::Wall, &n, Layer::Background, "yami-wall", Anchor::all(), (0, 0), (0, 0, 0, 0), -1, KeyboardInteractivity::None);
                 // мышь сквозь обои: щёлкать на них нечего, а вход и выход курсора перерисовывали
                 // бы всю картинку
@@ -901,8 +740,6 @@ impl App {
                 }
                 // монитор появился: теперь известен его размер (обои режутся под него)
                 self.sync_wall();
-                // и шторку на него, если она опущена
-                self.curtain_show();
             }
         }
         self.sync_bar_outputs();

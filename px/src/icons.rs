@@ -485,13 +485,13 @@ pub fn decode(data: &[u8], max_alloc: u64) -> Option<image::DynamicImage> {
 
 /// кеш миниатюр: не открытые 120 дней уходят, и всего не больше 512 МБ (раз в сутки, из нити)
 pub fn thumbs_tidy() {
-    crate::paths::tidy(&crate::paths::cache_dir().join("yami/thumbs"), 120, 512 << 20);
+    crate::paths::tidy(&crate::paths::cache_dir().join("yami-lite/thumbs"), 120, 512 << 20);
 }
 
 /// где лежит миниатюра (~/.cache/yami/thumbs): ключ — путь, время изменения и размер
 pub fn thumb_path(path: &Path, mtime: i64, size: i32) -> PathBuf {
     let h = crate::fnv(crate::FNV0, format!("{}|{}|{}", path.display(), mtime, size).as_bytes());
-    crate::paths::cache_dir().join("yami/thumbs").join(format!("{h:016x}.png"))
+    crate::paths::cache_dir().join("yami-lite/thumbs").join(format!("{h:016x}.png"))
 }
 
 /// миниатюра картинки, не больше size по большей стороне. Кеш общий у yami-files и выбора обоев:

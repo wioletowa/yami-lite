@@ -1,6 +1,6 @@
 // Выбор обоев (Modal::Walls, #11): сетка миниатюр папки обоев (wallDir; пусто — ~/Pictures/Wallpapers,
 // папка текущих обоев или ~/Pictures), первая клетка — пиксельные из палитры. Папку читает одна
-// нить, миниатюры — другая, через общий с yami-files кеш (yami-px icons::thumb): сперва видимые
+// нить, миниатюры — другая, через кеш миниатюр (yami-px icons::thumb): сперва видимые
 // строки, потом по две соседних, в памяти — не больше нескольких десятков. Щелчок ставит обои и
 // возвращает в настройки, если выбор открыли оттуда; закрылся — миниатюры отпущены.
 
@@ -66,8 +66,6 @@ pub struct Walls {
     pub back: bool,
     /// сколько картинок не поместилось в MAX
     pub more: usize,
-    /// есть yami-files: «папка…» и «другой файл…» спрашивают его окно выбора
-    pub pick: bool,
     worker: Option<Worker>,
 }
 
@@ -186,20 +184,14 @@ pub fn draw(ui: &mut Ui, st: &State, w: i32, h: i32) {
     let bx = fr.right() - GX - b1 - b2 - 8;
     ui.cv.icon("folder", GX, 44, 2, t.text_faint);
     ui.cv.text_in(ui.f, PX, R::new(GX + 22, 38, bx - GX - 30, 26), &yami_px::paths::pretty(&wl.dir), t.text_dim);
-    // выбор папки и файла — окно yami-files: без него кнопок нет (папка обоев — в настройках)
-    if st.walls.pick {
-        ui.button(R::new(bx, 39, b1, 24), "папка…", "folder", Tone::Plain, false, true, Act::WallsDir);
-        ui.button(R::new(bx + b1 + 8, 39, b2, 24), "другой файл…", "image", Tone::Plain, false, true, Act::WallsFile);
-    }
     // сетка: под клетками — зона для колеса
     let grid = R::new(GX, GY, COLS as i32 * (TW + GAP) - GAP, ROWS as i32 * (TH + GAP) - GAP);
     ui.zone(grid, Act::WallsScroll, Cur::Default);
     let own = crate::wall::own(&st.set);
-    let skwd = st.skwd_drives();
     let mut hovered = None;
     for i in window(wl.top, wl.tiles.len(), 0) {
         let Some(r) = tile_rect(i, wl.top) else { continue };
-        let on = !skwd && if i == 0 { own.is_none() } else { own.as_deref() == Some(wl.tiles[i].as_path()) };
+        let on = if i == 0 { own.is_none() } else { own.as_deref() == Some(wl.tiles[i].as_path()) };
         let hov = ui.hover(r);
         if hov {
             hovered = Some(i);
@@ -251,14 +243,12 @@ pub fn draw(ui: &mut Ui, st: &State, w: i32, h: i32) {
         i => wl.tiles.get(i).map(|p| file_name(p)).unwrap_or_default(),
     };
     ui.cv.text_in(ui.f, PX, R::new(GX, fy, fr.w / 2, 24), &name, t.text);
-    let hint = if skwd {
-        crate::i18n::tr("обои ведёт skwd-wall: выбор здесь выключит его").to_string()
-    } else if wl.more > 0 {
-        crate::tf!("показаны первые {}, ещё {}", "the first {} shown, {} more", "primeiros {} exibidos, mais {}", MAX, wl.more)
+    let hint = if wl.more > 0 {
+        crate::tf!("показаны первые {}, ещё {}", "the first {} shown, {} more", MAX, wl.more)
     } else {
         crate::i18n::tr("стрелки, Enter — поставить, Esc — назад").to_string()
     };
-    ui.cv.text_right(ui.f, PX, R::new(fr.w / 2, fy, fr.w / 2 - GX, 24), &hint, if skwd { t.warn } else { t.text_faint });
+    ui.cv.text_right(ui.f, PX, R::new(fr.w / 2, fy, fr.w / 2 - GX, 24), &hint, t.text_faint);
 }
 
 impl App {
@@ -275,19 +265,19 @@ impl App {
     /// walls_listed. Wayland-нить диск не ждёт: в ~/Pictures бывают тысячи фото, папка — сетевой
     fn walls_start(&mut self, back: bool) {
         if self.st.modal != Some(Modal::Walls) {
-            self.toggle_modal(Modal::Walls, false);
+            self.toggle_modal(Modal::Walls);
             if self.st.modal != Some(Modal::Walls) {
                 return;
             }
         }
         let gen = self.st.walls.gen + 1;
-        self.st.walls = Walls { gen, back, pick: crate::proc::have("yami-files"), ..Default::default() };
+        self.st.walls = Walls { gen, back, ..Default::default() };
         let (wd, cur, tx) = (self.st.set.wall_dir.clone(), crate::wall::own(&self.st.set), self.tx.clone());
         let _ = std::thread::Builder::new().name("walls-list".into()).spawn(move || {
             let d = dir(&wd, cur.as_deref());
             let (files, more) = list(&d);
             let _ = tx.send(Msg::WallsListed(gen, d, files, more));
-            // кеш миниатюр общий с yami-files: убрать старое (раз в сутки), уже после списка
+            // кеш миниатюр: убрать старое (раз в сутки), уже после списка
             crate::icons::thumbs_tidy();
         });
         self.dirty(&SKind::Modal);
@@ -298,15 +288,23 @@ impl App {
         if gen != self.st.walls.gen || self.st.modal != Some(Modal::Walls) {
             return;
         }
-        let tiles: Arc<[PathBuf]> = std::iter::once(crate::wall::generated()).chain(files).collect();
+        // клетка 0 — пиксельные из палитры: пути нет, миниатюра рисуется здесь же
+        let tiles: Arc<[PathBuf]> = std::iter::once(PathBuf::new()).chain(files).collect();
         let own = crate::wall::own(&self.st.set);
         let cur = own.and_then(|p| tiles.iter().skip(1).position(|t| *t == p).map(|i| i + 1)).unwrap_or(0);
         let top = (cur / COLS + 1).saturating_sub(ROWS);
-        let q = Arc::new((Mutex::new(Q { top, have: vec![false; tiles.len()], stop: false }), Condvar::new()));
+        let mut have = vec![false; tiles.len()];
+        have[0] = true;
+        let q = Arc::new((Mutex::new(Q { top, have, stop: false }), Condvar::new()));
         let tx = self.tx.clone();
         spawn(tiles.clone(), q.clone(), move |i, img| tx.send(Msg::WallThumb(gen, i, img)).is_ok());
         let back = self.st.walls.back;
-        self.st.walls = Walls { gen, dir, tiles, cur, top, back, more, worker: Some(Worker(q)), ..Default::default() };
+        let t = &self.st.t;
+        let pal = crate::wall::generate(t.bg, t.red, t.border, t.light);
+        let small = image::imageops::resize(&pal, (TW - 6) as u32, (TH - 6) as u32, image::imageops::FilterType::Nearest);
+        let mut thumbs = HashMap::new();
+        thumbs.insert(0, Some(Rc::new(crate::icons::from_rgba(&small))));
+        self.st.walls = Walls { gen, dir, tiles, cur, top, back, more, thumbs, worker: Some(Worker(q)), ..Default::default() };
         self.dirty(&SKind::Modal);
     }
 
@@ -387,11 +385,8 @@ impl App {
         }
     }
 
-    /// поставить обои отсюда (пусто — пиксельные): выбор здесь главнее skwd-wall
+    /// поставить обои отсюда (пусто — пиксельные)
     fn walls_set(&mut self, p: &str) {
-        if self.st.skwd_drives() {
-            self.st.set.wall_skwd = false;
-        }
         self.set_wall(p);
     }
 
@@ -402,43 +397,7 @@ impl App {
         self.walls_back();
     }
 
-    /// другая папка или файл — через окно выбора yami-files. Выбор обоев на это время закрыт
-    /// (он слой поверх окон, окно выбора открылось бы под ним), потом открывается снова
-    pub fn walls_ask(&mut self, folder: bool) {
-        let back = self.st.walls.back;
-        let from = self.st.walls.dir.clone();
-        self.close_modal();
-        let tx = self.tx.clone();
-        let title = crate::i18n::tr(if folder { "папка обоев" } else { "обои" }).to_string();
-        std::thread::spawn(move || {
-            let got = if folder {
-                crate::proc::files_pick("dir", &from, &["--title", &title])
-            } else {
-                let pats: Vec<String> = crate::wall::IMAGES.iter().map(|e| format!("*.{e}")).collect();
-                let filter = format!("Images|{}|image/png;image/jpeg;image/webp", pats.join(";"));
-                crate::proc::files_pick("open", &from, &["--title", &title, "--filter", &filter])
-            };
-            let _ = tx.send(Msg::WallsAsked(folder, got, back));
-        });
-    }
 
-    /// ответ окна выбора: папка — открыть выбор на ней, файл — поставить обои, отмена — назад в выбор
-    pub fn walls_asked(&mut self, folder: bool, got: Option<String>, back: bool) {
-        match (folder, got) {
-            (true, Some(d)) => {
-                // сохранится само (flush); пересобирать тему и обои ради папки незачем
-                self.st.set.wall_dir = d;
-                self.walls_start(back);
-            }
-            (false, Some(p)) => {
-                self.walls_set(&p);
-                if back {
-                    self.open_settings_tab("wall");
-                }
-            }
-            (_, None) => self.walls_start(back),
-        }
-    }
 
     pub fn walls_key(&mut self, e: &KeyEvent) {
         let n = self.st.walls.tiles.len();
@@ -485,7 +444,7 @@ pub fn mock(st: &mut State) {
         }
         thumbs.insert(i, if i == 7 { None } else { Some(Rc::new(Img { w, h, px })) });
     }
-    st.walls = Walls { gen: 1, dir, tiles, thumbs, cur: 2, back: true, pick: true, ..Default::default() };
+    st.walls = Walls { gen: 1, dir, tiles, thumbs, cur: 2, back: true, ..Default::default() };
 }
 
 #[cfg(test)]

@@ -11,7 +11,7 @@ use crate::widgets;
 use smithay_client_toolkit::seat::keyboard::{KeyEvent, Keysym};
 
 /// виды всплывашек: `popup KIND`, `yami open KIND`, shot
-pub const KINDS: &[&str] = &["cal", "sound", "media", "net", "bt", "sys", "profile", "tray", "weather"];
+pub const KINDS: &[&str] = &["cal", "sound", "media", "net", "bt", "sys", "bat", "tray"];
 
 impl State {
     /// открыта всплывашка этого вида
@@ -80,12 +80,7 @@ pub fn size(kind: &str, st: &State) -> (i32, i32) {
         "bt" => (380, 44 + 40 + if st.bt.msg.is_empty() { 0 } else { 24 } + if st.bt.powered { st.bt.devices.len().clamp(1, 8) as i32 * 34 } else { 30 } + 50),
         "sys" => (440, 44 + 4 * 74 + 40 + 50),
         "tray" => (300, 66 + tray_items(st).count().clamp(1, 12) as i32 * 32),
-        // погода: шапка, сейчас, пять дней, строка о свежести; без города — подсказка
-        "weather" => match crate::weather::ready(st) {
-            Some(w) => (360, 44 + 36 + 70 + if w.days.is_empty() { 0 } else { 76 } + 4),
-            None => (340, 44 + 36 + 40),
-        },
-        "profile" => (340, 44 + if st.sys.bat.is_some() { 40 } else { 0 } + if st.prof.present { 36 * 3 + if st.prof.degraded.is_empty() { 0 } else { 26 } } else { 60 } + 30),
+        "bat" => (340, 44 + 40),
         _ => (300, 200),
     }
 }
@@ -105,9 +100,8 @@ pub fn draw(ui: &mut Ui, st: &State, w: i32, h: i32) {
         "net" => net(ui, st, body),
         "bt" => bt(ui, st, body),
         "sys" => sys(ui, st, body),
-        "profile" => profile(ui, st, body),
+        "bat" => battery(ui, st, body),
         "tray" => tray(ui, st, body),
-        "weather" => weather(ui, st, body),
         _ => {}
     }
 }
@@ -123,50 +117,6 @@ fn head(ui: &mut Ui, r: R, icon: &str, title: &str, sub: &str) -> i32 {
     r.y + 36
 }
 
-// ── погода (#6) ─────────────────────────────────────────────────────────────
-fn weather(ui: &mut Ui, st: &State, b: R) {
-    let t = ui.t;
-    let mut y = head(ui, b, "cloud", "погода", "");
-    let Some(w) = crate::weather::ready(st) else {
-        // города нет, ответа ещё нет или ошибка
-        let msg = crate::weather::status(st, "город — в настройках → службы → сеть");
-        ui.wrap(PX, R::new(b.x, y, b.w, 40), &msg, if st.weather.err.is_empty() { t.text_dim } else { t.ember }, 2);
-        return;
-    };
-    // место — как его назвал Open-Meteo, справа в шапке
-    ui.cv.text_right(ui.f, PX, R::new(b.x, b.y, b.w, 20), &w.place, t.text_faint);
-    ui.cv.icon(crate::weather::icon(w.code, w.day), b.x, y + 4, 6, t.red);
-    let face = crate::font::px(48);
-    let tw = ui.cv.text(ui.f, face, b.x + 56, y, &crate::weather::deg(w.temp), t.text_hi);
-    let tx = b.x + 56 + tw + 16;
-    ui.text_in(PX, R::new(tx, y, b.right() - tx, 16), crate::weather::text(w.code), t.text);
-    let unit = if st.set.weather_units == "f" { "mph" } else { crate::i18n::tr("км/ч") };
-    let lines = [
-        crate::tf!("ощущается {}", "feels like {}", "sensação térmica {}", crate::weather::deg(w.feels)),
-        crate::tf!("влажность {}%", "humidity {}%", "umidade {}%", w.hum.round() as i32),
-        crate::tf!("ветер {} {}", "wind {} {}", "vento {} {}", w.wind.round() as i32, unit),
-    ];
-    for (i, l) in lines.iter().enumerate() {
-        ui.cv.text_in(ui.f, PX, R::new(tx, y + 17 + i as i32 * 17, b.right() - tx, 16), l, if i == 0 { t.text_dim } else { t.text_faint });
-    }
-    y += 70;
-    if !w.days.is_empty() {
-        ui.cv.fill(R::new(b.x, y, b.w, 1), t.border);
-        y += 8;
-        let cw = b.w / w.days.len() as i32;
-        for (i, d) in w.days.iter().enumerate() {
-            let c = R::new(b.x + i as i32 * cw, y, cw, 60);
-            ui.text_center(PX, R::new(c.x, c.y, c.w, 16), crate::weather::day_name(i, d), if i == 0 { t.text } else { t.text_dim });
-            ui.cv.icon(crate::weather::icon(d.code, true), c.x + c.w / 2 - 7, c.y + 22, 2, t.red);
-            let hl = format!("{} {}", crate::weather::deg(d.hi), crate::weather::deg(d.lo));
-            ui.cv.text_center(ui.f, PX, R::new(c.x, c.y + 42, c.w, 16), &hl, t.text_dim);
-        }
-        y += 68;
-    }
-    let age = (crate::clock::unix_now().saturating_sub(w.at) / 60) as i32;
-    let foot = if !st.weather.err.is_empty() { st.weather.err.clone() } else { crate::tf!("open-meteo.com · {} мин назад", "open-meteo.com · {} min ago", "open-meteo.com · há {} min", age) };
-    ui.cv.text_in(ui.f, PX, R::new(b.x, y, b.w, 18), &foot, if st.weather.err.is_empty() { t.text_faint } else { t.ember });
-}
 
 // ── календарь ───────────────────────────────────────────────────────────────
 fn cal(ui: &mut Ui, st: &State, b: R) {
@@ -174,7 +124,7 @@ fn cal(ui: &mut Ui, st: &State, b: R) {
     let now = crate::clock::local_now();
     let face = font::px(32);
     ui.text(face, b.x, b.y - 2, &format!("{:02}:{:02}", now.hour, now.min), t.text);
-    let date = crate::tf!("{}, {} {}", "{}, {} {}", "{}, {} de {}", crate::i18n::tr(crate::clock::RU_DAY_FULL[now.wday as usize]), now.day, crate::i18n::tr(crate::clock::RU_MON[(now.mon - 1) as usize]));
+    let date = crate::tf!("{}, {} {}", "{}, {} {}", crate::i18n::tr(crate::clock::RU_DAY_FULL[now.wday as usize]), now.day, crate::i18n::tr(crate::clock::RU_MON[(now.mon - 1) as usize]));
     ui.text_in(PX, R::new(b.x, b.y + 34, 300, 20), &date, t.text_dim);
     let cr = R::new(b.x, b.y + 66, 290, b.h - 66);
     widgets::calendar(ui, st, cr, st.cal_month, t.red, true);
@@ -185,7 +135,7 @@ fn cal(ui: &mut Ui, st: &State, b: R) {
     let n = st.notifs.history.len();
     let sub = if n == 0 { String::new() } else { format!("{n}") };
     ui.cv.icon(if st.set.dnd { "bellx" } else { "bell" }, nr.x, nr.y + 3, 2, t.red);
-    ui.text_in(PX, R::new(nr.x + 22, nr.y, 160, 20), &crate::tf!("уведомления {sub}", "notifications {sub}", "notificações {sub}"), t.text);
+    ui.text_in(PX, R::new(nr.x + 22, nr.y, 160, 20), &crate::tf!("уведомления {sub}", "notifications {sub}"), t.text);
     ui.button(R::new(nr.right() - 172, nr.y - 2, 104, 24), "не беспокоить", "", Tone::Ghost, st.set.dnd, true, Act::Dnd);
     ui.button(R::new(nr.right() - 64, nr.y - 2, 64, 24), "очистить", "", Tone::Ghost, false, n > 0, Act::NotifClear);
     ui.cv.fill(R::new(nr.x, nr.y + 26, nr.w, 1), t.border);
@@ -440,9 +390,9 @@ fn net(ui: &mut Ui, st: &State, b: R) {
     let full = s.h_rx.max().max(s.h_tx.max()).max(64.0 * 1024.0);
     let rx: Vec<f32> = s.h_rx.tail(120).iter().map(|v| v / full).collect();
     let tx: Vec<f32> = s.h_tx.tail(120).iter().map(|v| v / full).collect();
-    let w1 = ui.text_in(PX, R::new(b.x, y, 160, 20), &crate::tf!("↓ {}/с", "↓ {}/s", "↓ {}/s", crate::sys::rate(s.rx)), t.red);
-    ui.text_in(PX, R::new(b.x + w1 + 16, y, 160, 20), &crate::tf!("↑ {}/с", "↑ {}/s", "↑ {}/s", crate::sys::rate(s.tx)), t.text_dim);
-    ui.text_right(PX, R::new(b.x, y, b.w, 20), &crate::tf!("пик {}/с", "peak {}/s", "pico {}/s", crate::sys::rate(full as f64)), t.text_faint);
+    let w1 = ui.text_in(PX, R::new(b.x, y, 160, 20), &crate::tf!("↓ {}/с", "↓ {}/s", crate::sys::rate(s.rx)), t.red);
+    ui.text_in(PX, R::new(b.x + w1 + 16, y, 160, 20), &crate::tf!("↑ {}/с", "↑ {}/s", crate::sys::rate(s.tx)), t.text_dim);
+    ui.text_right(PX, R::new(b.x, y, b.w, 20), &crate::tf!("пик {}/с", "peak {}/s", crate::sys::rate(full as f64)), t.text_faint);
     y += 24;
     let gr = R::new(b.x, y, b.w, 90);
     ui.cv.pxbox(gr, &BoxStyle::new(t.code_bg, t.border));
@@ -492,7 +442,7 @@ fn bt(ui: &mut Ui, st: &State, b: R) {
     let t = ui.t;
     let s = &st.bt;
     let conn = s.devices.iter().filter(|d| d.connected).count();
-    let sub = if !s.present { "нет адаптера".to_string() } else if conn > 0 { crate::tf!("подключено {conn}", "{conn} connected", "{conn} conectados") } else { String::new() };
+    let sub = if !s.present { "нет адаптера".to_string() } else if conn > 0 { crate::tf!("подключено {conn}", "{conn} connected") } else { String::new() };
     let mut y = head(ui, b, "bt", "bluetooth", &sub);
     if !s.present {
         ui.text_in(PX, R::new(b.x, y, b.w, 20), "адаптер не найден (bluez не запущен?)", t.text_faint);
@@ -536,40 +486,19 @@ fn bt(ui: &mut Ui, st: &State, b: R) {
     ui.button(R::new(b.x, b.bottom() - 28, b.w, 28), "менеджер устройств", "gear", Tone::Plain, false, true, Act::BtManager);
 }
 
-// ── профиль питания ─────────────────────────────────────────────────────────
-fn profile(ui: &mut Ui, st: &State, b: R) {
+// ── батарея ─────────────────────────────────────────────────────────────────
+fn battery(ui: &mut Ui, st: &State, b: R) {
     let t = ui.t;
-    let p = &st.prof;
-    let mut y = head(ui, b, p.icon(), "профиль питания", if p.present { crate::profile::label(&p.active) } else { "" });
-    if let Some(bat) = st.sys.bat {
-        // заряд, состояние и сколько осталось — то, что ноутбуку важнее профиля
-        let col = if bat.charging || bat.plugged { t.ok } else if bat.pct <= 15 { t.ember } else { t.red };
-        ui.cv.battery(b.x, y + 3, 2, bat.pct as f32 / 100.0, t.text_dim, col, t.surface_hi.lerp(t.border, 0.45));
-        let state = if bat.charging { "заряжается" } else if bat.plugged { "от сети" } else { "от батареи" };
-        let w = ui.text_in(PX, R::new(b.x + 30, y, 60, 20), &format!("{}%", bat.pct), t.text);
-        ui.text_in(PX, R::new(b.x + 30 + w + 10, y, b.w - 140, 20), state, t.text_dim);
-        if let Some(m) = bat.mins {
-            let left = if m >= 60 { crate::tf!("{} ч {} мин", "{} h {} min", "{} h {} min", m / 60, m % 60) } else { crate::tf!("{} мин", "{} min", "{} min", m) };
-            ui.text_right(PX, R::new(b.x, y, b.w, 20), &left, t.text_faint);
-        }
-        y += 40;
-    }
-    if !p.present {
-        ui.wrap(PX, R::new(b.x, y, b.w, 60), "power-profiles-daemon не запущен: установи его и включи (systemctl enable --now power-profiles-daemon)", t.text_faint, 3);
-        return;
-    }
-    for (k, icon, text) in crate::profile::KINDS {
-        let have = p.list.iter().any(|l| l == k);
-        let r = R::new(b.x, y, b.w, 30);
-        let on = p.active == *k;
-        ui.button(r, text, icon, Tone::Ghost, on, have, Act::Prof(k.to_string()));
-        if on {
-            ui.cv.icon("check", r.right() - 22, r.cy() - 7, 2, t.ember);
-        }
-        y += 36;
-    }
-    if !p.degraded.is_empty() {
-        ui.text_in(PX, R::new(b.x, y, b.w, 20), &crate::tf!("урезано: {}", "limited: {}", "limitado: {}", p.degraded), t.ember);
+    let y = head(ui, b, "bolt", "батарея", "");
+    let Some(bat) = st.sys.bat else { return };
+    let col = if bat.charging || bat.plugged { t.ok } else if bat.pct <= 15 { t.ember } else { t.red };
+    ui.cv.battery(b.x, y + 3, 2, bat.pct as f32 / 100.0, t.text_dim, col, t.surface_hi.lerp(t.border, 0.45));
+    let state = if bat.charging { "заряжается" } else if bat.plugged { "от сети" } else { "от батареи" };
+    let w = ui.text_in(PX, R::new(b.x + 30, y, 60, 20), &format!("{}%", bat.pct), t.text);
+    ui.text_in(PX, R::new(b.x + 30 + w + 10, y, b.w - 140, 20), state, t.text_dim);
+    if let Some(m) = bat.mins {
+        let left = if m >= 60 { crate::tf!("{} ч {} мин", "{} h {} min", m / 60, m % 60) } else { crate::tf!("{} мин", "{} min", m) };
+        ui.text_right(PX, R::new(b.x, y, b.w, 20), &left, t.text_faint);
     }
 }
 
@@ -578,10 +507,10 @@ fn sys(ui: &mut Ui, st: &State, b: R) {
     let t = ui.t;
     let s = &st.sys;
     let up = std::fs::read_to_string("/proc/uptime").ok().and_then(|x| x.split_whitespace().next().and_then(|v| v.parse::<f64>().ok())).unwrap_or(0.0) as u64;
-    let mut y = head(ui, b, "cpu", "система", &crate::tf!("работает {} ч {} мин", "up {} h {} min", "em execução há {} h {} min", up / 3600, up / 60 % 60));
+    let mut y = head(ui, b, "cpu", "система", &crate::tf!("работает {} ч {} мин", "up {} h {} min", up / 3600, up / 60 % 60));
     let rows: [(&str, &str, String, &str); 4] = [
         ("cpu", "процессор", format!("{:.0}%", s.cpu * 100.0), "cpu"),
-        ("ram", "память", crate::tf!("{:.1} / {:.0} ГБ", "{:.1} / {:.0} GB", "{:.1} / {:.0} GB", s.mem_used, s.mem_total), "ram"),
+        ("ram", "память", crate::tf!("{:.1} / {:.0} ГБ", "{:.1} / {:.0} GB", s.mem_used, s.mem_total), "ram"),
         ("temp", "температура", format!("{:.0}°C", s.temp), "temp"),
         ("temp", "видеокарта", if s.gpu_sleep { "сон".into() } else if s.gpu_temp > 0.0 { format!("{:.0}°C  {:.0}%", s.gpu_temp, s.gpu_load * 100.0) } else { "—".into() }, "gpu"),
     ];

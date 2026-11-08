@@ -9,7 +9,7 @@ use crate::config;
 /// переадресаций; потолок времени и размера; имя yami в User-Agent. Флаги -f, -G, -L, -o — у вызова
 pub fn curl(secs: u32, max: u64) -> std::process::Command {
     let mut c = std::process::Command::new("curl");
-    let ua = concat!("yami/", env!("CARGO_PKG_VERSION"), " (https://github.com/Trendorin/yami)");
+    let ua = concat!("yami-lite/", env!("CARGO_PKG_VERSION"));
     c.args(["-q", "-s", "--proto", "=https", "--proto-redir", "=https", "-A", ua, "--max-time", &secs.to_string(), "--max-filesize", &max.to_string()]);
     c
 }
@@ -108,14 +108,6 @@ pub(crate) fn reap_inherited() {
     v.retain(|&p| unsafe { libc::waitpid(p, std::ptr::null_mut(), libc::WNOHANG) } == 0);
 }
 
-/// tools/theme.py, тихо и с пониженным приоритетом: на слабой машине перекраска (обои, курсор,
-/// темы программ) идёт секунды и не должна отнимать процессор у стола
-pub fn theme_py() -> std::process::Command {
-    let mut c = std::process::Command::new("python3");
-    c.arg("-I").arg(theme_script()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
-    gentle(&mut c);
-    c
-}
 
 /// фоновая работа (theme.py, распознавание текста): nice 10 у процесса, шелл свой не меняет
 pub fn gentle(cmd: &mut std::process::Command) -> &mut std::process::Command {
@@ -129,21 +121,11 @@ pub fn gentle(cmd: &mut std::process::Command) -> &mut std::process::Command {
     }
 }
 
-pub fn theme_script() -> std::path::PathBuf {
-    // tools/theme.py вшит в шелл и пишется рядом с состоянием
-    let p = config::state_dir().join("theme.py");
-    let src = include_str!("../../tools/theme.py");
-    if std::fs::read_to_string(&p).map(|t| t != src).unwrap_or(true) {
-        let _ = std::fs::write(&p, src);
-    }
-    p
-}
 
 impl App {
-    /// папка (или trash:///) — в yami-files, а без него — в файловом менеджере по умолчанию (xdg-open)
+    /// папка (или trash:///) — в файловом менеджере по умолчанию (xdg-open)
     pub fn open_dir(what: String) {
-        let app = if have("yami-files") { "yami-files" } else { "xdg-open" };
-        App::spawn(&[app.into(), what]);
+        App::spawn(&["xdg-open".into(), what]);
     }
 
     // ── запуск программ ─────────────────────────────────────────────────────
@@ -163,4 +145,14 @@ impl App {
     pub fn sh(cmd: &str) {
         Self::spawn(&["sh".to_string(), "-c".to_string(), cmd.to_string()]);
     }
+}
+
+/// программа есть в PATH
+pub fn which(c: &str) -> bool {
+    yami_px::paths::find_exe(c).is_some()
+}
+
+/// терминал для текстовых программ (nmtui, btop): первый найденный
+pub fn term() -> String {
+    ["kitty", "foot", "alacritty", "wezterm", "ghostty", "konsole"].into_iter().find(|t| which(t)).unwrap_or("xterm").into()
 }

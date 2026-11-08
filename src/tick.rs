@@ -1,5 +1,5 @@
 // Тик шелла: раз в секунду (100 мс, пока что-то движется) — часы, датчики, батарея, файл
-// настроек, обновления; таймеры простоя (замок, гашение экрана).
+// настроек; таймеры простоя (замок, гашение экрана).
 
 use crate::app::*;
 use crate::clock::local_now;
@@ -9,8 +9,8 @@ use std::time::{Duration, Instant};
 impl App {
     // ── тик: часы, датчики, файл настроек ───────────────────────────────────
     pub(crate) fn tick_interval(&self) -> Duration {
-        let fast = !self.st.notifs.popups.is_empty() || self.st.osd.is_some() || self.st.field_focus.is_some() || self.st.locked || self.st.modal == Some(Modal::Launcher);
-        let fast = fast || self.st.upd.busy.is_some() || self.st.snap.is_some() || self.st.snap_countdown.is_some() || self.st.dock_leave.is_some() || !self.st.dock_bounce.is_empty();
+        let fast = !self.st.notifs.popups.is_empty() || self.st.osd.is_some() || self.st.field_focus.is_some() || self.st.locked;
+        let fast = fast || self.st.dock_leave.is_some() || !self.st.dock_bounce.is_empty();
         let ms = if fast { 100 } else { 1000 };
         // текст песни с метками: следующий тик — к смене строки, а не через секунду
         let next = self.lyrics_live().then(|| self.st.lyrics.next_in(self.st.media.now_pos())).flatten().map(|s| (s * 1000.0) as u64 + 20);
@@ -32,8 +32,8 @@ impl App {
         let lvl = if b.pct <= 5 { 2 } else if b.pct <= 10 { 1 } else { 0 };
         if lvl > self.st.bat_warn {
             self.st.bat_warn = lvl;
-            let left = b.mins.map(|m| crate::tf!("осталось {} мин", "{} min left", "faltam {} min", m)).unwrap_or_default();
-            self.toast_note(&crate::tf!("батарея {}%", "battery {}%", "bateria {}%", b.pct), if left.is_empty() { "подключи зарядку" } else { &left });
+            let left = b.mins.map(|m| crate::tf!("осталось {} мин", "{} min left", m)).unwrap_or_default();
+            self.toast_note(&crate::tf!("батарея {}%", "battery {}%", b.pct), if left.is_empty() { "подключи зарядку" } else { &left });
         }
     }
 
@@ -58,7 +58,7 @@ impl App {
         let blink = (self.st.started.elapsed().as_millis() / 500) % 2 == 0;
         if blink != self.st.blink {
             self.st.blink = blink;
-            if self.st.field_focus.is_some() || self.st.locked || self.st.modal == Some(Modal::Launcher) {
+            if self.st.field_focus.is_some() || self.st.locked {
                 self.dirty(&SKind::Modal);
                 self.dirty_where(|k| matches!(k, SKind::Widget(_) | SKind::Popup));
                 for l in self.lock_surfs.iter_mut() {
@@ -74,8 +74,6 @@ impl App {
             let hidden = self.st.game.fullscreen && self.output_names().iter().all(|n| *n == fo || !self.bar_on(n));
             self.st.sys.want_gpu = self.st.sys.has_gpu && self.uses("gpu") && !hidden;
             self.st.sys.sample();
-            self.weather_tick();
-            self.automount_tick();
             self.wall_park();
             self.bat_check();
             // память видна только в настройках: не читать её каждую секунду зря
@@ -98,41 +96,18 @@ impl App {
                 self.dirty(&SKind::Bar);
             }
             self.check_settings_file();
-            self.need_tick();
-            self.skwd_tick();
             // ночной свет упал сам — значок в баре гаснет
             let n = self.st.night.running();
             if n != self.st.night.on {
                 self.st.night.on = n;
                 self.dirty(&SKind::Bar);
             }
-            if self.st.started.elapsed().as_secs() % 60 == 0 {
-                self.update_tick();
-            }
-            if self.st.started.elapsed().as_secs() % 5 == 0 {
-                self.session_tick();
-                self.templates_tick();
-            }
-            // профиль могли сменить снаружи (powerprofilesctl, другой апплет)
-            if self.st.started.elapsed().as_secs() % 15 == 0 && self.st.set.on_bar("profile") {
-                crate::profile::refresh(None, self.tx.clone());
-            }
         }
         // уведомления и всплывашка громкости гаснут сами
-        self.update_log_tick();
         if self.notif_tick() {
             self.sync_notifs();
         }
-        self.snap_tick();
         self.dock_tick();
-        self.disp_tick();
-        // отсчёт таймера скриншота держит табличку
-        if let Some((t0, d)) = self.st.snap_countdown {
-            if t0.elapsed().as_secs() < d as u64 {
-                self.st.osd = Some(("snap", Instant::now()));
-                self.dirty(&SKind::Osd);
-            }
-        }
         if let Some((_, t)) = self.st.osd {
             if t.elapsed() > Duration::from_millis(1500) {
                 self.st.osd = None;

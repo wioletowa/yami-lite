@@ -186,18 +186,6 @@ pub fn draw_osd(ui: &mut Ui, st: &State, w: i32, _h: i32) {
         let v = if a.muted { "тишина".to_string() } else { format!("{}%", (a.volume * 100.0).round()) };
         ui.text_right(PX, R::new(12, 8, fr.w - 24, 20), &v, if a.muted { t.text_faint } else { t.text });
         ui.cv.gauge(R::new(12, 34, fr.w - 24, 10), 20, if a.muted { 0.0 } else { a.volume as f32 }, if a.volume > 1.0 { t.ember } else { t.red }, t.surface_hi.lerp(t.border, 0.45), 2);
-    } else if kind == "curtain" {
-        let on = st.curtain.is_some();
-        ui.cv.icon(if on { "lock" } else { "eye" }, 12, 11, 2, t.red);
-        ui.text_in(PX, R::new(34, 8, fr.w - 46, 20), if on { "экран скрыт в трансляции" } else { "экран снова виден" }, t.text);
-        ui.text_in(PX, R::new(12, 32, fr.w - 24, 18), if on { "зрители видят шторку, ты — экран" } else { "трансляция показывает рабочий стол" }, t.text_faint);
-    } else if kind == "snap" {
-        let left = st.snap_countdown.map(|(t0, d)| (d as u64).saturating_sub(t0.elapsed().as_secs())).unwrap_or(0);
-        ui.cv.icon("camera", 12, 11, 2, t.red);
-        ui.text_in(PX, R::new(34, 8, fr.w - 80, 20), "скриншот через", t.text_dim);
-        ui.text_right(font::PX24, R::new(12, 4, fr.w - 24, 28), &format!("{left}"), t.text);
-        let d = st.snap_countdown.map(|c| c.1).unwrap_or(1).max(1);
-        ui.cv.gauge(R::new(12, 34, fr.w - 24, 10), d as i32, left as f32 / d as f32, t.red, t.surface_hi.lerp(t.border, 0.45), 2);
     } else {
         let b = R::new(10, 12, 44, 32);
         ui.cv.pxbox(b, &BoxStyle::new(t.red, t.ember).bevel(true));
@@ -214,6 +202,12 @@ pub fn draw_osd(ui: &mut Ui, st: &State, w: i32, _h: i32) {
 }
 
 impl App {
+    /// своё уведомление шелла (батарея, ошибки): в общий поток, как пришедшее по D-Bus
+    pub fn toast_note(&mut self, summary: &str, body: &str) {
+        let n = crate::dbus::Incoming { id: 9_000_000 + (self.st.started.elapsed().as_millis() % 1_000_000) as u32, app: "yami-lite".into(), icon: String::new(), summary: crate::i18n::tr(summary).into(), body: crate::i18n::tr(body).into(), actions: vec![], urgency: 1, image: None, timeout: -1 };
+        self.on_notif(n);
+    }
+
     pub fn on_notif(&mut self, n: Incoming) {
         let tm = local_now();
         let critical = n.urgency >= 2;
@@ -345,7 +339,7 @@ impl App {
     pub fn notif_click(&mut self, id: u32, default: bool) {
         if default {
             if let Some(n) = self.st.notifs.get(id) {
-                if n.actions.iter().any(|a| a.0 == "default") && !self.shot_note_action(id, "default") {
+                if n.actions.iter().any(|a| a.0 == "default") {
                     crate::dbus::notif_action(id, "default");
                 }
             }

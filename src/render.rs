@@ -15,16 +15,15 @@ impl App {
     pub fn flush(&mut self) {
         // окно на весь экран (игра): что под ним, не рисуем — останется грязным до выхода из него
         let covered = if self.st.game.fullscreen { Some(self.focus_out()) } else { None };
-        let under = |s: &Surf| covered.as_deref() == Some(s.output.as_str()) && matches!(s.kind, SKind::Bar | SKind::Widget(_) | SKind::Dock | SKind::Wall | SKind::Title(_) | SKind::Grip(_));
+        let under = |s: &Surf| covered.as_deref() == Some(s.output.as_str()) && matches!(s.kind, SKind::Bar | SKind::Widget(_) | SKind::Dock | SKind::Wall);
         // всплывашка перерисовывается — значит, её данные поменялись, и размер (строки сетей, устройств,
         // программ трея, время трека) мог тоже; resize_popup ничего не делает, если он тот же
         if self.surfs.values().any(|s| s.kind == SKind::Popup && s.dirty && !s.closing) {
             self.resize_popup();
         }
         let mut ids: Vec<u32> = self.surfs.iter().filter(|(_, s)| s.dirty && s.configured && !s.frame_pending && !under(s)).map(|(i, _)| *i).collect();
-        // обои отложены в копии (wall_park): поверхность обоев ждёт полную картинку, шторка
-        // рисуется сразу (её видят зрители) и станет чёткой, когда та придёт
-        if self.st.wall_parked && ids.iter().any(|i| matches!(self.surfs[i].kind, SKind::Wall | SKind::Curtain)) {
+        // обои отложены в копии (wall_park): поверхность обоев ждёт полную картинку
+        if self.st.wall_parked && ids.iter().any(|i| self.surfs[i].kind == SKind::Wall) {
             self.wall_need();
             ids.retain(|i| self.surfs[i].kind != SKind::Wall);
         }
@@ -55,8 +54,7 @@ impl App {
             return;
         }
         // HiDPI: буфер в физических пикселях, холст — логический, потом увеличение
-        // оверлей скриншота — застывший экран, не пиксель-арт: его растягивает композитор
-        let (pw, ph) = if scaled || s.viewport.is_none() || s.scale == 1.0 || s.kind == SKind::Snap { (bw, bh) } else { crate::gfx::phys(bw, bh, s.scale) };
+        let (pw, ph) = if scaled || s.viewport.is_none() || s.scale == 1.0 { (bw, bh) } else { crate::gfx::phys(bw, bh, s.scale) };
         let up = (pw, ph) != (bw, bh);
         let need = (pw * ph * 4) as usize;
         if s.pool.as_ref().map(|p| p.len() < need).unwrap_or(true) {
@@ -100,13 +98,12 @@ impl App {
             let st = &self.st;
             // появление: пиксельное проявление по Байеру + плавное всплытие
             let (k, finished) = match s.kind {
-                SKind::Modal | SKind::Popup | SKind::Menu | SKind::Dim | SKind::Catcher | SKind::Osd | SKind::EditBar | SKind::Widget(_) | SKind::Snap | SKind::Dock | SKind::CurtainBadge => {
+                SKind::Modal | SKind::Popup | SKind::Menu | SKind::Dim | SKind::Catcher | SKind::Osd | SKind::EditBar | SKind::Widget(_) | SKind::Dock => {
                     let dur = match s.kind {
-                        SKind::Snap => 200.0,
                         SKind::Dock => 200.0,
                         SKind::Widget(_) => 320.0,
                         SKind::Menu => 140.0,
-                        SKind::Popup | SKind::Osd | SKind::CurtainBadge => 190.0,
+                        SKind::Popup | SKind::Osd => 190.0,
                         _ => 230.0,
                     };
                     let (k, fin) = reveal_of(st, &s, dur);
@@ -123,7 +120,7 @@ impl App {
             let rise = match s.kind {
                 SKind::Modal | SKind::Popup => 12,
                 SKind::Widget(_) => 16,
-                SKind::Osd | SKind::EditBar | SKind::Dock | SKind::CurtainBadge => 8,
+                SKind::Osd | SKind::EditBar | SKind::Dock => 8,
                 SKind::Menu => 4,
                 _ => 0,
             };
@@ -142,11 +139,8 @@ impl App {
                 }
                 SKind::Catcher => {}
                 SKind::Modal => match st.modal {
-                    Some(Modal::Launcher) => crate::launcher::draw(&mut ui, st, w, h),
                     Some(Modal::Power) => crate::power::draw(&mut ui, st, w, h),
                     Some(Modal::Settings) => crate::settings::draw(&mut ui, st, w, h),
-                    Some(Modal::Auth) => crate::auth::draw(&mut ui, st, w, h),
-                    Some(Modal::Screen) => crate::screen::draw(&mut ui, st, w, h),
                     Some(Modal::Reply) => crate::reply::draw(&mut ui, st, w, h),
                     Some(Modal::Walls) => crate::walls::draw(&mut ui, st, w, h),
                     None => {}
@@ -156,17 +150,12 @@ impl App {
                 SKind::Notifs => crate::notif::draw(&mut ui, st, w, h),
                 SKind::Osd => crate::notif::draw_osd(&mut ui, st, w, h),
                 SKind::Widget(wid) => crate::widgets::draw(&mut ui, st, *wid, w, h),
-                SKind::Title(win) => crate::titles::draw(&mut ui, st, *win, w, h),
-                SKind::Grip(win) => crate::titles::draw_grip(&mut ui, st, *win, w, h),
                 SKind::EditBar => crate::widgets::draw_editbar(&mut ui, st, w, h),
-                SKind::Snap => crate::snap::draw(&mut ui, st, &s.output, w, h),
                 SKind::Dock => crate::dock::draw(&mut ui, st, w, h),
                 SKind::DockEdge => {}
-                SKind::Curtain => crate::curtain::draw(&mut ui, st, &s.output, w, h),
-                SKind::CurtainBadge => crate::curtain::draw_badge(&mut ui, w, h),
             }
-            // развёртка — только панели: не обои, не оверлей скриншота, не шторка
-            if st.set.scanlines && !matches!(s.kind, SKind::Dim | SKind::Catcher | SKind::Wall | SKind::Snap | SKind::Curtain | SKind::CurtainBadge | SKind::DockEdge | SKind::Title(_) | SKind::Grip(_)) {
+            // развёртка — только панели, не обои
+            if st.set.scanlines && !matches!(s.kind, SKind::Dim | SKind::Catcher | SKind::Wall | SKind::DockEdge) {
                 ui.cv.scanlines(if st.t.light { 0.06 } else { 0.22 });
             }
             if k < 1.0 && !matches!(s.kind, SKind::Dim | SKind::Catcher) {
@@ -177,8 +166,6 @@ impl App {
             // (прямоугольники размытия сдвигаются с её всплытием); при закрытии гаснет так же
             blur = if !st.set.blur_on() || k < 0.35 {
                 vec![]
-            } else if let SKind::Title(_) = s.kind {
-                s.input.clone().unwrap_or_else(|| vec![R::new(0, 0, s.w, s.h)])
             } else {
                 std::mem::take(&mut ui.cv.blur)
             };
@@ -186,8 +173,8 @@ impl App {
             s.anim = ui.anim;
         }
         // тот же кадр, что уже у композитора (часы без секунд, датчики не сдвинулись): не отдавать —
-        // композитору нечего пересобирать. Обои, скриншот и шторка рисуются один раз и так
-        let hash = if s.anim || done_closing || matches!(s.kind, SKind::Wall | SKind::Snap | SKind::Curtain) { 0 } else { frame_hash(buf, [s.w, s.h, pw, ph]) };
+        // композитору нечего пересобирать. Обои рисуются один раз и так
+        let hash = if s.anim || done_closing || s.kind == SKind::Wall { 0 } else { frame_hash(buf, [s.w, s.h, pw, ph]) };
         if hash != 0 && hash == s.drawn && s.input == s.input_set && blur == s.blur_set {
             drop(buffer);
             self.scratch = if scratch.capacity() > 1 << 20 { Vec::new() } else { scratch };
@@ -241,18 +228,14 @@ impl App {
         }
         let _ = buffer.attach_to(&surf);
         s.layer.commit();
-        // обои и шторка рисуются один раз: буфер у композитора, свой не держим
-        if matches!(s.kind, SKind::Wall | SKind::Curtain) {
+        // обои рисуются один раз: буфер у композитора, свой не держим
+        if s.kind == SKind::Wall {
             s.release_pool = true;
         }
         if done_closing {
             return;
         }
-        let curtain = (s.kind == SKind::Curtain).then(|| s.output.clone());
         self.surfs.insert(id, s);
-        if let Some(out) = curtain {
-            self.curtain_drawn(id, &out);
-        }
     }
 }
 

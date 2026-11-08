@@ -195,7 +195,7 @@ fn find_nv_pm() -> Option<String> {
 impl Sys {
     pub fn new() -> Sys {
         let gpu_sys = find_gpu();
-        let has_gpu = gpu_sys.is_some() || crate::doctor::which("nvidia-smi");
+        let has_gpu = gpu_sys.is_some() || crate::proc::which("nvidia-smi");
         let mut s = Sys { temp_path: find_temp(), gpu_sys, has_gpu, nv_pm: find_nv_pm(), bat: read_bat(), online: true, ..Default::default() };
         s.sample();
         s

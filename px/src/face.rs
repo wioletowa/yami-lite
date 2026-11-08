@@ -71,7 +71,7 @@ pub fn clock<A: Action>(ui: &mut Ui<A>, w: i32, h: i32) -> i32 {
     ui.text(big, (w - cw) / 2, cy, &s, t.text);
     let (day, mon) = ((ui.tr)(RU_DAY_FULL[tm.wday as usize % 7]), (ui.tr)(RU_MON[(tm.mon as usize).clamp(1, 12) - 1]));
     // «sábado, 7 de novembro» по-португальски
-    let date = if crate::i18n::pt_br() { format!("{day}, {} de {mon}", tm.day) } else { format!("{day}, {} {mon}", tm.day) };
+    let date = format!("{day}, {} {mon}", tm.day);
     let dy = cy + ui.f.line(big) + 6;
     ui.text_center(font::PX24, R::new(0, dy, w, 30), &date, t.text_dim);
     dy + 30

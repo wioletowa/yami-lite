@@ -14,7 +14,7 @@ pub fn config_dir() -> PathBuf {
     xdg("XDG_CONFIG_HOME").unwrap_or_else(|| home().join(".config"))
 }
 pub fn state_dir() -> PathBuf {
-    let d = xdg("XDG_STATE_HOME").unwrap_or_else(|| home().join(".local/state")).join("yami");
+    let d = xdg("XDG_STATE_HOME").unwrap_or_else(|| home().join(".local/state")).join("yami-lite");
     let _ = std::fs::create_dir_all(&d);
     d
 }
@@ -124,12 +124,12 @@ pub fn private_tmp(name: &str) -> std::io::Result<PathBuf> {
 
 /// настройки шелла: оттуда же приложения берут палитру, язык и анимации
 pub fn shell_settings() -> PathBuf {
-    config_dir().join("yami-shell.json")
+    config_dir().join("yami-lite/settings.json")
 }
 
 /// свой бинарь: после обновления старый файл удалён («… (deleted)») — берём новый по тому же пути
 pub fn self_exe() -> PathBuf {
-    let Some(p) = std::fs::read_link("/proc/self/exe").ok().or_else(|| std::env::current_exe().ok()) else { return PathBuf::from("yami-shell") };
+    let Some(p) = std::fs::read_link("/proc/self/exe").ok().or_else(|| std::env::current_exe().ok()) else { return PathBuf::from("yami-lite") };
     let s = p.to_string_lossy();
     PathBuf::from(s.strip_suffix(" (deleted)").unwrap_or(&s))
 }

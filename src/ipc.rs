@@ -1,4 +1,4 @@
-// Команды шеллу: `yami-shell msg launcher` → сокет $XDG_RUNTIME_DIR/yami-shell.sock.
+// Команды шеллу: `yami-lite msg power` → сокет $XDG_RUNTIME_DIR/yami-lite.sock.
 // Ими пользуются бинды niri. Второй экземпляр шелла сюда же и упирается — и выходит.
 // Безопасность: сокет 0600, говорим только с процессами своего пользователя (SO_PEERCRED),
 // строка не длиннее 4 КБ и ждём её не дольше 2 с — зависший клиент не заткнёт шелл.
@@ -14,11 +14,11 @@ use std::path::PathBuf;
 
 pub fn path() -> PathBuf {
     let dir = std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| format!("/run/user/{}", unsafe { libc::getuid() }));
-    PathBuf::from(dir).join("yami-shell.sock")
+    PathBuf::from(dir).join("yami-lite.sock")
 }
 
 /// команда шеллу; true — шелл её принял (ответил). Ответа ждём не дольше 5 с: зависший шелл
-/// не должен вешать установщик и `yami update`
+/// не должен вешать терминал
 pub fn send(cmd: &str) -> bool {
     match UnixStream::connect(path()) {
         Ok(mut s) => {
@@ -37,12 +37,12 @@ pub fn send(cmd: &str) -> bool {
 pub fn serve(tx: Sender<Msg>) {
     let p = path();
     if UnixStream::connect(&p).is_ok() {
-        eprintln!("{}", crate::tf!("yami-shell уже запущен", "yami-shell is already running", "yami-shell já está em execução"));
+        eprintln!("{}", crate::tf!("yami-lite уже запущен", "yami-lite is already running"));
         std::process::exit(0);
     }
     let _ = std::fs::remove_file(&p);
     let Ok(l) = UnixListener::bind(&p) else {
-        eprintln!("{}", crate::tf!("ipc: не создать {}", "ipc: cannot create {}", "ipc: não foi possível criar {}", p.display()));
+        eprintln!("{}", crate::tf!("ipc: не создать {}", "ipc: cannot create {}", p.display()));
         return;
     };
     let _ = std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o600));
@@ -60,11 +60,6 @@ pub fn serve(tx: Sender<Msg>) {
                 }
                 let _ = s.set_read_timeout(None);
                 let line = line.trim();
-                // портал ждёт выбора экрана: соединение уходит шеллу, ответ — когда выберут
-                if let Some(t) = line.strip_prefix("pick-screen") {
-                    let _ = tx.send(Msg::ScreenPick(t.trim().parse().unwrap_or(3), s));
-                    continue;
-                }
                 if !line.is_empty() {
                     let _ = tx.send(Msg::Ipc(line.to_string()));
                 }
@@ -87,29 +82,12 @@ impl crate::app::App {
     // ── команды (IPC) ───────────────────────────────────────────────────────
     pub fn ipc(&mut self, cmd: &str) {
         match cmd.trim() {
-            "launcher" => self.toggle_modal(Modal::Launcher, false),
             "night" => self.night_toggle(),
-            "clipboard" => self.toggle_modal(Modal::Launcher, true),
-            "power" => self.toggle_modal(Modal::Power, false),
-            "settings" => self.toggle_modal(Modal::Settings, false),
+            "power" => self.toggle_modal(Modal::Power),
+            "settings" => self.toggle_modal(Modal::Settings),
             "walls" => self.walls_open(false),
             "lock" => self.lock_now(),
             "bar" => self.toggle_bar(),
-            "stacking" => {
-                let on = !self.st.niri.stacking;
-                self.st.niri.set_stacking(on);
-                self.st.set.stacking = on;
-                // фокус за мышью есть только в ленте (keys::kdl)
-                crate::keys::write(&self.st.set);
-                self.sync_titles();
-                self.dirty_all();
-            }
-            "minimize" => {
-                if let Some(id) = self.st.niri.focused_win().map(|w| w.id) {
-                    self.st.niri.minimize(id);
-                }
-            }
-            "restore" => self.st.niri.restore_last(),
             "edit" => {
                 self.close_all();
                 self.set_editing(!self.st.editing);
@@ -120,10 +98,9 @@ impl crate::app::App {
                 self.settings_changed();
             }
             "quit" => self.quit = true,
-            // «жив ли шелл» для install.sh и deploy.sh: ответ сокета, ничего не делает
+            // «жив ли шелл»: ответ сокета, ничего не делает
             "ping" => {}
             "restart" => self.restart = true,
-            c if self.update_ipc(c) => {}
             // медиаклавиши и бар: команда показанному плееру; player — другой плеер (#24)
             c if c.starts_with("media ") => match c[6..].trim() {
                 "player" => self.media_step(1),
@@ -131,21 +108,6 @@ impl crate::app::App {
                 _ => {}
             },
             c if c.starts_with("settings ") => self.open_settings_tab(c[9..].trim()),
-            c if c == "screenshot" || c.starts_with("screenshot ") => {
-                let mode = match c.split_whitespace().nth(1) {
-                    Some("window") => crate::snap::Mode::Window,
-                    Some("screen") => crate::snap::Mode::Screen,
-                    _ => crate::snap::Mode::Area,
-                };
-                let delay = c.split_whitespace().nth(2).and_then(|d| d.parse().ok()).unwrap_or(0);
-                if self.st.snap.is_some() {
-                    self.snap_close();
-                } else {
-                    self.snap_start(mode, delay);
-                }
-            }
-            // следующий профиль питания (для хоткея)
-            "profile" => self.prof_step(1),
             c if c.starts_with("popup ") => {
                 let kind = crate::popups::KINDS.iter().copied().find(|k| *k == &c[6..]).unwrap_or("sys");
                 // из терминала или хоткея: под правым краем бара
@@ -156,17 +118,16 @@ impl crate::app::App {
             }
             // свои обои: путь; без пути — пиксельные из палитры
             c if c == "wallpaper" || c.starts_with("wallpaper ") => self.set_wall(&c["wallpaper".len()..]),
-            c if c == "curtain" || c.starts_with("curtain ") => self.curtain_cmd(&c["curtain".len()..]),
             _ => {}
         }
     }
 
-    /// настройки на вкладке (`yami open settings:keys`, карточка обновления)
+    /// настройки на вкладке (`yami-lite msg settings color`)
     pub fn open_settings_tab(&mut self, tab: &str) {
         let Some(t) = crate::settings::find(tab).map(|x| x.id) else { return };
         self.st.stab = t;
         if self.st.modal != Some(Modal::Settings) {
-            self.toggle_modal(Modal::Settings, false);
+            self.toggle_modal(Modal::Settings);
         } else {
             self.tab_probe();
         }

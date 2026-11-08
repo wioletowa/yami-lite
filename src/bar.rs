@@ -208,10 +208,14 @@ fn module(ui: &mut Ui, st: &State, out: &str, m: &str, x: i32, measure: bool) ->
     let t = ui.t;
     let cy = (H - 1) / 2;
     match m {
+        // своя команда лаунчера (launcherCmd): не задана — модуля нет
         "launcher" => {
+            if st.set.launcher_cmd.trim().is_empty() {
+                return 0;
+            }
             if !measure {
                 let r = R::new(x, 0, 26, H - 1);
-                let hov = ui.hover(r) || st.modal == Some(crate::app::Modal::Launcher);
+                let hov = ui.hover(r);
                 for i in 0..4 {
                     let c = if i == 0 || hov { t.red } else { t.dim };
                     ui.cv.fill(R::new(x + 6 + (i % 2) * 8, cy - 7 + (i / 2) * 8, 6, 6), c);
@@ -246,15 +250,6 @@ fn module(ui: &mut Ui, st: &State, out: &str, m: &str, x: i32, measure: bool) ->
                 }
                 ui.zone(r, Act::Ws(ws.id), Cur::Pointer);
                 wx += 26;
-            }
-            w
-        }
-        "mode" => {
-            let label = if st.niri.stacking { "стол" } else { "лента" };
-            let w = ui.w(PX, label) + 14 + 7 + 14;
-            if !measure {
-                let r = R::new(x, cy - 11, w, 22);
-                ui.button(r, label, if st.niri.stacking { "float" } else { "tile" }, Tone::Plain, st.niri.stacking, true, Act::Mode);
             }
             w
         }
@@ -342,16 +337,6 @@ fn module(ui: &mut Ui, st: &State, out: &str, m: &str, x: i32, measure: bool) ->
             }
             w
         }
-        "profile" => {
-            if !measure {
-                let r = R::new(x - 2, 0, 18, H - 1);
-                let hov = ui.hover(r);
-                let c = if hov { t.text_hi } else if !st.prof.present { t.text_faint } else if st.prof.active == "performance" { t.red } else if st.prof.active == "power-saver" { t.ok } else { t.text_dim };
-                ui.cv.icon(st.prof.icon(), x, cy - 7, 2, c);
-                ui.zone(r, Act::Popup("profile"), Cur::Pointer);
-            }
-            14
-        }
         "bat" => {
             // батарея ноутбука: нет батареи — модуля нет. Значок — клетками по 2 px, как все значки бара
             let Some(bat) = st.sys.bat else { return 0 };
@@ -375,7 +360,7 @@ fn module(ui: &mut Ui, st: &State, out: &str, m: &str, x: i32, measure: bool) ->
             let body = if low { t.ember } else if hov { t.text_hi } else { t.text_dim };
             ui.cv.battery(x + bw, cy - 7, 2, bat.pct as f32 / 100.0, body, col, t.surface_hi.lerp(t.border, 0.45));
             ui.text_in(PX, R::new(x + bw + 28, 0, w, H - 1), &txt, if low { t.ember } else if hov { t.text } else { t.text_dim });
-            ui.zone(r, Act::Popup("profile"), Cur::Pointer);
+            ui.zone(r, Act::Popup("bat"), Cur::Pointer);
             w
         }
         "kb" => {
@@ -525,46 +510,6 @@ fn module(ui: &mut Ui, st: &State, out: &str, m: &str, x: i32, measure: bool) ->
                 ui.zone(r, Act::NightToggle, Cur::Pointer);
             }
             14
-        }
-        "weather" => {
-            // погода (weather.rs): значок и температура; города нет или ответа ещё нет — «?»
-            let wt = crate::weather::ready(st);
-            let txt = wt.map(|w| crate::weather::deg(w.temp)).unwrap_or_else(|| "?".into());
-            let w = 16 + ui.w(PX, &txt);
-            if !measure {
-                let r = R::new(x - 2, 0, w + 4, H - 1);
-                let hov = ui.hover(r);
-                let c = if hov { t.text_hi } else if wt.is_some() { t.text } else { t.text_faint };
-                ui.cv.icon(wt.map(|w| crate::weather::icon(w.code, w.day)).unwrap_or("cloud"), x, cy - 7, 2, c);
-                ui.cv.text_in(ui.f, PX, R::new(x + 16, 0, w - 14, H - 1), &txt, c);
-                ui.zone(r, Act::Popup("weather"), Cur::Pointer);
-            }
-            w
-        }
-        m if m.starts_with("x:") => {
-            // модуль-скрипт: значок 7×7 и текст его цветом роли
-            let Some(p) = st.plugins.shown.get(m) else { return 0 };
-            if p.text.is_empty() && p.icon.is_empty() {
-                return 0;
-            }
-            let icon = !p.icon.is_empty() && crate::gfx::icon7(&p.icon).is_some();
-            // в баре — первая строка, не длиннее 48 знаков (многострочное — для виджета)
-            let text: String = p.text.lines().next().unwrap_or("").chars().take(48).collect();
-            let tw = ui.f.width(PX, &text);
-            let w = if icon { 16 } else { 0 } + tw;
-            if !measure {
-                let r = R::new(x - 2, 0, w + 4, H - 1);
-                let hov = !p.click.is_empty() && ui.hover(r);
-                let c = if hov { t.text_hi } else { crate::plugins::color(&t, &p.color) };
-                if icon {
-                    ui.cv.icon(&p.icon, x, cy - 7, 2, c);
-                }
-                ui.cv.text_in(ui.f, PX, R::new(x + if icon { 16 } else { 0 }, 0, tw + 2, H - 1), &text, c);
-                if !p.click.is_empty() {
-                    ui.zone(r, Act::Plug(p.click.clone()), Cur::Pointer);
-                }
-            }
-            w
         }
         "notif" => {
             let n = st.notifs.history.len();

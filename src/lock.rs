@@ -46,7 +46,7 @@ pub fn draw(ui: &mut Ui, st: &State, w: i32, h: i32, main: bool) {
     let status = if !st.lock_status.is_empty() {
         st.lock_status.clone()
     } else if st.lock_fails > 0 {
-        crate::tf!("неверно ×{}", "wrong ×{}", "incorreta ×{}", st.lock_fails)
+        crate::tf!("неверно ×{}", "wrong ×{}", st.lock_fails)
     } else {
         "enter — войти".to_string()
     };
@@ -92,9 +92,7 @@ impl App {
             self.st.lock_fails = 0;
             self.unlock();
             self.sync_widgets();
-            self.sync_titles();
             self.sync_dock();
-            self.auth_show();
         } else {
             self.st.lock_fails += 1;
             self.st.lock_field.wipe();
@@ -151,7 +149,6 @@ impl App {
         self.drop_lock_surfs();
         self.st.locked = false;
         self.st.lock_field.wipe();
-        self.automount_unlocked();
         let _ = self.conn.roundtrip();
         self.dirty_all();
     }

@@ -41,16 +41,12 @@ impl App {
             // ── выбор обоев ─────────────────────────────────────────────────
             Act::WallPick(i) => self.walls_pick(i),
             Act::WallsBack => self.walls_back(),
-            Act::WallsDir => self.walls_ask(true),
-            Act::WallsFile => self.walls_ask(false),
             // ── бар ─────────────────────────────────────────────────────────
-            Act::Launcher => self.toggle_modal(Modal::Launcher, button == RMB),
-            Act::Plug(cmd) => App::sh(&cmd),
+            Act::Launcher | Act::DockLauncher => App::sh(&self.st.set.launcher_cmd.clone()),
             Act::NightToggle => self.night_toggle(),
             Act::ReplySend => self.reply_send(),
-            Act::Power => self.toggle_modal(Modal::Power, false),
-            Act::Settings => self.toggle_modal(Modal::Settings, false),
-            Act::Curtain => self.curtain_cmd(""),
+            Act::Power => self.toggle_modal(Modal::Power),
+            Act::Settings => self.toggle_modal(Modal::Settings),
             Act::Ws(id) => {
                 if let Some(ws) = self.st.niri.ws.iter().find(|w| w.id == id).cloned() {
                     self.st.niri.focus_ws(&ws);
@@ -81,7 +77,6 @@ impl App {
                     }
                 }
             }
-            Act::Mode => self.ipc("stacking"),
             Act::Kb => self.st.niri.act(serde_json::json!({"SwitchLayout": {"layout": "Next"}})),
             Act::Popup(k) => match (k, button) {
                 ("sound", RMB) => audio::toggle_mute(),
@@ -95,21 +90,9 @@ impl App {
                     self.settings_changed();
                 }
                 ("sys", RMB) => self.open_sysmon(),
-                ("profile", RMB) => self.prof_step(1),
                 _ => self.open_popup(k, &out, ax),
             },
-            // ── лаунчер и питание ───────────────────────────────────────────
-            Act::LRun(i) => {
-                if button == RMB {
-                    self.launcher_pin(i);
-                } else {
-                    self.launcher_run(i);
-                }
-            }
-            Act::LTab(clip) => self.toggle_modal(Modal::Launcher, clip),
-            Act::LPin(i) => self.launcher_pin(i),
-            Act::LDel(i) => self.launcher_del(i),
-            Act::LWipe => self.launcher_wipe(),
+            // ── питание ─────────────────────────────────────────────────────
             Act::PowerDo(i) => self.power_do(i),
             // ── меню ────────────────────────────────────────────────────────
             Act::Menu(i) => self.menu_pick(i),
@@ -172,9 +155,7 @@ impl App {
             }
             Act::NotifAct(id, key) if key == "inline-reply" => self.reply_open(id),
             Act::NotifAct(id, key) => {
-                if !self.shot_note_action(id, &key) && !self.update_note_action(id) && !self.automount_note_action(id) {
-                    crate::dbus::notif_action(id, &key);
-                }
+                crate::dbus::notif_action(id, &key);
                 self.st.notifs.remove(id, false);
                 crate::dbus::notif_closed(id, 2);
                 self.sync_notifs();
@@ -191,9 +172,7 @@ impl App {
                     }
                 }
             }
-            Act::SnapBtn(a) => self.snap_btn(a),
             Act::DockItem(i) => self.dock_click(i, button, sid, zone),
-            Act::DockLauncher => self.toggle_modal(Modal::Launcher, button == RMB),
             Act::DockTrash => App::open_dir("trash:///".into()),
             Act::Pavu => {
                 self.close_all();
@@ -203,22 +182,6 @@ impl App {
                 self.close_all();
                 self.open_sysmon();
             }
-            // ── заголовки окон ──────────────────────────────────────────────
-            Act::TDrag(id) => match button {
-                RMB => self.open_window_menu(id, &out, ax - zone.w / 2 + 40, ay + 2),
-                MMB => self.st.niri.close_window(id),
-                _ => {
-                    if double {
-                        self.window_op(id, "maximize");
-                    } else {
-                        self.st.niri.act(serde_json::json!({"FocusWindow": {"id": id}}));
-                    }
-                }
-            },
-            Act::TSize(id) => self.st.niri.act(serde_json::json!({"FocusWindow": {"id": id}})),
-            Act::TMin(id) => self.st.niri.minimize(id),
-            Act::TMax(id) => self.window_op(id, "maximize"),
-            Act::TClose(id) => self.st.niri.close_window(id),
             // ── виджеты ─────────────────────────────────────────────────────
             Act::WDrag(id) | Act::WMenu(id) => {
                 if button == RMB || matches!(a, Act::WMenu(_)) {
@@ -226,12 +189,7 @@ impl App {
                 }
             }
             Act::EditDone => self.set_editing(false),
-            Act::LockField | Act::AuthField => {}
-            Act::AuthOk => self.auth_submit(),
-            Act::AuthCancel => self.auth_cancel(),
-            Act::Prof(p) => self.prof_set(p),
-            Act::ScreenSel(_) | Act::ScreenOk | Act::ScreenCancel => self.screen_click(&a, double),
-            Act::Disp(_) | Act::DispSel(_) | Act::DispDrag(_) => self.disp_click(&a),
+            Act::LockField => {}
             _ => {}
         }
         self.dirty_all();
@@ -251,26 +209,14 @@ impl App {
                     audio::set_stream(i, (s.vol + if up { 0.05 } else { -0.05 }).clamp(0.0, 1.0));
                 }
             }
-            Act::KeyScroll | Act::KeyRec(_) | Act::KeyReset(_) | Act::KeyDel(_) => self.keys_wheel(d),
             Act::Ws(_) => {
                 self.st.niri.act(if up { serde_json::json!({"FocusWorkspaceUp": {}}) } else { serde_json::json!({"FocusWorkspaceDown": {}}) });
             }
             Act::DockItem(i) => self.dock_wheel(i, up),
-            Act::Popup("profile") | Act::Prof(_) => self.prof_step(if up { -1 } else { 1 }),
-            Act::ScreenSel(_) => self.screen_wheel(up),
             Act::Kb => self.st.niri.act(serde_json::json!({"SwitchLayout": {"layout": if up { "Prev" } else { "Next" }}})),
             Act::CalMonth(_) | Act::Popup("cal") => {
                 self.st.cal_month += if up { -1 } else { 1 };
                 self.dirty(&SKind::Popup);
-            }
-            Act::LRun(_) => {
-                let n = self.st.launcher.items.len();
-                if n > 0 {
-                    let c = self.st.launcher.cur as i32 + if up { -1 } else { 1 };
-                    self.st.launcher.cur = c.clamp(0, n as i32 - 1) as usize;
-                    self.st.launcher.keep_visible();
-                    self.dirty(&SKind::Modal);
-                }
             }
             Act::Tray(svc) => {
                 if let Some(it) = self.st.tray.iter().find(|t| t.service == svc) {
@@ -293,12 +239,12 @@ impl App {
     /// первая найденная графическая программа, иначе текстовая в терминале: на чистой системе
     /// nm-connection-editor и blueman часто не стоят, а nmtui и bluetoothctl идут с сервисами
     fn open_tool(gui: &[&str], tui: &[&str]) -> bool {
-        if let Some(g) = gui.iter().find(|b| crate::doctor::which(b)) {
+        if let Some(g) = gui.iter().find(|b| crate::proc::which(b)) {
             App::spawn(&[g.to_string()]);
             return true;
         }
-        let Some(bin) = tui.iter().find(|b| crate::doctor::which(b)) else { return false };
-        let term = crate::launcher::term();
+        let Some(bin) = tui.iter().find(|b| crate::proc::which(b)) else { return false };
+        let term = crate::proc::term();
         let mut v = vec![term.clone()];
         if !term.ends_with("kitty") {
             v.push("-e".into());

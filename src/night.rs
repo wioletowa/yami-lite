@@ -67,7 +67,7 @@ pub fn args(set: &crate::config::Settings) -> Vec<String> {
 impl App {
     pub fn night_sync(&mut self) {
         let s = &self.st.set;
-        if !s.night || !crate::doctor::which("wlsunset") {
+        if !s.night || !crate::proc::which("wlsunset") {
             if self.st.night.on {
                 self.st.night.stop();
                 self.st.night.on = false;
@@ -89,7 +89,7 @@ impl App {
     }
 
     pub fn night_toggle(&mut self) {
-        if !crate::doctor::which("wlsunset") {
+        if !crate::proc::which("wlsunset") {
             self.toast_note("ночной свет", "нужен wlsunset: поставь его из своего дистрибутива");
             return;
         }

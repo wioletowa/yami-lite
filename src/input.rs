@@ -68,27 +68,6 @@ impl App {
     pub(crate) fn on_pointer(&mut self, e: &PointerEvent) {
         let Some(sid) = self.surf_of(&e.surface) else { return };
         let (x, y) = e.position;
-        // скриншот: протяжка, рисование и лупа — мимо обычных зон
-        if self.surf_kind(sid) == Some(SKind::Snap) {
-            let on_btn = self.zone_at(sid, x, y).map(|z| matches!(z.act, Act::SnapBtn(_))).unwrap_or(false);
-            let took = match e.kind {
-                PointerEventKind::Motion { .. } => self.snap_pointer(sid, 0, x, y, 0, on_btn),
-                PointerEventKind::Press { button, .. } => self.snap_pointer(sid, 1, x, y, button, on_btn),
-                PointerEventKind::Release { button, .. } if self.press.is_none() => self.snap_pointer(sid, 2, x, y, button, on_btn),
-                PointerEventKind::Axis { vertical, .. } => {
-                    let d = if vertical.value120 != 0 { vertical.value120.signum() } else { vertical.discrete.signum() };
-                    if d != 0 {
-                        self.snap_wheel(d);
-                    }
-                    true
-                }
-                _ => false,
-            };
-            if took {
-                self.ptr = Some((sid, x, y));
-                return;
-            }
-        }
         match e.kind {
             PointerEventKind::Enter { serial } => {
                 if matches!(self.surf_kind(sid), Some(SKind::Dock | SKind::DockEdge)) {
@@ -229,18 +208,6 @@ impl App {
                     self.mark(sid);
                 }
             }
-            Act::TDrag(win) => {
-                if p.moved {
-                    self.title_drag(win, sid, start, dx, dy);
-                }
-                return;
-            }
-            Act::TSize(win) => {
-                if p.moved {
-                    self.grip_drag(win, sid, start, dx, dy);
-                }
-                return;
-            }
             Act::MDrag => {
                 if p.moved {
                     self.modal_drag(sid, dx, dy);
@@ -251,12 +218,6 @@ impl App {
                 if p.moved {
                     let press = (p.x, p.y);
                     self.bar_drag(&act, zone, press, x, y);
-                }
-                return;
-            }
-            Act::DispDrag(i) => {
-                if p.moved {
-                    self.disp_drag(i, dx, dy);
                 }
                 return;
             }
@@ -298,17 +259,8 @@ impl App {
     }
 
     pub(crate) fn on_drag_end(&mut self, p: &Press) {
-        if let Act::TDrag(win) | Act::TSize(win) = p.act {
-            self.title_drag_end(win);
-        }
         if let Act::MDrag = p.act {
             self.mdrag = None;
-        }
-        if let Act::SSlider("pixel_level", ..) = p.act {
-            self.look_apply();
-        }
-        if let Act::DispDrag(_) = p.act {
-            self.disp_drag_end();
         }
         if matches!(p.act, Act::SModDrag(..) | Act::SModNew(_)) {
             self.bar_drop();
@@ -335,11 +287,6 @@ impl App {
 
     pub(crate) fn on_hover(&mut self, a: &Act) {
         match a {
-            Act::LRun(i) => {
-                if self.st.launcher.cur != *i {
-                    self.st.launcher.cur = *i;
-                }
-            }
             Act::PowerDo(i) => self.st.power_cur = *i,
             Act::Menu(i) => {
                 if let Some(m) = self.st.menu.as_mut() {
@@ -359,11 +306,8 @@ impl App {
         let Some(sid) = self.kb_surf else { return };
         match self.surf_kind(sid) {
             Some(SKind::Modal) => match self.st.modal {
-                Some(Modal::Launcher) => self.launcher_key(e),
                 Some(Modal::Power) => self.power_key(e),
                 Some(Modal::Settings) => self.settings_key(e),
-                Some(Modal::Auth) => self.auth_key(e),
-                Some(Modal::Screen) => self.screen_key(e),
                 Some(Modal::Reply) => self.reply_key(e),
                 Some(Modal::Walls) => self.walls_key(e),
                 None => {}
@@ -371,10 +315,6 @@ impl App {
             Some(SKind::Popup) => self.popup_key(e),
             Some(SKind::Menu) => self.menu_key(e),
             Some(SKind::Widget(_)) => self.widget_key(e),
-            Some(SKind::Snap) => {
-                self.snap_key(e);
-                return;
-            }
             Some(SKind::EditBar) => {
                 if matches!(e.keysym, Keysym::Escape | Keysym::Return) {
                     self.set_editing(false);

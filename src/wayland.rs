@@ -103,7 +103,6 @@ impl SessionLockHandler for App {
         self.lock = None;
         self.drop_lock_surfs();
         self.st.locked = false;
-        self.automount_unlocked();
     }
     fn configure(&mut self, _: &Connection, _: &QueueHandle<Self>, surface: SessionLockSurface, c: SessionLockSurfaceConfigure, _: u32) {
         if let Some(l) = self.lock_surfs.iter_mut().find(|l| l.s.wl_surface() == surface.wl_surface()) {

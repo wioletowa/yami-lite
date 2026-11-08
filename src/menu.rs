@@ -249,7 +249,7 @@ impl App {
         // на другой стол
         let mut wsm = vec![];
         for ws in self.st.niri.ws.iter().filter(|x| x.output == out) {
-            let name = ws.name.clone().unwrap_or_else(|| crate::tf!("стол {}", "workspace {}", "área de trabalho {}", ws.idx));
+            let name = ws.name.clone().unwrap_or_else(|| crate::tf!("стол {}", "workspace {}", ws.idx));
             wsm.push(MItem::new(&name, "right", MAct::Win(id, Box::leak(format!("ws{}", ws.idx).into_boxed_str()))));
         }
         if !wsm.is_empty() {

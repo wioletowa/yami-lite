@@ -42,6 +42,21 @@ impl App {
         }
     }
 
+    /// действие меню питания (и строки ACTIONS)
+    pub fn sys_action(&mut self, a: &str) {
+        match a {
+            "lock" => self.lock_now(),
+            "sleep" => {
+                self.lock_now();
+                App::sh("sleep 0.6; systemctl suspend");
+            }
+            "logout" => self.st.niri.act(serde_json::json!({"Quit": {"skip_confirmation": true}})),
+            "reboot" => App::spawn(&["systemctl".into(), "reboot".into()]),
+            "poweroff" => App::spawn(&["systemctl".into(), "poweroff".into()]),
+            _ => {}
+        }
+    }
+
     pub fn power_key(&mut self, e: &KeyEvent) {
         let n = ACTIONS.len();
         match e.keysym {

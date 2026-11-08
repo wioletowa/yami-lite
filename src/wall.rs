@@ -1,7 +1,7 @@
-// Обои: своя картинка или пиксельные из палитры (tools/theme.py пишет wallpaper.png). Своя
+// Обои: своя картинка или пиксельные из палитры (generate: свечение акцента дизерингом). Своя
 // готовится в нити — декод, обрезка или вписывание под экран, клетки, окраска в палитру,
-// затемнение — и приходит в Msg::Wall уже готовой: экран рисует её без пересчёта. Тот же
-// результат идёт и экрану входа (login.rs → /var/lib/yami-greet/look/wall.png). Здесь же вкладка «обои».
+// затемнение — и приходит в Msg::Wall уже готовой: экран рисует её без пересчёта. Здесь же
+// вкладка «обои».
 
 use crate::app::{App, Msg, SKind, State};
 use crate::config::{self, Settings};
@@ -22,7 +22,7 @@ pub fn cell(p: i32) -> u32 {
     [1, 2, 3, 4, 6, 8, 12, 16][(p.clamp(1, 8) - 1) as usize]
 }
 
-/// картинки, которые шелл декодирует сам: обои, выбор обоев, кадры skwd-wall
+/// картинки, которые шелл декодирует сам: обои, выбор обоев
 pub const IMAGES: &[&str] = &["png", "jpg", "jpeg", "webp"];
 
 pub fn decodable(p: &Path) -> bool {
@@ -45,21 +45,40 @@ pub fn own(s: &Settings) -> Option<PathBuf> {
     Some(yami_px::paths::expand(p))
 }
 
-/// что рисовать: картинка, выбранная в skwd-wall (если он включён и что-то выбрал), иначе своя
+/// что рисовать: своя картинка или None — пиксельные из палитры
 pub fn source(st: &State) -> Option<PathBuf> {
-    match (&st.skwd.pick, st.set.wall_skwd) {
-        (Some((p, _)), true) => Some(p.clone()),
-        _ => own(&st.set),
-    }
+    own(&st.set)
 }
 
-/// акцент берётся из картинки: «палитра из обоев», если палитру не ведёт skwd-wall
+/// акцент берётся из картинки: «палитра из обоев»
 fn accent_from_image(s: &Settings) -> bool {
-    s.wall_accent && !(s.wall_skwd && s.wall_skwd_colors)
+    s.wall_accent
 }
 
-pub fn generated() -> PathBuf {
-    config::state_dir().join("wallpaper.png")
+/// пиксельные обои в четверть экрана (шелл растягивает их ×4 без сглаживания): свечение акцента
+/// из правого нижнего угла и слабее из левого верхнего, ступенями по Байеру; редкая точечная сетка
+pub fn generate(bg: C, accent: C, dot: C, light: bool) -> RgbaImage {
+    let (w, h) = (480u32, 270u32);
+    let (levels, peak) = (7.0f32, if light { 0.3 } else { 0.2 });
+    let diag = ((w * w + h * h) as f32).sqrt();
+    let (r1, r2) = (diag * 0.75, diag * 0.45);
+    let ch = |c: C| [((c.0 >> 16) & 255) as f32, ((c.0 >> 8) & 255) as f32, (c.0 & 255) as f32];
+    let (b, a, d) = (ch(bg), ch(accent), ch(dot));
+    RgbaImage::from_fn(w, h, |x, y| {
+        let (xf, yf) = (x as f32, y as f32);
+        let ga = (1.0 - ((w as f32 - xf).powi(2) + (h as f32 - yf).powi(2)).sqrt() / r1).max(0.0);
+        let gb = (1.0 - (xf * xf + yf * yf).sqrt() / r2).max(0.0);
+        let g = ga * ga + gb * gb * 0.4;
+        let q = (g * levels + BAYER4[((y & 3) * 4 + (x & 3)) as usize] as f32 / 16.0).floor() / levels * peak;
+        let mut c = [0.0f32; 3];
+        for i in 0..3 {
+            c[i] = b[i] + (a[i] - b[i]) * q;
+            if x % 10 == 5 && y % 10 == 5 {
+                c[i] += (d[i] - c[i]) * 0.6;
+            }
+        }
+        image::Rgba([c[0].round() as u8, c[1].round() as u8, c[2].round() as u8, 255])
+    })
 }
 
 fn name_of(list: &[(&str, &'static str)], id: &str) -> &'static str {
@@ -84,6 +103,9 @@ pub struct Job {
     accent: bool,
     /// тона палитры от фона к тексту
     ramp: [u32; 6],
+    /// точки сетки пиксельных обоев и светлая ли тема
+    border: u32,
+    light: bool,
 }
 
 impl Job {
@@ -92,7 +114,7 @@ impl Job {
         let own = src;
         Job {
             own: own.is_some(),
-            path: own.unwrap_or_else(generated),
+            path: own.unwrap_or_default(),
             w: w.max(1) as u32,
             h: h.max(1) as u32,
             cell: cell(s.wall_pixel),
@@ -101,27 +123,28 @@ impl Job {
             dim: s.wall_dim.clamp(0.0, 0.8),
             accent: accent_from_image(s),
             ramp: [t.bg.0, t.dim.0, t.blood.0, t.red.0, t.ember.0, t.text.0],
+            border: t.border.0,
+            light: t.light,
         }
     }
 
     pub fn key(&self) -> String {
         let m = std::fs::metadata(&self.path).and_then(|m| m.modified()).ok();
         // и «палитра из обоев»: включили её на той же картинке — акцент надо вычислить заново
-        format!("{:?}|{m:?}|{}|{}x{}|{}|{}|{}|{}|{:x?}|{}", self.path, self.own, self.w, self.h, self.cell, self.fit, self.tone, self.dim, self.ramp, self.accent)
+        format!("{:?}|{m:?}|{}|{}x{}|{}|{}|{}|{}|{:x?}|{}|{:x}|{}", self.path, self.own, self.w, self.h, self.cell, self.fit, self.tone, self.dim, self.ramp, self.accent, self.border, self.light)
     }
 }
 
 /// готовая картинка и (если просили) акцент из неё
 pub fn prepare(j: &Job) -> (Option<Img>, Option<u32>) {
-    let Ok(src) = image::open(&j.path) else { return (None, None) };
     let bg = C(j.ramp[0]);
     if !j.own {
         // сгенерированные уже в палитре и в четверть экрана: только затемнение
-        let mut i = src.to_rgba8();
-        drop(src);
+        let mut i = generate(bg, C(j.ramp[3]), C(j.border), j.light);
         dim(&mut i, bg, j.dim);
         return (Some(crate::icons::from_rgba(&i)), None);
     }
+    let Ok(src) = image::open(&j.path) else { return (None, None) };
     let src = src.to_rgba8();
     let accent = if j.accent { dominant(&image::imageops::thumbnail(&src, 64, 64)) } else { None };
     let (sw, sh) = src.dimensions();
@@ -335,7 +358,6 @@ pub fn tab(ui: &mut Ui, st: &State, b: R) {
     ui.cv.pop_clip();
     let (rx, rw) = (pv.right() + 16, b.right() - pv.right() - 16);
     let mut ry = y + 2;
-    let skwd = s.wall_skwd.then_some(st.skwd.pick.as_ref()).flatten();
     match source(st) {
         Some(p) => {
             // имя файла — как есть, без перевода
@@ -345,13 +367,7 @@ pub fn tab(ui: &mut Ui, st: &State, b: R) {
             ui.cv.text(f, PX, rx, ry, &name, t.text);
             ui.cv.pop_clip();
             ry += 20;
-            let what = match skwd.map(|k| k.1.as_str()) {
-                Some("video") => "skwd-wall: видео, здесь — кадр",
-                Some("we") => "skwd-wall: сцена, здесь — кадр",
-                Some(_) => "выбрано в skwd-wall",
-                None if p.is_file() => "своя картинка",
-                None => "файл не найден",
-            };
+            let what = if p.is_file() { "своя картинка" } else { "файл не найден" };
             ui.text_in(PX, R::new(rx, ry, rw, 18), what, if p.is_file() { t.text_faint } else { t.warn });
         }
         None => {
@@ -378,30 +394,9 @@ pub fn tab(ui: &mut Ui, st: &State, b: R) {
     ui.slider(R::new(b.x, y, half, 40), "пиксельные клетки", (s.wall_pixel as f32 - 1.0) / 7.0, &ct, 7, Act::SSlider("wall_pixel", 1.0, 8.0, 7));
     ui.slider(R::new(b.x + half + 20, y, half, 40), "затемнение", s.wall_dim / 0.8, &format!("{:.0}%", s.wall_dim * 100.0), 16, Act::SSlider("wall_dim", 0.0, 0.8, 16));
     y += 54;
-    // skwd-wall: раздел виден, когда он стоит (или уже включён)
-    let has_skwd = s.wall_skwd || st.skwd_here;
-    y = title(ui, b.x, y, b.w, if has_skwd { "цвета и skwd-wall" } else { "цвета" });
-    let (lx, rx2) = (b.x, b.x + half + 20);
-    let ph = if s.wall_skwd && s.wall_skwd_colors { "палитру ведёт skwd-wall" } else { "акцент из картинки" };
-    ui.toggle(R::new(lx, y, half, 40), "палитра из обоев", ph, s.wall_accent, Act::SWall("accent"));
-    ui.toggle(R::new(rx2, y, half, 40), "иероглиф на обоях", "в правом нижнем углу", s.wall_kanji, Act::SBool("wall_kanji"));
-    y += 46;
-    if has_skwd {
-        // кто рисует: skwd-paper (видео, сцены, переходы) или шелл (картинка в клетках и тонах)
-        let hint = if !s.wall_skwd {
-            "выбор и видео-обои — в skwd-wall"
-        } else if st.skwd.pick.is_none() {
-            "ждёт выбора в skwd-wall"
-        } else if st.skwd.drawn.is_empty() {
-            "картинку рисует шелл"
-        } else {
-            "рисует skwd-paper"
-        };
-        ui.toggle(R::new(lx, y, half, 40), "обои из skwd-wall", hint, s.wall_skwd, Act::SBool("wall_skwd"));
-        if s.wall_skwd {
-            ui.toggle(R::new(rx2, y, half, 40), "его палитра", "акцент и светлая / тёмная тема", s.wall_skwd_colors, Act::SBool("wall_skwd_colors"));
-        }
-    }
+    y = title(ui, b.x, y, b.w, "цвета");
+    ui.toggle(R::new(b.x, y, half, 40), "палитра из обоев", "акцент из картинки", s.wall_accent, Act::SWall("accent"));
+    ui.toggle(R::new(b.x + half + 20, y, half, 40), "иероглиф на обоях", "в правом нижнем углу", s.wall_kanji, Act::SBool("wall_kanji"));
 }
 
 impl App {
@@ -418,27 +413,15 @@ impl App {
         let (w, h) = self.output_size(&self.focus_out());
         let job = Job::new(&self.st.set, &self.st.t, w, h, source(&self.st));
         let key = job.key();
-        // и обои экрана входа: сменили их вид — пересчитать, даже если стол прежний
-        let lmode = crate::login::wall_mode(&self.st.set);
-        let full = format!("{key}|{lmode}");
-        if full == self.wall_key {
+        if key == self.wall_key {
             return;
         }
-        self.wall_key = full;
+        self.wall_key = key;
         self.wall_job += 1;
         let (n, tx) = (self.wall_job, self.tx.clone());
-        let ljob = (lmode == "pixel").then(|| Job::new(&self.st.set, &self.st.t, w, h, None));
         std::thread::spawn(move || {
             let (img, accent) = prepare(&job);
-            // экрану входа — та же картинка (или своя: greetWall); PNG пишется уже после отправки
-            // картинки шеллу
-            let login = if lmode == "desktop" && crate::login::wanted(&key) { img.clone() } else { None };
             let _ = tx.send(Msg::Wall(n, img, accent));
-            if let Some(i) = login {
-                crate::login::wall(&i, &key);
-            } else if lmode != "desktop" {
-                crate::login::wall_other(ljob);
-            }
         });
     }
 
@@ -452,7 +435,7 @@ impl App {
         self.wall_at = std::time::Instant::now();
         self.st.wall_stamp += 1;
         for s in self.surfs.values_mut() {
-            if matches!(s.kind, SKind::Wall | SKind::Curtain) {
+            if s.kind == SKind::Wall {
                 s.dirty = true;
                 s.frame_pending = false;
             }
@@ -476,10 +459,10 @@ impl App {
 
     /// обои уже у niri: держать полную картинку незачем (1080p — 8 МБ, 4K — 33 МБ). Остаётся копия
     /// не больше PARK точек по длинной стороне: превью во вкладке, замер под виджетами, первый кадр
-    /// блокировки и шторки. Полную пересчитывает wall_need, когда она снова нужна
+    /// блокировки. Полную пересчитывает wall_need, когда она снова нужна
     pub fn wall_park(&mut self) {
         let Some(img) = self.st.wall.as_ref() else { return };
-        if self.st.wall_parked || self.st.locked || self.st.curtain.is_some() || img.w.max(img.h) <= PARK {
+        if self.st.wall_parked || self.st.locked || img.w.max(img.h) <= PARK {
             return;
         }
         // пока обои не показаны (буфер ещё свой) или их только что сменили — рано
@@ -492,8 +475,7 @@ impl App {
         yami_px::trim_heap();
     }
 
-    /// полная картинка снова нужна (обои перерисовать, блокировка, шторка): пересчитать её в нити.
-    /// Экран входа не трогается — ключ тот же
+    /// полная картинка снова нужна (обои перерисовать, блокировка): пересчитать её в нити
     pub fn wall_need(&mut self) {
         if !self.st.wall_parked || self.wall_reload {
             return;

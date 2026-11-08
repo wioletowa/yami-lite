@@ -174,7 +174,7 @@ fn from_file(player: &str) -> Option<String> {
 }
 
 fn cache_dir() -> PathBuf {
-    yami_px::paths::cache_dir().join("yami/lyrics")
+    yami_px::paths::cache_dir().join("yami-lite/lyrics")
 }
 
 fn cache_file(key: &str) -> PathBuf {

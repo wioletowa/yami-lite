@@ -1,25 +1,17 @@
-// Командная строка для тех, кто любит конфиги: yami-shell config …, yami-shell binds ….
+// Командная строка для тех, кто любит конфиги: yami-lite config ….
 // Работающий шелл замечает правку файла сам (перечитывает по времени изменения).
 
 use crate::config::{settings_path, Settings};
 use serde_json::Value;
 
-const HELP: &str = "yami-shell config [list | get KEY | set KEY VALUE | reset [KEY] | check | path]
+const HELP: &str = "yami-lite config [list | get KEY | set KEY VALUE | reset [KEY] | check | path]
   list            every key with its value; * marks a value changed from the default
   get KEY         one value as JSON
   set KEY VALUE   VALUE is JSON (true, 12, [\"a\"], {…}) or else a plain string
   reset [KEY]     back to the default: one key, or the whole file (a .bak copy is kept)
   check           keys with a bad value (ignored, default used) and unknown keys
   path            where the file is
-  kdl [yami]      what the shell writes to ~/.config/niri/yami-fx.kdl (yami: as for yami-niri)
-  lite-auto       lite mode on when this machine is weak or virtual and the file has no `lite` yet
-Keys are camelCase, as in ~/.config/yami-shell.json. Reference: docs/CONFIG.md.
-
-yami-shell binds [list | print | write]
-  list            every keybinding: id, keys, what it does
-  print           the niri binds block the shell writes
-  write           write ~/.config/niri/yami-binds.kdl now (the shell does it on start)
-Change one: yami-shell config set binds '{\"terminal\": \"Mod+Return\"}' (\"\" turns it off).";
+Keys are camelCase, as in ~/.config/yami-lite/settings.json.";
 
 pub fn file_json() -> serde_json::Map<String, Value> {
     std::fs::read_to_string(settings_path()).ok().and_then(|t| serde_json::from_str::<Value>(&t).ok()).and_then(|v| v.as_object().cloned()).unwrap_or_default()
@@ -61,14 +53,14 @@ pub fn config(args: &[String]) -> i32 {
             match cur.get(*k) {
                 Some(v) => println!("{}", serde_json::to_string_pretty(&tidy(v)).unwrap_or_default()),
                 None => {
-                    eprintln!("no such key: {k} (yami-shell config list)");
+                    eprintln!("no such key: {k} (yami-lite config list)");
                     return 2;
                 }
             }
         }
         ["set", k, v] => {
             if !defaults().contains_key(*k) {
-                eprintln!("no such key: {k} (yami-shell config list)");
+                eprintln!("no such key: {k} (yami-lite config list)");
                 return 2;
             }
             let val: Value = serde_json::from_str(v).unwrap_or_else(|_| Value::String(v.to_string()));
@@ -107,25 +99,6 @@ pub fn config(args: &[String]) -> i32 {
                 return 1;
             }
         }
-        ["kdl"] | ["kdl", _] => {
-            // что шелл пишет в niri/yami-fx.kdl; `kdl yami` — как для yami-niri
-            let lvl = if a.get(1) == Some(&"yami") { u32::MAX } else { crate::niri::config_level(crate::niri::fork_level()) };
-            print!("{}", Settings::load().fx_kdl(lvl, false));
-        }
-        // установщик, чистая установка: слабая или виртуальная машина — сразу лёгкий режим;
-        // ключ уже есть в файле (выбор человека) — не трогаем
-        ["lite-auto"] => {
-            if file_json().contains_key("lite") {
-                return 0;
-            }
-            let Some(why) = crate::lite::reason() else { return 0 };
-            let mut s = Settings::load();
-            s.lite = true;
-            if !save(&s) {
-                return 1;
-            }
-            println!("lite mode on: {why}");
-        }
         ["check"] => {
             let (bad, unknown) = Settings::problems(&file_json());
             for k in &bad {
@@ -148,25 +121,3 @@ pub fn config(args: &[String]) -> i32 {
     0
 }
 
-pub fn binds(args: &[String]) -> i32 {
-    let s = Settings::load();
-    crate::i18n::set(&s.lang);
-    match args.first().map(|x| x.as_str()) {
-        Some("list") => {
-            for b in crate::keys::BINDS {
-                let k = crate::keys::key_of(&s, b);
-                println!("{:<16} {:<28} {}", b.id, if k.is_empty() { "-" } else { &k }, crate::keys::title_of(b));
-            }
-            for c in &s.custom_binds {
-                println!("{:<16} {:<28} {}", "custom", c.key, c.cmd);
-            }
-        }
-        Some("print") => print!("{}", crate::keys::kdl(&s)),
-        None | Some("write") => crate::keys::write(&s),
-        _ => {
-            println!("{HELP}");
-            return 2;
-        }
-    }
-    0
-}

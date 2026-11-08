@@ -1,5 +1,5 @@
 // Настройки: группы вкладок слева, содержимое справа. Всё применяется сразу и пишется в
-// ~/.config/yami-shell.json (его можно править и руками — шелл подхватит).
+// ~/.config/yami-lite/settings.json (его можно править и руками — шелл подхватит).
 //
 // Вкладка — строка в GROUPS: ключ, имя, значок, слова для поиска и функция рисования (каждая в
 // своём модуле). Содержимое листается колесом: сколько его, узнаём по зонам, которые вкладка
@@ -10,7 +10,7 @@ use crate::font::PX;
 use crate::gfx::{BoxStyle, R};
 use crate::ui::{Act, Cur, Tone, Ui};
 pub use crate::bartab::{BDrag, BarEd};
-use crate::settabs::{tab_about, tab_color, tab_dock, tab_look, tab_notif, tab_shots, tab_system, tab_widgets, tab_windows};
+use crate::settabs::{tab_about, tab_color, tab_dock, tab_look, tab_notif, tab_system, tab_widgets};
 use smithay_client_toolkit::seat::keyboard::{KeyEvent, Keysym};
 
 pub const SIZE: (i32, i32) = (800, 600);
@@ -24,10 +24,10 @@ pub struct Tab {
     pub id: &'static str,
     pub name: &'static str,
     pub icon: &'static str,
-    /// слова для поиска из лаунчера («?vrr» → экраны), по-русски и по-английски
+    /// слова для поиска, по-русски и по-английски
     pub find: &'static str,
     pub draw: fn(&mut Ui, &State, R),
-    /// у вкладки свой список с прокруткой (клавиши): общую не включать
+    /// у вкладки свой список с прокруткой: общую не включать
     pub own_scroll: bool,
 }
 
@@ -40,39 +40,26 @@ pub const GROUPS: &[(&str, &[Tab])] = &[
     (
         "внешний вид",
         &[
-            tab("color", "цвет", "drop", "палитра акцент цвет тема темы шаблон светлая тёмная стекло прозрачность плотность palette accent colour color theme themes template light dark glass opacity paleta destaque cor cores tema temas modelo claro escuro vidro transparência", tab_color), // i18n-ok
-            tab("wall", "обои", "image", "обои картинка фон папка миниатюры skwd skwd-wall видео wallpaper background image folder thumbnails picker video papel parede imagem fundo pasta miniaturas seletor vídeo", crate::wall::tab), // i18n-ok
-            tab("look", "вид", "eye", "пиксельность пиксели лёгкий режим слабый тормозит виртуалка анимации эффекты появление развёртка размытие значки иконки курсор pixel pixelation lite slow lag vm animation effects reveal scanlines blur icons cursor visual aparência pixels pixelização leve lento animação efeitos desfoque ícones cursor", tab_look), // i18n-ok
-            tab("fonts", "шрифты", "text", "шрифт размер терминал fastfetch браузер fonts size terminal browser fonte fontes tamanho terminal navegador", crate::fonttab::tab), // i18n-ok
+            tab("color", "цвет", "drop", "палитра акцент цвет тема темы программы gtk qt kitty foot alacritty fuzzel niri светлая тёмная palette accent colour color theme themes apps light dark", tab_color), // i18n-ok
+            tab("wall", "обои", "image", "обои картинка фон папка миниатюры wallpaper background image folder thumbnails", crate::wall::tab), // i18n-ok
+            tab("look", "вид", "eye", "шрифт анимации эффекты появление развёртка размытие значки font animation effects reveal scanlines blur icons", tab_look), // i18n-ok
         ],
     ),
     (
         "рабочий стол",
         &[
-            tab("bar", "бар", "menu", "бар модули часы разделитель плавающий плашка ширина центр трей стрелка температура bar modules clock separator floating pill width center tray arrow temperature barra módulos relógio separador flutuante largura centro bandeja temperatura", crate::bartab::tab_bar), // i18n-ok
-            tab("widgets", "виджеты", "grid", "виджеты график часы заметка widgets graph clock note widgets gráfico relógio nota", tab_widgets), // i18n-ok
-            tab("dock", "док", "tile", "док закреплённые dock pinned dock fixados", tab_dock), // i18n-ok
-            tab("windows", "окна", "float", "окна отступы плавающие стол заголовки углы скругление рамка gaps floating stacking windows titlebars corners rounded radius border janelas espaço flutuantes títulos cantos arredondados borda mosaico", tab_windows), // i18n-ok
-            tab("screens", "экраны", "screen", "экраны монитор разрешение частота масштаб vrr hz герц поворот display monitor resolution refresh scale rotation telas tela monitor resolução frequência escala rotação", crate::displays::tab), // i18n-ok
-        ],
-    ),
-    (
-        "действия",
-        &[
-            Tab { own_scroll: true, ..tab("keys", "клавиши", "keys", "клавиши сочетания хоткеи раскладка keys shortcuts hotkeys layout keyboard teclas atalhos teclado layout disposição", crate::keys::tab) }, // i18n-ok
-            tab("shots", "скриншоты", "camera", "скриншоты снимок лупа screenshot loupe captura capturas tela imagem lupa", tab_shots), // i18n-ok
-            tab("games", "игры", "play", "игры steam proton разрывы gamemode ntsync tearing games shader jogos jogo cortes shader", crate::games::tab), // i18n-ok
+            tab("bar", "бар", "menu", "бар модули часы разделитель плавающий ширина центр трей лаунчер bar modules clock separator floating width center tray launcher", crate::bartab::tab_bar), // i18n-ok
+            tab("widgets", "виджеты", "grid", "виджеты график часы widgets graph clock", tab_widgets), // i18n-ok
+            tab("dock", "док", "tile", "док закреплённые dock pinned", tab_dock), // i18n-ok
         ],
     ),
     (
         "система",
         &[
-            tab("system", "система", "gear", "система язык сон блокировка ожидание ночной свет system language idle sleep lock night light sistema idioma língua português brasileiro brasil suspender bloqueio inatividade luz noturna", tab_system), // i18n-ok
-            tab("login", "экран входа", "lock", "экран входа вход логин greetd пользователи пароль numlock вуаль менеджер входа login screen greeter display manager users password numlock veil tela de login entrada greetd usuários senha numlock véu gerenciador de login", crate::login::tab), // i18n-ok
-            tab("notif", "уведомления", "bell", "уведомления не беспокоить место история osd громкость яркость notifications do not disturb position history osd volume brightness notificações notificação perturbe posição histórico volume brilho", tab_notif), // i18n-ok
-            tab("agents", "службы", "bolt", "службы трей polkit порталы флешки телефоны автоподключение обложки тексты погода services tray portals automount drives phones covers lyrics weather serviços serviço bandeja portais discos telefones montagem capas letras clima", crate::agents::tab), // i18n-ok
-            tab("updates", "обновления", "down", "обновления версия откат updates version rollback atualizações atualizar versão reverter", crate::update::tab), // i18n-ok
-            tab("about", "о шелле", "about", "о шелле версия память about version memory sobre versão memória", tab_about), // i18n-ok
+            tab("system", "система", "gear", "система язык сон блокировка ожидание ночной свет музыка обложки тексты system language idle sleep lock night light music covers lyrics", tab_system), // i18n-ok
+            tab("notif", "уведомления", "bell", "уведомления не беспокоить место история osd громкость трей notifications do not disturb position history osd volume tray", tab_notif), // i18n-ok
+            tab("games", "игры", "play", "игры steam gamescope не беспокоить games", crate::games::tab), // i18n-ok
+            tab("about", "о шелле", "about", "о шелле версия память about version memory", tab_about), // i18n-ok
         ],
     ),
 ];
@@ -82,7 +69,7 @@ pub fn tabs() -> impl Iterator<Item = &'static Tab> {
     GROUPS.iter().flat_map(|g| g.1.iter())
 }
 
-/// вкладка по ключу (из IPC, лаунчера, `shot settings:<id>`)
+/// вкладка по ключу (из IPC)
 pub fn find(id: &str) -> Option<&'static Tab> {
     tabs().find(|t| t.id == id)
 }
@@ -122,7 +109,7 @@ pub fn draw(ui: &mut Ui, st: &State, w: i32, h: i32) {
     let t = ui.t;
     let fr = R::new(0, 0, w - 6, h - 6);
     ui.frame(fr, false);
-    let sub = crate::tf!("yami {} · {:.0} МБ", "yami {} · {:.0} MB", "yami {} · {:.0} MB", env!("CARGO_PKG_VERSION"), st.rss);
+    let sub = crate::tf!("yami-lite {} · {:.0} МБ", "yami-lite {} · {:.0} MB", env!("CARGO_PKG_VERSION"), st.rss);
     ui.header(R::new(1, 1, fr.w - 2, 30), "gear", "настройки", &sub);
     // за заголовок окно двигается (крестик зарегистрирован позже — он сверху)
     ui.zone(R::new(1, 1, fr.w - 2, 30), Act::MDrag, Cur::Default);
@@ -242,42 +229,26 @@ pub(crate) fn cycle<'a>(list: &[(&'a str, &'a str)], cur: &str) -> &'a str {
 }
 
 impl App {
-    /// что есть в системе для открытой вкладки: игры (gamemode, ntsync…), skwd-wall для обоев.
-    /// При открытии вкладки и настроек — не в каждом кадре
+    /// при открытии вкладки: свои темы читаются с диска
     pub fn tab_probe(&mut self) {
-        match self.st.stab {
-            "games" => self.st.game_probe = crate::gameboost::probe(),
-            "wall" => self.st.skwd_here = crate::skwd::installed(),
-            "login" => self.st.login_probe = crate::login::probe(),
-            "look" if self.st.sets.is_none() => self.sets_load(),
-            _ => {}
+        if self.st.stab == "color" && self.st.color_page == 1 {
+            self.theme_do("list", 0);
         }
     }
 
     pub fn settings_key(&mut self, e: &KeyEvent) {
-        if self.keys_key(e) {
-            return;
-        }
         if let Some(f) = self.st.field_focus {
             match e.keysym {
                 Keysym::Escape => self.st.field_focus = None,
                 Keysym::Return | Keysym::KP_Enter => {
                     if f == "hex" {
                         self.apply_hex();
-                    } else if f == "float_apps" {
-                        self.settings_click(&Act::SCycle("float_apply"));
-                    } else if f == "shot_dir" {
-                        self.settings_click(&Act::SCycle("shot_dir_apply"));
                     } else if f == "game_apps" {
                         self.settings_click(&Act::SCycle("game_apply"));
                     } else if f == "night_geo" {
                         self.settings_click(&Act::SCycle("geo_apply"));
-                    } else if f == "weather_city" {
-                        self.settings_click(&Act::SCycle("weather_apply"));
-                    } else if f == "kb_layout" {
-                        self.settings_click(&Act::SCycle("kb_apply"));
-                    } else if f == "key_cmd" {
-                        self.settings_click(&Act::KeyAdd);
+                    } else if f == "launcher_cmd" {
+                        self.settings_click(&Act::SCycle("launcher_apply"));
                     } else {
                         self.settings_click(&Act::SCycle("wall_apply"));
                     }
@@ -286,13 +257,9 @@ impl App {
                     let mods = self.mods;
                     let field = match f {
                         "hex" => &mut self.st.hex,
-                        "shot_dir" => &mut self.st.shot_field,
-                        "float_apps" => &mut self.st.float_field,
-                        "key_cmd" => &mut self.st.keys.cmd,
                         "game_apps" => &mut self.st.game_field,
                         "night_geo" => &mut self.st.geo_field,
-                        "weather_city" => &mut self.st.weather_field,
-                        "kb_layout" => &mut self.st.keys.lay,
+                        "launcher_cmd" => &mut self.st.launcher_field,
                         _ => &mut self.st.wall_field,
                     };
                     App::edit_field(field, e, &mods);

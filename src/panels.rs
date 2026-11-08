@@ -1,10 +1,9 @@
-// Открытие и закрытие панелей шелла: модальные (лаунчер, питание, настройки, пароль, выбор
-// экрана, ответ), всплывашки бара и пиксельное меню.
+// Открытие и закрытие панелей шелла: модальные (питание, настройки, ответ, выбор обоев),
+// всплывашки бара и пиксельное меню.
 
 use crate::app::*;
 use crate::gfx::R;
-use crate::icons::{self};
-use crate::{launcher, menu, net, popups};
+use crate::{menu, net, popups};
 
 use smithay_client_toolkit::shell::{
     wlr_layer::{Anchor, KeyboardInteractivity, Layer},
@@ -12,47 +11,27 @@ use smithay_client_toolkit::shell::{
 };
 
 impl App {
-    // ── модальные панели: лаунчер, питание, настройки ───────────────────────
-    pub fn toggle_modal(&mut self, m: Modal, clip: bool) {
-        // окно пароля не уступает место другим панелям
-        if self.st.locked || matches!(self.st.modal, Some(Modal::Auth | Modal::Screen)) {
+    // ── модальные панели: питание, настройки, ответ, выбор обоев ────────────
+    pub fn toggle_modal(&mut self, m: Modal) {
+        if self.st.locked {
             return;
         }
-        let same = self.st.modal == Some(m) && (m != Modal::Launcher || self.st.launcher.clip == clip);
-        if self.st.modal.is_some() && !same && m == Modal::Launcher && self.st.modal == Some(Modal::Launcher) {
-            // переключение программы ↔ буфер без закрытия
-            self.st.launcher.set_mode(clip, &self.st.apps, &self.st.niri.wins);
-            if clip {
-                launcher::load_clip(self.tx.clone());
-            }
-            self.dirty(&SKind::Modal);
-            return;
-        }
+        let same = self.st.modal == Some(m);
         self.close_all();
         if same {
             return;
         }
         let out = self.focus_out();
         let (w, h) = match m {
-            Modal::Launcher => launcher::SIZE,
             Modal::Power => crate::power::SIZE,
             Modal::Settings => crate::settings::SIZE,
-            Modal::Auth => crate::auth::SIZE,
-            Modal::Screen => (0, 0),
             Modal::Reply => crate::reply::SIZE,
             Modal::Walls => crate::walls::SIZE,
         };
         self.st.modal = Some(m);
         match m {
-            Modal::Launcher => {
-                self.st.apps = icons::load_apps();
-                self.st.launcher.open(clip, &self.st.apps, &self.st.niri.wins);
-                if clip {
-                    launcher::load_clip(self.tx.clone());
-                }
-            }
             Modal::Power => self.st.power_cur = 0,
-            Modal::Auth | Modal::Screen | Modal::Reply | Modal::Walls => {}
+            Modal::Reply | Modal::Walls => {}
             Modal::Settings => {
                 self.tab_probe();
                 self.st.hex.set(&self.st.set.accent.clone());
@@ -63,11 +42,8 @@ impl App {
         }
         self.mk(SKind::Dim, &out, Layer::Overlay, "yami-dim", Anchor::all(), (0, 0), (0, 0, 0, 0), -1, KeyboardInteractivity::None);
         self.mk(SKind::Modal, &out, Layer::Overlay, match m {
-            Modal::Launcher => "yami-launcher",
             Modal::Power => "yami-power",
             Modal::Settings => "yami-settings",
-            Modal::Auth => "yami-auth",
-            Modal::Screen => "yami-screen",
             Modal::Reply => "yami-reply",
             Modal::Walls => "yami-walls",
         }, Anchor::empty(), (w, h + 12), (0, 0, 0, 0), -1, KeyboardInteractivity::Exclusive);
@@ -91,49 +67,17 @@ impl App {
         self.move_surface(sid, nx, ny);
     }
 
-    /// все клавиши — шеллу (запись сочетания): niri не ловит свои бинды, пока фокус у настроек
-    pub fn inhibit_shortcuts(&mut self, on: bool) {
-        if let Some(i) = self.ksi.take() {
-            i.destroy();
-        }
-        if !on {
-            return;
-        }
-        let surf = self.surfs.values().find(|s| s.kind == SKind::Modal).map(|s| s.layer.wl_surface().clone());
-        let seat = self.seat.seats().next();
-        if let (Some(mgr), Some(surf), Some(seat)) = (&self.ksi_mgr, surf, seat) {
-            self.ksi = Some(mgr.inhibit_shortcuts(&surf, &seat, &self.qh, ()));
-        }
-    }
-
     pub fn close_modal(&mut self) {
         if self.st.modal.is_none() {
             return;
         }
         // следующее окно снова откроется по центру
         self.modal_at = None;
-        self.keys_capture(None);
-        if self.st.modal == Some(Modal::Auth) {
-            self.auth_cancel();
-        }
-        // окно выбора экрана закрыли мимо кнопок — порталу «отмена»
-        if self.st.modal == Some(Modal::Screen) {
-            if let Some(p) = self.st.screen_pick.take() {
-                use std::io::Write;
-                let _ = (&p.stream).write_all(b"cancel\n");
-            }
-        }
         if self.st.modal == Some(Modal::Walls) {
             self.walls_free();
         }
-        if self.st.modal == Some(Modal::Settings) {
-            self.sets_free();
-        }
-        if self.st.modal == Some(Modal::Launcher) {
-            self.st.launcher.thumbs_free();
-        }
         // код настроек и выбора обоев велик, а нужен изредка: через полминуты — из памяти. После
-        // лаунчера и прочих частых окон — нет: выгрузка задевает и горячий код (бар, тик), а он
+        // частых окон — нет: выгрузка задевает и горячий код (бар, тик), а он
         // тут же читается с диска обратно
         if matches!(self.st.modal, Some(Modal::Settings | Modal::Walls)) {
             self.shed_at = Some(std::time::Instant::now() + std::time::Duration::from_secs(30));
@@ -160,7 +104,6 @@ impl App {
         match kind {
             "net" => net::refresh_wifi(self.tx.clone()),
             "bt" => net::refresh_bt(self.tx.clone()),
-            "profile" => crate::profile::refresh(None, self.tx.clone()),
             "cal" => self.st.cal_month = 0,
             _ => {}
         }
