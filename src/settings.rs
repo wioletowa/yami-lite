@@ -264,7 +264,7 @@ pub fn opt_btn(ui: &mut Ui, r: R, label: &str, val: &str, act: Act) {
     ui.text_in(PX, R::new(r.x + 8, r.y, r.w - 32 - vw - 12, r.h), label, t.text_dim);
     ui.cv.text_right(ui.f, PX, R::new(r.x, r.y, r.w - 24, r.h), &v, t.text);
     // список — стрелка вниз, переход (шрифты) — вправо
-    ui.cv.icon(if matches!(act, Act::Drop(_)) { "down" } else { "right" }, r.right() - 18, r.cy() - 7, 2, t.red);
+    ui.cv.icon(if matches!(act, Act::Drop(k) if !crate::dropdown::pair(k)) { "down" } else { "right" }, r.right() - 18, r.cy() - 7, 2, t.red);
     ui.zone(r, act, Cur::Pointer);
 }
 

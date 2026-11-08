@@ -11,7 +11,8 @@ impl App {
     pub(crate) fn tick_interval(&self) -> Duration {
         let fast = !self.st.notifs.popups.is_empty() || self.st.osd.is_some() || self.st.field_focus.is_some() || self.st.locked;
         let fast = fast || self.st.wall_fade.is_some() || self.st.dock_leave.is_some() || !self.st.dock_bounce.is_empty();
-        let ms = if fast { 100 } else { 1000 };
+        // смена обоев: свой темп кадров (обои под окнами niri будит редко)
+        let ms = if self.st.wall_fade.is_some() { 33 } else if fast { 100 } else { 1000 };
         // текст песни с метками: следующий тик — к смене строки, а не через секунду
         let next = self.lyrics_live().then(|| self.st.lyrics.next_in(self.st.media.now_pos())).flatten().map(|s| (s * 1000.0) as u64 + 20);
         Duration::from_millis(next.map_or(ms, |n| n.clamp(40, ms)))
@@ -107,6 +108,11 @@ impl App {
         if crate::wall::fade_k(&self.st).is_some() {
             if self.st.popup_is("control") {
                 self.dirty(&SKind::Popup);
+            }
+            // кадр обоев — по таймеру, не дожидаясь ответа niri на прошлый
+            for s in self.surfs.values_mut().filter(|s| s.kind == SKind::Wall) {
+                s.dirty = true;
+                s.frame_pending = false;
             }
             if crate::wall::fade_done(&self.st) {
                 self.st.wall_prev = None;

@@ -17,6 +17,11 @@ pub struct Drop {
 }
 
 const ROW: i32 = 26;
+
+/// всего два варианта: кнопка просто переключает, без списка
+pub fn pair(key: &str) -> bool {
+    matches!(key, "bar_center_align" | "bar_pos" | "ws_style" | "temp_style" | "wall_fit")
+}
 const SHOWN: usize = 10;
 
 type Opts = Vec<(String, String)>;
@@ -109,6 +114,12 @@ impl App {
     /// открыть список у кнопки (zone — её прямоугольник на поверхности sid)
     pub fn drop_open(&mut self, key: &'static str, sid: u32, zone: R) {
         let Some(kind) = self.surf_kind(sid) else { return };
+        // из двух — сразу другое
+        if let Some((opts, cur)) = spec(&self.st, key).filter(|s| s.0.len() == 2) {
+            let other = opts.into_iter().map(|o| o.0).find(|v| *v != cur).unwrap_or_default();
+            self.st.drop = Some(Drop { key, at: zone, kind, top: 0 });
+            return self.drop_pick(other);
+        }
         if self.st.drop.as_ref().is_some_and(|d| d.key == key) {
             self.drop_close();
             return;
