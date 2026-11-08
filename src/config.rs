@@ -213,6 +213,8 @@ pub struct Settings {
     pub osd_time: f32,
     /// отступ карточек уведомлений от края экрана (от бара, если он у того края), px (#8)
     pub notif_offset: i32,
+    /// карточки: от боковой кромки экрана (в углах)
+    pub notif_offset_x: i32,
     /// отступ OSD от края экрана (сверху — от низа бара), px; по центру не нужен (#8)
     pub osd_offset: i32,
 
@@ -349,6 +351,7 @@ pub const NUMS: &[(&str, i32, i32, i32)] = &[
     ("night_on_h", 0, 23, 1),
     ("night_off_h", 0, 23, 1),
     ("notif_offset", 0, 400, 2),
+    ("notif_offset_x", 0, 800, 2),
     ("osd_offset", 0, 400, 4),
     ("wall_fade_cell", 2, 48, 2),
 ];
@@ -433,6 +436,7 @@ impl Default for Settings {
             osd_kinds: crate::notif::OSD_KINDS.iter().map(|k| k.0.to_string()).collect(),
             osd_time: 1.5,
             notif_offset: 10,
+            notif_offset_x: 6,
             osd_offset: 64,
             dock: true,
             dock_side: "bottom".into(),
@@ -631,6 +635,7 @@ impl Settings {
             "bar_width_pc" => self.bar_width_pc,
             "bar_margin" => self.bar_margin,
             "notif_offset" => self.notif_offset,
+            "notif_offset_x" => self.notif_offset_x,
             "osd_offset" => self.osd_offset,
             "wall_fade_cell" => self.wall_fade_cell,
             _ => 0,
@@ -657,6 +662,7 @@ impl Settings {
             "bar_width_pc" => self.bar_width_pc = v,
             "bar_margin" => self.bar_margin = v,
             "notif_offset" => self.notif_offset = v,
+            "notif_offset_x" => self.notif_offset_x = v,
             "osd_offset" => self.osd_offset = v,
             "wall_fade_cell" => self.wall_fade_cell = v,
             _ => {}

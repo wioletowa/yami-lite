@@ -158,7 +158,7 @@ pub fn draw_card(ui: &mut Ui, n: &Note, r: R, close: bool) {
     y += ui.wrap(PX, R::new(tx, y, tw, 40), &n.summary, t.text, 2);
     if !n.body.is_empty() {
         y += 3;
-        y += ui.wrap(PX, R::new(tx, y, tw, 80), &n.body, t.text_dim, 4);
+        y += ui.wrap(PX, R::new(tx, y, tw, 80), &n.body, t.text, 4);
     }
     y = y.max(r.y + 24 + ih);
     let acts: Vec<&(String, String)> = n.actions.iter().filter(|a| a.0 != "default").collect();
@@ -314,15 +314,16 @@ impl App {
     /// карточки на своём месте (notifPos): у края, с отступом 10; исключённые зоны бара и дока
     /// niri учитывает сам (exclusive 0), поэтому сверху — под баром, снизу — над доком
     fn notif_place(&self) -> (Anchor, (i32, i32, i32, i32)) {
-        // от края — notifOffset; бар niri сам вычитает (исключительная зона), карточки — под ним
-        let o = self.st.set.num("notif_offset");
+        // сверху или снизу — notifOffset (бар niri вычитает сам: исключительная зона), от боковой
+        // кромки экрана — notifOffsetX
+        let (o, x) = (self.st.set.num("notif_offset"), self.st.set.num("notif_offset_x"));
         match self.st.set.notif_pos.as_str() {
-            "top-left" => (Anchor::TOP | Anchor::LEFT, (o, 0, 0, 6)),
+            "top-left" => (Anchor::TOP | Anchor::LEFT, (o, 0, 0, x)),
             "top" => (Anchor::TOP, (o, 0, 0, 0)),
-            "bottom-right" => (Anchor::BOTTOM | Anchor::RIGHT, (0, 6, o, 0)),
-            "bottom-left" => (Anchor::BOTTOM | Anchor::LEFT, (0, 0, o, 6)),
+            "bottom-right" => (Anchor::BOTTOM | Anchor::RIGHT, (0, x, o, 0)),
+            "bottom-left" => (Anchor::BOTTOM | Anchor::LEFT, (0, 0, o, x)),
             "bottom" => (Anchor::BOTTOM, (0, 0, o, 0)),
-            _ => (Anchor::TOP | Anchor::RIGHT, (o, 6, 0, 0)),
+            _ => (Anchor::TOP | Anchor::RIGHT, (o, x, 0, 0)),
         }
     }
 

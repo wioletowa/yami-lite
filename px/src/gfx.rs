@@ -630,6 +630,20 @@ impl<'a> Canvas<'a> {
             if let Some(g) = g {
                 let gx = pen + g.left;
                 let gy = base + g.top;
+                if !g.rgba.is_empty() {
+                    // цветной (эмодзи): свои цвета, прозрачность панели — как у текста
+                    let k = self.opacity;
+                    for j in 0..g.h {
+                        for i in 0..g.w {
+                            let p = g.rgba[(j * g.w + i) as usize];
+                            if p >> 24 != 0 {
+                                self.put(gx + i, gy + j, if k >= 1.0 { p } else { scale_premul(p, k) });
+                            }
+                        }
+                    }
+                    pen += g.adv;
+                    continue;
+                }
                 for j in 0..g.h {
                     for i in 0..g.w {
                         let cov = g.cov[(j * g.w + i) as usize];

@@ -36,6 +36,8 @@ pub struct Glyph {
     pub top: i32,
     pub adv: i32,
     pub cov: Vec<u8>,
+    /// цветной глиф (эмодзи из PNG внутри шрифта): готовые точки ARGB с умноженной альфой, cov пуст
+    pub rgba: Vec<u32>,
 }
 
 struct Src {
@@ -270,6 +272,11 @@ impl Fonts {
         if let Some(a) = self.adv_cache.get(&(face, ch)) {
             return *a;
         }
+        // невидимые части эмодзи: выбор вида (FE0F), склейка (200D), оттенки кожи — без места
+        if matches!(ch as u32, 0xFE00..=0xFE0F | 0x200D | 0x200B | 0x1F3FB..=0x1F3FF) {
+            self.adv_cache.insert((face, ch), 0);
+            return 0;
+        }
         let a = match self.pick(face, ch) {
             Some((i, g)) => {
                 let src = &self.srcs[i];
@@ -295,18 +302,22 @@ impl Fonts {
 
     fn raster(&mut self, face: Face, ch: char) -> Option<Glyph> {
         let adv = self.advance(face, ch);
+        if adv == 0 && matches!(ch as u32, 0xFE00..=0xFE0F | 0x200D | 0x200B | 0x1F3FB..=0x1F3FF) {
+            return Some(Glyph { w: 0, h: 0, left: 0, top: 0, adv: 0, cov: vec![], rgba: vec![] });
+        }
         let (i, gid) = match self.pick(face, ch) {
             Some(x) => x,
             None => {
                 // нет нигде — пустой квадратик нужной ширины
-                return Some(Glyph { w: 0, h: 0, left: 0, top: 0, adv, cov: vec![] });
+                return Some(Glyph { w: 0, h: 0, left: 0, top: 0, adv, cov: vec![], rgba: vec![] });
             }
         };
         let src = &self.srcs[i];
         let scale = Self::scale(&src.font, self.em(face) * src.k);
         let glyph = gid.with_scale_and_position(scale, ab_glyph::point(0.0, 0.0));
         let Some(og) = src.font.outline_glyph(glyph) else {
-            return Some(Glyph { w: 0, h: 0, left: 0, top: 0, adv, cov: vec![] });
+            // контура нет: цветные эмодзи (Noto Color Emoji) хранят картинку PNG
+            return Some(Self::color_glyph(&src.font, gid, self.em(face), adv).unwrap_or(Glyph { w: 0, h: 0, left: 0, top: 0, adv, cov: vec![], rgba: vec![] }));
         };
         let b = og.px_bounds();
         let w = b.width().ceil() as i32;
@@ -323,7 +334,31 @@ impl Fonts {
                 };
             }
         });
-        Some(Glyph { w, h, left: b.min.x.round() as i32, top: b.min.y.round() as i32, adv, cov })
+        Some(Glyph { w, h, left: b.min.x.round() as i32, top: b.min.y.round() as i32, adv, cov, rgba: vec![] })
+    }
+
+    /// эмодзи картинкой: PNG из шрифта, уменьшенный до кегля, на базовой линии как прописная
+    fn color_glyph(font: &FontRef<'static>, gid: GlyphId, em: f32, adv: i32) -> Option<Glyph> {
+        let img = font.glyph_raster_image2(gid, em.ceil() as u16)?;
+        if !matches!(img.format, ab_glyph::GlyphImageFormat::Png) {
+            return None;
+        }
+        let src = image::load_from_memory_with_format(img.data, image::ImageFormat::Png).ok()?.to_rgba8();
+        let side = (em * 0.95).round().max(1.0) as u32;
+        let k = side as f32 / src.height().max(1) as f32;
+        let w = ((src.width() as f32 * k).round() as u32).max(1);
+        let small = image::imageops::resize(&src, w, side, image::imageops::FilterType::Triangle);
+        let rgba = small
+            .pixels()
+            .map(|p| {
+                let a = p[3] as u32;
+                let m = |c: u8| c as u32 * a / 255;
+                a << 24 | m(p[0]) << 16 | m(p[1]) << 8 | m(p[2])
+            })
+            .collect();
+        // низ картинки — чуть ниже базовой линии, как у эмодзи в обычном тексте
+        let top = -((side as f32 * 0.84).round() as i32);
+        Some(Glyph { w: w as i32, h: side as i32, left: 0, top, adv: adv.max(w as i32 + 1), cov: vec![], rgba })
     }
 
     pub fn width(&mut self, face: Face, s: &str) -> i32 {

@@ -369,16 +369,24 @@ pub fn tray_items(st: &State) -> impl Iterator<Item = &crate::dbus::TrayItem> {
 pub fn tray_name(st: &State, it: &crate::dbus::TrayItem) -> String {
     let norm = |s: &str| s.to_lowercase().replace(['-', '_', '.', ' '], "");
     let keys: Vec<String> = [it.app.as_str(), it.id.as_str()].iter().map(|k| norm(k)).filter(|k| k.len() >= 3).collect();
-    let app = st.apps.iter().find(|a| {
-        let ids = [norm(&a.id), norm(&a.wm_class), norm(a.exec.split_whitespace().next().unwrap_or("").rsplit('/').next().unwrap_or(""))];
-        keys.iter().any(|k| ids.iter().any(|i| !i.is_empty() && (i == k || i.ends_with(k.as_str()) || k.starts_with(i.as_str()))))
-    });
-    if let Some(a) = app {
+    // 1) ярлык с тем же именем или классом окна
+    let exact = st.apps.iter().find(|a| [norm(&a.id), norm(&a.wm_class)].iter().any(|i| !i.is_empty() && keys.iter().any(|k| i == k || i.ends_with(k.as_str()))));
+    if let Some(a) = exact {
         return a.name.clone();
     }
+    // 2) своя подпись программы, если она не служебная
     let service_like = |s: &str| s.is_empty() || s.contains("status_icon") || s.contains("StatusNotifier") || s.starts_with(':') || s.chars().last().is_some_and(|c| c.is_ascii_digit()) && s.contains('_');
     if !service_like(&it.title) {
         return it.title.clone();
+    }
+    // 3) ярлык, что запускает эту программу; не ярлыки игр и ссылок (steam steam://rungameid/…)
+    let by_exec = st.apps.iter().find(|a| {
+        let mut w = a.exec.split_whitespace();
+        let bin = norm(w.next().unwrap_or("").rsplit('/').next().unwrap_or(""));
+        !bin.is_empty() && !w.any(|x| x.contains("://")) && keys.iter().any(|k| bin == *k)
+    });
+    if let Some(a) = by_exec {
+        return a.name.clone();
     }
     let raw = if !it.app.is_empty() { it.app.as_str() } else { it.id.as_str() };
     let clean = raw.split(['_', '-']).next().unwrap_or(raw);

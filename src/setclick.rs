@@ -33,7 +33,7 @@ impl App {
                 self.settings_changed();
                 // отступы уведомлений и OSD: поверхность создаётся заново на новом месте
                 match *k {
-                    "notif_offset" => self.renew_notif(SKind::Notifs),
+                    "notif_offset" | "notif_offset_x" => self.renew_notif(SKind::Notifs),
                     "osd_offset" => self.renew_notif(SKind::Osd),
                     _ => {}
                 }

@@ -303,7 +303,11 @@ pub(crate) fn tab_notif(ui: &mut Ui, st: &State, b: R) {
     opt_btn(ui, R::new(rx, y, half, 26), "в истории", &s.notif_history.to_string(), Act::Drop("notif_history"));
     y += 32;
     opt_btn(ui, R::new(lx, y, half, 26), "место", crate::widgets::name_of(crate::notif::POS, &s.notif_pos), Act::Drop("notif_pos"));
-    num_btn(ui, R::new(rx, y, half, 26), "отступ", s.num("notif_offset"), "notif_offset");
+    num_btn(ui, R::new(rx, y, half, 26), "сверху / снизу", s.num("notif_offset"), "notif_offset");
+    y += 32;
+    if s.notif_pos != "top" && s.notif_pos != "bottom" {
+        num_btn(ui, R::new(rx, y, half, 26), "от края экрана", s.num("notif_offset_x"), "notif_offset_x");
+    }
     y += 32;
     ui.toggle(R::new(lx, y, b.w, 26), "картинки и значки программ", "", s.notif_images, Act::SBool("notif_images"));
     y += 40;
