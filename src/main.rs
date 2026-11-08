@@ -10,7 +10,6 @@ pub use yami_px::{font, gfx, icons, theme};
 mod app;
 mod audio;
 mod bar;
-mod barmenu;
 mod bartab;
 mod bundle;
 mod camera;

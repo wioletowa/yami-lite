@@ -11,15 +11,6 @@ const RMB: u32 = 0x111;
 const MMB: u32 = 0x112;
 
 impl App {
-    /// модуль бара под курсором (зона BarMod под зонами самого модуля)
-    fn bar_mod_at(&self, sid: u32) -> Option<String> {
-        let (_, x, y) = self.ptr.filter(|p| p.0 == sid)?;
-        self.surfs.get(&sid)?.zones.iter().rev().find_map(|z| match &z.act {
-            Act::BarMod(m) if z.r.contains(x, y) => Some(m.clone()),
-            _ => None,
-        })
-    }
-
     /// откуда открывать всплывашку: центр зоны в координатах монитора
     fn anchor(&self, sid: u32, zone: R) -> (String, i32, i32) {
         let s = self.surfs.get(&sid);
@@ -40,15 +31,13 @@ impl App {
             return;
         }
         let (out, ax, ay) = self.anchor(sid, zone);
-        // ПКМ по бару: окна и трей — свои меню, остальное — меню модуля, пустое место — панель
+        // ПКМ по бару: окна и трей — свои меню, в остальном месте — панель управления
         if kind == Some(SKind::Bar) && button == RMB && !matches!(a, Act::Task(_) | Act::Tray(_)) {
             let (mx, _) = self.surfs.get(&sid).map(|s| s.margin).unwrap_or((0, 0));
             let px = self.ptr.filter(|p| p.0 == sid).map_or(zone.x + zone.w / 2, |p| p.1 as i32);
             let py = if crate::bar::low(&self.st.set) { ay } else { self.bar_bottom(&out) + 2 };
-            match self.bar_mod_at(sid) {
-                Some(m) => self.open_module_menu(&m, &out, mx + px - 20, py),
-                None => self.toggle_control(&out, mx + px),
-            }
+            let _ = py;
+            self.toggle_control(&out, mx + px);
             return;
         }
         match a {

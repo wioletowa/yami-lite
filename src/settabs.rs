@@ -331,7 +331,7 @@ pub(crate) fn tab_dock(ui: &mut Ui, st: &State, b: R) {
     ui.toggle(R::new(b.x, y, half, 40), "открытые программы", "не только закреплённые", s.dock_running, Act::SBool("dock_running"));
     ui.toggle(R::new(b.x + half + 20, y, half, 40), "подписи", "имя или заголовок окна", s.dock_labels, Act::SBool("dock_labels"));
     y += 46;
-    ui.toggle(R::new(b.x, y, half, 40), "кнопка лаунчера", "запускает команду из вкладки «бар»", s.dock_launcher, Act::SBool("dock_launcher"));
+    ui.toggle(R::new(b.x, y, half, 40), "кнопка лаунчера", "команда — в настройках модуля «лаунчер»", s.dock_launcher, Act::SBool("dock_launcher"));
     ui.toggle(R::new(b.x + half + 20, y, half, 40), "корзина", "в конце дока", s.dock_trash, Act::SBool("dock_trash"));
     y += 48;
     let side = match s.dock_side.as_str() {

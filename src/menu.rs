@@ -14,11 +14,6 @@ pub enum MAct {
     Widget(u32, &'static str, String),
     WidgetDel(u32),
     Dock(&'static str, &'static str),
-    /// меню модуля бара: строковая настройка вида, действие, убрать модуль, вкладка настроек
-    Set(&'static str, String),
-    Act(Act),
-    BarRemove(String),
-    OpenSettings(&'static str),
 }
 
 #[derive(Clone, Debug, Default)]
@@ -163,10 +158,9 @@ impl App {
             return;
         }
         let act = it.act.clone();
-        let at = (m.output.clone(), m.x);
         self.close_menu();
         if let Some(a) = act {
-            self.menu_act(a, at);
+            self.menu_act(a);
         }
     }
 
@@ -182,19 +176,9 @@ impl App {
         }
     }
 
-    /// at — где было меню (монитор, x): всплывашки из него открываются там же
-    pub fn menu_act(&mut self, a: MAct, at: (String, i32)) {
+    pub fn menu_act(&mut self, a: MAct) {
         match a {
-            MAct::Set(key, val) => self.menu_set(key, val),
-            MAct::BarRemove(m) => self.bar_remove(&m),
-            MAct::OpenSettings(tab) => self.open_settings_tab(tab),
-            MAct::Act(Act::Popup(k)) => self.open_popup(k, &at.0, at.1),
-            MAct::Act(a) => {
-                if !self.settings_click(&a) {
-                    // не от поверхности: sid 0 — такой нет, всплывашки и меню — у монитора в фокусе
-                    self.on_click(a, 0x110, 0, R::default());
-                }
-            }
+
             MAct::Win(id, op) => self.window_op(id, op),
             MAct::Tray(svc, path, item) => {
                 crate::dbus::tray_menu_click(&svc, &path, item);

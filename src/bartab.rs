@@ -1,5 +1,6 @@
-// Настройки → бар: модули фишками в три ряда (слева, по центру, справа), перетаскивание между
-// рядами и из списка «добавить» (встроенные модули и скрипты бара), отступы и вид разделителей.
+// Настройки → бар: модули в три колонки (начало, центр, конец) — перетаскивание за ручку, у
+// каждого настройки (шестерёнка — окошко поверх вкладки), скрыть и убрать, «добавить» внизу
+// колонки; второй раздел — вид бара: форма, отступы, плитки панели управления.
 
 use crate::app::{App, State};
 use crate::config::ALL_MODULES;
@@ -9,7 +10,7 @@ use crate::settings::*;
 use crate::ui::{Act, Cur, Tone, Ui};
 
 pub(crate) fn side_name(i: usize) -> &'static str {
-    ["слева", "по центру", "справа"][i]
+    ["начало", "центр", "конец"][i]
 }
 
 /// перетаскивание модулей бара во вкладке «бар»
@@ -22,6 +23,9 @@ pub struct BarEd {
     pub areas: std::cell::Cell<[R; 3]>,
     /// раздел вкладки: false — модули, true — вид (форма, отступы, разделители)
     pub look: bool,
+    /// открытое окошко: настройки модуля (имя) или список «добавить» для колонки
+    pub gear: Option<String>,
+    pub add: Option<usize>,
 }
 
 pub struct BDrag {
@@ -41,30 +45,7 @@ pub(crate) fn mod_name(m: &str) -> &str {
     ALL_MODULES.iter().find(|x| x.0 == m).map(|x| x.1).unwrap_or(m)
 }
 
-pub(crate) fn chip_w(ui: &mut Ui, m: &str) -> i32 {
-    // ручка 16 + содержимое + крестик 20
-    if m == "sep" {
-        16 + 12 + 20
-    } else {
-        16 + ui.w(PX, mod_name(m)) + 4 + 20
-    }
-}
 
-/// фишки строками в area (перенос по ширине); высота ряда 24, шаг 28
-pub(crate) fn flow(ws: &[i32], area: R) -> Vec<R> {
-    let (mut x, mut y) = (area.x + 4, area.y + 4);
-    ws.iter()
-        .map(|&w| {
-            if x + w > area.right() - 4 && x > area.x + 4 {
-                x = area.x + 4;
-                y += 28;
-            }
-            let r = R::new(x, y, w, 24);
-            x += w + 6;
-            r
-        })
-        .collect()
-}
 
 pub(crate) fn chip(ui: &mut Ui, r: R, m: &str, lifted: bool) {
     let t = ui.t;
@@ -85,12 +66,18 @@ pub(crate) fn chip(ui: &mut Ui, r: R, m: &str, lifted: bool) {
     }
 }
 
+/// есть ли у модуля свои настройки (шестерёнка)
+fn has_opts(m: &str) -> bool {
+    matches!(m, "workspaces" | "clock" | "cpu" | "ram" | "gpu" | "disk" | "temp" | "tray" | "media" | "bat" | "tasks" | "sep" | "launcher" | "notif" | "night")
+}
+
+const ROW: i32 = 30;
+
 pub(crate) fn tab_bar(ui: &mut Ui, st: &State, b: R) {
     let t = ui.t;
     let s = &st.set;
     let ed = &st.bar_ed;
     let drag = ed.drag.as_ref();
-    // два раздела: модули (перетаскивание) и вид (форма бара, отступы, разделители)
     let bw = 86;
     ui.button(R::new(b.right() - 2 * bw - 6, b.y - 3, bw, 22), "модули", "menu", Tone::Ghost, !ed.look, true, Act::SCycle("bar_page_mods"));
     ui.button(R::new(b.right() - bw, b.y - 3, bw, 22), "вид", "eye", Tone::Ghost, ed.look, true, Act::SCycle("bar_page_look"));
@@ -98,89 +85,198 @@ pub(crate) fn tab_bar(ui: &mut Ui, st: &State, b: R) {
         tab_bar_look(ui, st, b);
         return;
     }
-    let mut y = title(ui, b.x, b.y, b.w - 2 * bw - 12, "модули бара — тащи мышкой, × убрать");
+    let y0 = title(ui, b.x, b.y, b.w - 2 * bw - 12, "модули бара");
     let sides = [&s.bar_left, &s.bar_center, &s.bar_right];
+    let cw = (b.w - 24) / 3;
     let mut areas = [R::new(0, 0, 0, 0); 3];
     let mut hit = vec![];
+    let mut add_btn = [R::new(0, 0, 0, 0); 3];
     for (si, list) in sides.iter().enumerate() {
-        ui.text_in(PX, R::new(b.x, y + 4, 76, 20), side_name(si), t.red);
-        // без перетаскиваемой фишки
+        let x = b.x + si as i32 * (cw + 12);
+        // строки без той, что в руке; щель там, куда её несут
         let items: Vec<(usize, &String)> = list.iter().enumerate().filter(|(i, _)| drag.and_then(|d| d.from) != Some((si, *i))).collect();
-        let ws: Vec<i32> = items.iter().map(|(_, m)| chip_w(ui, m)).collect();
-        let mut area = R::new(b.x + 80, y, b.w - 80, 32);
-        let base = flow(&ws, area);
-        // щель под фишку там, куда её несут: раскрывается ступенями по 2 px
-        let mut shown_ws = ws.clone();
-        let mut gap_at = None;
-        if let Some(d) = drag {
-            if let Some((ts, ti)) = d.target {
-                if ts == si {
-                    let full = chip_w(ui, &d.name);
-                    let dur = if s.anim() { 110.0 * s.anim_speed.max(0.1) } else { 0.0 };
-                    let k = if dur <= 0.0 { 1.0 } else { (d.at.elapsed().as_millis() as f32 / dur).min(1.0) };
-                    if k < 1.0 {
-                        ui.anim = true;
-                    }
-                    let w = (((full as f32 * (1.0 - (1.0 - k) * (1.0 - k))) / 2.0).round() as i32 * 2).max(2);
-                    let ti = ti.min(shown_ws.len());
-                    shown_ws.insert(ti, w);
-                    gap_at = Some(ti);
-                }
-            }
-        }
-        let shown = flow(&shown_ws, area);
-        let rows_h = shown.iter().chain(base.iter()).map(|r| r.bottom()).max().unwrap_or(area.y + 28) - area.y + 4;
-        area.h = rows_h.max(32);
-        let target_here = drag.and_then(|d| d.target).map(|t| t.0 == si).unwrap_or(false);
-        ui.cv.pxbox(area, &BoxStyle::new(t.code_bg, if target_here { t.red } else { t.border }));
+        let gap = drag.and_then(|d| d.target).filter(|t| t.0 == si).map(|t| t.1.min(items.len()));
+        let n = items.len() + gap.is_some() as usize;
+        let col = R::new(x, y0, cw, 40 + n.max(1) as i32 * (ROW + 4) + 40);
+        let target_here = gap.is_some();
+        ui.cv.pxbox(col, &BoxStyle::new(t.code_bg, if target_here { t.red } else { t.border }));
+        ui.text_in(PX, R::new(col.x + 10, col.y + 8, cw - 90, 20), side_name(si), t.text);
+        ui.button(R::new(col.right() - 82, col.y + 6, 74, 22), "сбросить", "", Tone::Ghost, false, true, Act::SBarReset(si));
+        let mut y = col.y + 36;
         let mut k = 0;
-        for (j, r) in shown.iter().enumerate() {
-            if Some(j) == gap_at {
-                ui.cv.ants(*r, t.ember, 2, 0);
-                continue;
+        for j in 0..n {
+            let r = R::new(col.x + 6, y, cw - 12, ROW);
+            if Some(j) == gap {
+                ui.cv.ants(r, t.ember, 2, 0);
+            } else {
+                let (i, m) = items[k];
+                k += 1;
+                module_row(ui, st, r, si, i, m, drag.is_none());
+                hit.push((si, k - 1, r));
             }
-            let (i, m) = items[k];
-            k += 1;
-            chip(ui, *r, m, false);
-            ui.zone(*r, Act::SModDrag(si, i), Cur::Grab);
-            if drag.is_none() {
-                ui.ghost(R::new(r.right() - 20, r.y + 2, 18, 20), "close", Act::SModDel(si, i));
-            }
+            y += ROW + 4;
         }
-        for (j, r) in base.iter().enumerate() {
-            hit.push((si, j, *r));
+        if n == 0 {
+            ui.text_in(PX, R::new(col.x + 12, y + 4, cw - 24, 20), "пусто", t.text_faint);
+            y += ROW + 4;
         }
-        areas[si] = area;
-        y += area.h + 6;
+        let ab = R::new(col.x + 6, y + 2, cw - 12, 26);
+        ui.button(ab, "добавить", "plus", Tone::Ghost, ed.add == Some(si), true, Act::SBarAdd(si));
+        add_btn[si] = ab;
+        areas[si] = col;
     }
     *ed.rects.borrow_mut() = hit;
     ed.areas.set(areas);
-    // добавить: всё, чего нет в баре, и разделитель (их можно сколько угодно)
-    y += 4;
-    ui.text_in(PX, R::new(b.x, y, b.w, 20), "добавить — тащи в бар или кликни:", t.text_dim);
-    y += 22;
+    // строка в руке — поверх всего
+    if let Some(d) = drag {
+        let r = R::new(d.x - d.off.0, d.y - d.off.1 - 2, cw - 12, ROW);
+        chip(ui, r, &d.name, true);
+    }
+    // окошки поверх вкладки: список «добавить» под кнопкой или настройки модуля по центру
+    if let Some(si) = ed.add {
+        add_list(ui, st, b, add_btn[si]);
+    } else if let Some(m) = &ed.gear {
+        gear_dialog(ui, st, b, m);
+    }
+}
+
+/// строка модуля: ручка (тащить), имя, шестерёнка, глаз (скрыть в баре), ×
+fn module_row(ui: &mut Ui, st: &State, r: R, si: usize, i: usize, m: &str, live: bool) {
+    let t = ui.t;
+    let hidden = st.set.bar_hidden.iter().any(|x| x == m);
+    let hov = ui.hover(r);
+    ui.cv.pxbox(r, &BoxStyle::new(if hov { t.surface_hi } else { t.surface }, if hov { t.red } else { t.border }).bevel(true));
+    let gc = if hov { t.red } else { t.text_faint };
+    for a in 0..3 {
+        for c in 0..2 {
+            ui.cv.fill(R::new(r.x + 6 + c * 4, r.cy() - 5 + a * 4, 2, 2), gc);
+        }
+    }
+    let buttons = 3 * 22;
+    if m == "sep" {
+        ui.cv.sep(r.x + 22, r.cy(), t.text_dim);
+    } else {
+        ui.text_in(PX, R::new(r.x + 18, r.y, r.w - 22 - buttons, r.h), mod_name(m), if hidden { t.text_faint } else { t.text });
+    }
+    ui.zone(R::new(r.x, r.y, r.w - buttons, r.h), Act::SModDrag(si, i), Cur::Grab);
+    if !live {
+        return;
+    }
+    let mut bx = r.right() - 22;
+    ui.ghost(R::new(bx, r.y + 4, 20, 22), "close", Act::SModDel(si, i));
+    bx -= 22;
+    ui.ghost(R::new(bx, r.y + 4, 20, 22), if hidden { "shade" } else { "eye" }, Act::SModHide(m.to_string()));
+    bx -= 22;
+    if has_opts(m) {
+        ui.ghost(R::new(bx, r.y + 4, 20, 22), "gear", Act::SModGear(m.to_string()));
+    }
+}
+
+/// «добавить»: всё, чего нет в баре (разделителей — сколько угодно), списком под кнопкой
+fn add_list(ui: &mut Ui, st: &State, b: R, at: R) {
+    let t = ui.t;
+    let s = &st.set;
     let all: Vec<&String> = s.bar_left.iter().chain(&s.bar_center).chain(&s.bar_right).collect();
     let free: Vec<&str> = ALL_MODULES.iter().map(|m| m.0).filter(|id| *id == "sep" || !all.iter().any(|m| m == id)).collect();
-    let ws: Vec<i32> = free.iter().map(|m| chip_w(ui, m)).collect();
-    let rs = flow(&ws, R::new(b.x - 4, y - 4, b.w + 8, 0));
-    for (r, id) in rs.iter().zip(&free) {
-        chip(ui, *r, id, false);
-        ui.cv.icon("plus", r.right() - 17, r.cy() - 7, 2, t.text_faint);
-        ui.zone(*r, Act::SModNew(id.to_string()), Cur::Grab);
+    // клик мимо — закрыть
+    ui.zone(R::new(b.x - 40, b.y - 40, b.w + 80, b.h + 400), Act::SBarClose, Cur::Default);
+    let h = (free.len() as i32 * 26 + 8).min(b.bottom() - at.bottom() - 4).max(60);
+    let up = at.bottom() + h > b.bottom() + 200;
+    let box_r = R::new(at.x, if up { at.y - h - 4 } else { at.bottom() + 4 }, at.w, h);
+    ui.cv.pxbox(box_r, &BoxStyle::new(t.glass_panel(), t.red).shadow(4));
+    let mut y = box_r.y + 4;
+    for id in free {
+        if y + 26 > box_r.bottom() {
+            break;
+        }
+        let r = R::new(box_r.x + 4, y, box_r.w - 8, 24);
+        if ui.hover(r) {
+            ui.cv.fill(r, t.surface_hi);
+        }
+        ui.cv.icon("plus", r.x + 4, r.cy() - 7, 2, t.text_faint);
+        if id == "sep" {
+            ui.cv.sep(r.x + 26, r.cy(), t.text_dim);
+        } else {
+            ui.text_in(PX, R::new(r.x + 24, r.y, r.w - 28, r.h), mod_name(id), t.text);
+        }
+        ui.zone(r, Act::SModNew(id.to_string()), Cur::Pointer);
+        y += 26;
     }
-    // лаунчер — своя программа: модуль и кнопка дока запускают эту команду
-    y = rs.last().map_or(y, |r| r.bottom()) + 16;
-    ui.text_in(PX, R::new(b.x, y, b.w, 20), "команда лаунчера (модуль «лаунчер» и кнопка в доке):", t.text_dim);
-    y += 24;
-    let focused = st.field_focus == Some("launcher_cmd");
-    let shown = if s.launcher_cmd.is_empty() { "fuzzel, rofi -show drun, …" } else { s.launcher_cmd.as_str() };
-    ui.field(R::new(b.x, y, b.w - 130, 28), &st.launcher_field, shown, focused, false, Act::SField("launcher_cmd"));
-    ui.button(R::new(b.right() - 120, y + 1, 120, 26), "применить", "check", Tone::Primary, false, true, Act::SCycle("launcher_apply"));
-    // фишка в руке — поверх всего
-    if let Some(d) = drag {
-        let w = chip_w(ui, &d.name);
-        chip(ui, R::new(d.x - d.off.0, d.y - d.off.1 - 2, w, 24), &d.name, true);
+}
+
+/// настройки модуля: окошко по центру вкладки
+fn gear_dialog(ui: &mut Ui, st: &State, b: R, m: &str) {
+    let t = ui.t;
+    let s = &st.set;
+    ui.zone(R::new(b.x - 40, b.y - 40, b.w + 80, b.h + 400), Act::SBarClose, Cur::Default);
+    let w = 380.min(b.w);
+    let d = R::new(b.x + (b.w - w) / 2, b.y + 40, w, 280);
+    ui.cv.pxbox(d, &BoxStyle::new(t.glass_panel(), t.red).shadow(6));
+    ui.zone(d, Act::Block, Cur::Default);
+    ui.cv.icon("gear", d.x + 12, d.y + 12, 2, t.red);
+    ui.text_in(PX, R::new(d.x + 34, d.y + 9, d.w - 70, 20), mod_name(m), t.text);
+    ui.ghost(R::new(d.right() - 30, d.y + 6, 24, 22), "close", Act::SBarClose);
+    ui.cv.fill(R::new(d.x + 1, d.y + 34, d.w - 2, 1), t.border);
+    let (x, rw) = (d.x + 14, d.w - 28);
+    let mut y = d.y + 46;
+    let opt = |ui: &mut Ui, y: &mut i32, label: &str, val: &str, act: Act| {
+        opt_btn(ui, R::new(x, *y, rw, 26), label, val, act);
+        *y += 32;
+    };
+    let tog = |ui: &mut Ui, y: &mut i32, label: &str, on: bool, key: &'static str| {
+        ui.toggle(R::new(x, *y, rw, 26), label, "", on, Act::SBool(key));
+        *y += 32;
+    };
+    let num = |ui: &mut Ui, y: &mut i32, label: &str, key: &'static str| {
+        num_btn(ui, R::new(x, *y, rw, 26), label, s.num(key), key);
+        *y += 32;
+    };
+    let pick = |list: &[(&'static str, &'static str)], cur: &str| -> &'static str { list.iter().find(|v| v.0 == cur).map_or(list[0].1, |v| v.1) };
+    match m {
+        "workspaces" => opt(ui, &mut y, "вид", pick(&[("boxes", "квадраты с номером"), ("dots", "точки")], &s.ws_style), Act::SCycle("ws_style")),
+        "clock" => {
+            tog(ui, &mut y, "секунды", s.clock_seconds, "clock_seconds");
+            tog(ui, &mut y, "дата", s.clock_date, "clock_date");
+        }
+        "cpu" | "ram" | "gpu" | "disk" => opt(ui, &mut y, "вид", pick(&[("gauge", "шкала"), ("graph", "график"), ("number", "число")], &s.cpu_style), Act::SCycle("cpu_style")),
+        "temp" => opt(ui, &mut y, "вид", if s.temp_style == "compact" { "коротко" } else { "как у процессора" }, Act::SCycle("temp_style")),
+        "tray" => {
+            opt(ui, &mut y, "вид", if s.tray_mode == "arrow" { "стрелкой" } else { "значки в ряд" }, Act::SCycle("tray_mode"));
+            tog(ui, &mut y, "значки клетками", s.tray_pixel, "tray_pixel");
+        }
+        "media" => {
+            let eq = if s.media_viz == "off" { "выкл" } else { crate::widgets::name_of(crate::widgets::STYLES, &s.media_viz) };
+            opt(ui, &mut y, "эквалайзер", eq, Act::SCycle("media_viz"));
+            opt(ui, &mut y, "всплывашка", crate::widgets::name_of(crate::config::MEDIA_VIEWS, &s.media_view), Act::SCycle("media_view"));
+        }
+        "bat" => tog(ui, &mut y, "прятать полную батарею", s.bat_hide_full, "bat_hide_full"),
+        "tasks" => {
+            num(ui, &mut y, "ширина кнопки", "task_width");
+            num(ui, &mut y, "зазор между окнами", "bar_task_gap");
+        }
+        "sep" => {
+            let style = pick(&[("dots", "точки"), ("line", "черта"), ("blocks", "клетки"), ("gap", "пусто")], &s.bar_sep);
+            opt(ui, &mut y, "вид", style, Act::SCycle("bar_sep"));
+            opt(ui, &mut y, "цвет", pick(&[("border", "рамка"), ("accent", "акцент"), ("dim", "тусклый")], &s.bar_sep_color), Act::SCycle("bar_sep_color"));
+            num(ui, &mut y, "ширина", "bar_sep_w");
+        }
+        "launcher" => {
+            ui.text_in(PX, R::new(x, y, rw, 20), "команда (её же запускает кнопка в доке)", t.text_dim);
+            y += 24;
+            let focused = st.field_focus == Some("launcher_cmd");
+            let hint = if s.launcher_cmd.is_empty() { "fuzzel, rofi -show drun, …" } else { s.launcher_cmd.as_str() };
+            ui.field(R::new(x, y, rw, 28), &st.launcher_field, hint, focused, false, Act::SField("launcher_cmd"));
+            y += 34;
+            ui.button(R::new(x, y, rw, 26), "применить", "check", Tone::Primary, false, true, Act::SCycle("launcher_apply"));
+        }
+        "notif" => {
+            tog(ui, &mut y, "не беспокоить", s.dnd, "dnd");
+            tog(ui, &mut y, "тихо при демонстрации", s.cast_dnd, "cast_dnd");
+        }
+        "night" => tog(ui, &mut y, "ночной свет", s.night, "night"),
+        _ => {}
     }
+    let _ = y;
 }
 
 /// вкладка «бар» → вид: форма бара, отступы, разделители, вид часов и процессора
@@ -258,8 +354,10 @@ fn tab_bar_look(ui: &mut Ui, st: &State, b: R) {
     // #21: ноутбук от сети — заряженная батарея в баре не нужна
     ui.toggle(R::new(col(0), y, cw * 2 + (col(1) - col(0) - cw), 26), "прятать полную батарею", "", s.bat_hide_full, Act::SBool("bat_hide_full"));
     y += 40;
-    // панель управления: ПКМ по пустому месту бара
-    y = title(ui, b.x, y, b.w, &crate::tf!("панель управления (ПКМ по пустому месту бара): плитки {}/6", "control panel (right click on the bar's empty space): tiles {}/6", s.control_tiles.len()));
+    // панель управления открывается правым щелчком по бару
+    y = title(ui, b.x, y, b.w, "панель управления");
+    ui.text_in(PX, R::new(b.x, y - 6, b.w, 18), &crate::tf!("открывается правым щелчком по бару · плиток: {} из 6", "opens with a right click on the bar · tiles: {} of 6", s.control_tiles.len()), t.text_faint);
+    y += 18;
     for (i, (k, name, _)) in crate::control::TILES.iter().enumerate() {
         let on = s.control_tiles.iter().any(|x| x == k);
         ui.toggle(R::new(col(i as i32 % 3), y + (i as i32 / 3) * 32, cw, 26), name, "", on, Act::SCtlTile(k));
@@ -340,7 +438,7 @@ impl App {
         let areas = self.st.bar_ed.areas.get();
         let side = areas.iter().position(|r| R::new(r.x - 8, r.y - 8, r.w + 16, r.h + 16).contains(x as f64, y as f64));
         let target = side.map(|si| {
-            let n = self.st.bar_ed.rects.borrow().iter().filter(|(s, _, r)| *s == si && (r.bottom() <= y || (r.y <= y + 2 && r.x + r.w / 2 < x))).count();
+            let n = self.st.bar_ed.rects.borrow().iter().filter(|(s, _, r)| *s == si && r.y + r.h / 2 < y).count();
             (si, n)
         });
         let Some(d) = self.st.bar_ed.drag.as_mut() else { return };

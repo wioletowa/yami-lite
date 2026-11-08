@@ -126,6 +126,8 @@ pub struct Settings {
     pub bar_left: Vec<String>,
     pub bar_center: Vec<String>,
     pub bar_right: Vec<String>,
+    /// модули, что стоят в бар-листах, но скрыты (глаз во вкладке «бар»)
+    pub bar_hidden: Vec<String>,
     /// gauge | graph | number
     pub cpu_style: String,
     /// столы в баре: boxes — квадраты с номером, dots — точки, активный — квадрат
@@ -365,6 +367,7 @@ impl Default for Settings {
             wall_accent: false,
             bar_left: v(&["launcher", "sep", "workspaces"]),
             bar_center: v(&["tasks"]),
+            bar_hidden: vec![],
             bar_right: v(&["privacy_mic", "privacy_screen", "privacy_cam", "tray", "sep", "net", "kb", "cpu", "ram", "bat", "sep", "vol", "sep", "clock", "sep", "settings", "power"]),
             cpu_style: "gauge".into(),
             ws_style: "boxes".into(),

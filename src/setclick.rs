@@ -16,6 +16,8 @@ impl App {
             Act::STab(id) => {
                 self.st.stab = id;
                 self.st.field_focus = None;
+                self.st.bar_ed.gear = None;
+                self.st.bar_ed.add = None;
                 self.tab_probe();
             }
             Act::SPreset(i) => {
@@ -280,18 +282,44 @@ impl App {
                 self.settings_changed();
             }
             Act::SModNew(m) => {
-                // клик (не перетаскивание): в привычное место
+                // клик в списке «добавить»: в конец своей колонки (без списка — в привычное место)
                 let m = m.to_string();
-                let m = &m;
-                if m == "tasks" {
-                    s.bar_center.push(m.clone());
-                } else if matches!(m.as_str(), "launcher" | "workspaces") {
-                    s.bar_left.push(m.clone());
-                } else {
-                    // справа — перед настройками и питанием
-                    let at = s.bar_right.iter().position(|x| x == "settings" || x == "power").unwrap_or(s.bar_right.len());
-                    s.bar_right.insert(at, m.clone());
+                match self.st.bar_ed.add.take() {
+                    Some(si) => s.side_mut(si).push(m),
+                    None if m == "tasks" => s.bar_center.push(m),
+                    None if matches!(m.as_str(), "launcher" | "workspaces") => s.bar_left.push(m),
+                    None => {
+                        let at = s.bar_right.iter().position(|x| x == "settings" || x == "power").unwrap_or(s.bar_right.len());
+                        s.bar_right.insert(at, m);
+                    }
                 }
+                self.settings_changed();
+            }
+            Act::SModHide(m) => {
+                match s.bar_hidden.iter().position(|x| x == m) {
+                    Some(i) => {
+                        s.bar_hidden.remove(i);
+                    }
+                    None => s.bar_hidden.push(m.clone()),
+                }
+                self.settings_changed();
+            }
+            Act::SModGear(m) => {
+                self.st.bar_ed.add = None;
+                self.st.bar_ed.gear = Some(m.clone());
+            }
+            Act::SBarAdd(si) => {
+                self.st.bar_ed.gear = None;
+                self.st.bar_ed.add = if self.st.bar_ed.add == Some(*si) { None } else { Some(*si) };
+            }
+            Act::SBarClose => {
+                self.st.bar_ed.add = None;
+                self.st.bar_ed.gear = None;
+                self.st.field_focus = None;
+            }
+            Act::SBarReset(si) => {
+                let d = crate::config::Settings::default();
+                *s.side_mut(*si) = [d.bar_left, d.bar_center, d.bar_right][*si].clone();
                 self.settings_changed();
             }
             Act::SWidgetSel(id) => self.st.sel_widget = *id,
