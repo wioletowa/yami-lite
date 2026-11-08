@@ -68,9 +68,39 @@ fn vslider(ui: &mut Ui, r: R, icon: &str, v: f32, off: bool, act: Act) {
     ui.zone(R::new(track.x - 6, track.y, track.w + 12, track.h), act, Cur::Pointer);
 }
 
+/// значок и подпись плитки: у темы — по тому, какая сейчас
+fn face_of(st: &State, k: &str, name: &'static str, icon: &'static str) -> (&'static str, &'static str) {
+    match k {
+        "theme" if st.set.light => ("sun", "светлая тема"),
+        "theme" => ("shade", "тёмная тема"),
+        "mute" if st.audio.muted => ("mute", name),
+        _ => (icon, name),
+    }
+}
+
+/// сетка плиток: одна — на всё место, две — рядом, больше — в два ряда; неполный ряд растягивается
+fn tile_rects(area: R, n: usize) -> Vec<R> {
+    const GAP: i32 = 10;
+    let rows = if n <= 2 { 1 } else { 2 };
+    let per = n.div_ceil(rows);
+    let th = (area.h - (rows as i32 - 1) * GAP) / rows as i32;
+    let mut out = vec![];
+    for r in 0..rows {
+        let cnt = per.min(n - r * per);
+        if cnt == 0 {
+            break;
+        }
+        let tw = (area.w - (cnt as i32 - 1) * GAP) / cnt as i32;
+        for c in 0..cnt {
+            out.push(R::new(area.x + c as i32 * (tw + GAP), area.y + r as i32 * (th + GAP), tw, th));
+        }
+    }
+    out
+}
+
 pub fn draw(ui: &mut Ui, st: &State, b: R) {
     let t = ui.t;
-    // часы на обоях: картинка «как обложка» в карточке, поверх — вуаль
+    // часы на обоях: картинка «как обложка» в карточке, поверх — вуаль; текст — от левого края
     let card = R::new(b.x, b.y, b.w, 120);
     ui.cv.pxbox(card, &BoxStyle::new(t.code_bg, t.border));
     let inner = card.inset(2);
@@ -84,14 +114,14 @@ pub fn draw(ui: &mut Ui, st: &State, b: R) {
     ui.cv.pop_clip();
     let tm = local_now();
     let face = font::px(48);
-    let time = format!("{:02}:{:02}", tm.hour, tm.min);
-    let tw = ui.w(face, &time);
-    let ty = card.y + 14;
-    ui.text(face, card.x + (card.w - tw) / 2, ty, &time, t.text_hi);
+    // формат — как у часов бара (настройки → бар → вид: часы с секундами)
+    let time = if st.set.clock_seconds { format!("{:02}:{:02}:{:02}", tm.hour, tm.min, tm.sec) } else { format!("{:02}:{:02}", tm.hour, tm.min) };
+    let (lx, ty) = (card.x + 16, card.y + 14);
+    ui.text(face, lx, ty, &time, t.text_hi);
     let date = crate::tf!("{}, {} {}", "{}, {} {}", crate::i18n::tr(crate::clock::RU_DAY_FULL[tm.wday as usize]), tm.day, crate::i18n::tr(crate::clock::RU_MON[(tm.mon - 1) as usize]));
     let ly = ty + ui.f.line(face) + 2;
-    ui.text_center(PX, R::new(card.x, ly, card.w, 18), &date, t.text);
-    ui.text_center(PX, R::new(card.x, ly + 20, card.w, 18), &uptime(), t.text_dim);
+    ui.text_in(PX, R::new(lx, ly, card.w - 32, 18), &date, t.text);
+    ui.text_in(PX, R::new(lx, ly + 20, card.w - 32, 18), &uptime(), t.text_dim);
     // низ: два ползунка и плитки
     let y = card.bottom() + 12;
     let h = b.bottom() - y;
@@ -102,23 +132,23 @@ pub fn draw(ui: &mut Ui, st: &State, b: R) {
         Some(v) => vslider(ui, R::new(b.x + sw + 10, y, sw, h), "sun", v, false, Act::CtlBright),
         None => vslider(ui, R::new(b.x + sw + 10, y, sw, h), "sun", 0.0, true, Act::Block),
     }
-    // плитки: две колонки, ряды по месту
     let gx = b.x + 2 * (sw + 10);
-    let gw = b.right() - gx;
-    let cols = 2;
-    let tsz = (gw - 10) / cols;
-    let rows = ((h + 10) / (tsz.min(h) / 2 * 2 + 10)).max(1);
-    let th = (h - (rows - 1) * 10) / rows;
-    for (i, k) in st.set.control_tiles.iter().take((cols * rows) as usize).enumerate() {
-        let Some((_, name, icon)) = TILES.iter().find(|x| x.0 == k) else { continue };
-        let (c, r) = (i as i32 % cols, i as i32 / cols);
-        let rr = R::new(gx + c * (tsz + 10), y + r * (th + 10), tsz, th);
+    let tiles: Vec<(&String, &str, &str)> = st.set.control_tiles.iter().filter_map(|k| TILES.iter().find(|x| x.0 == k).map(|x| (k, x.1, x.2))).collect();
+    for (rr, (k, name, icon)) in tile_rects(R::new(gx, y, b.right() - gx, h), tiles.len()).into_iter().zip(tiles) {
+        let (icon, name) = face_of(st, k, name, icon);
         let lit = on(st, k);
         let hov = ui.hover(rr);
         ui.cv.pxbox(rr, &BoxStyle::new(if lit { t.red } else if hov { t.surface_hi } else { t.surface }, if lit { t.ember } else if hov { t.red } else { t.border }).bevel(true));
         let fg = if lit { t.on_accent } else { t.text };
-        ui.cv.icon(icon, rr.x + rr.w / 2 - 7, rr.y + rr.h / 2 - 16, 2, fg);
-        ui.text_center(PX, R::new(rr.x + 4, rr.y + rr.h / 2 + 4, rr.w - 8, 20), name, fg);
+        // подпись — если влезает по ширине и есть место под значком; нет — один значок по центру
+        let label = crate::i18n::tr(name);
+        let fits = ui.f.width(PX, label) <= rr.w - 12 && rr.h >= 64;
+        let cell = if rr.w.min(rr.h) >= 120 { 4 } else if rr.w.min(rr.h) >= 64 { 3 } else { 2 };
+        let iy = if fits { rr.cy() - cell * 7 / 2 - 10 } else { rr.cy() - cell * 7 / 2 };
+        ui.cv.icon(icon, rr.x + (rr.w - cell * 7) / 2, iy, cell, fg);
+        if fits {
+            ui.text_center(PX, R::new(rr.x + 4, iy + cell * 7 + 6, rr.w - 8, 20), name, fg);
+        }
         ui.zone(rr, Act::CtlTile(k.clone()), Cur::Pointer);
     }
 }
@@ -127,6 +157,28 @@ impl App {
     /// ПКМ по пустому месту бара: открыть панель (открыта — закрыть)
     pub fn toggle_control(&mut self, out: &str, x: i32) {
         self.open_popup("control", out, x);
+    }
+
+    /// ползунок громкости: на экране сразу, системе — следом
+    pub fn ctl_volume(&mut self, v: f64) {
+        let v = v.clamp(0.0, 1.0);
+        self.st.audio.volume = v;
+        self.st.ctl_hold = Some(std::time::Instant::now() + std::time::Duration::from_millis(1200));
+        crate::audio::set_volume(v);
+        self.dirty(&crate::app::SKind::Popup);
+    }
+
+    pub fn ctl_brightness(&mut self, v: f32) {
+        let v = v.clamp(0.01, 1.0);
+        self.st.leds.bright = Some(v);
+        self.st.ctl_hold = Some(std::time::Instant::now() + std::time::Duration::from_millis(1200));
+        crate::leds::set_brightness(v);
+        self.dirty(&crate::app::SKind::Popup);
+    }
+
+    /// ползунок панели ещё «держит» значения
+    pub fn ctl_holding(&self) -> bool {
+        self.st.ctl_hold.is_some_and(|t| std::time::Instant::now() < t)
     }
 
     pub fn control_tile(&mut self, k: &str) {

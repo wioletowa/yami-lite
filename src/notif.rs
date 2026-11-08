@@ -384,6 +384,10 @@ impl App {
         if self.st.locked || !self.st.set.osd_kinds.iter().any(|k| k == kind) {
             return;
         }
+        // громкость и яркость меняют в панели управления: она сама их показывает
+        if matches!(kind, "volume" | "bright") && (self.ctl_holding() || self.st.popup_is("control")) {
+            return;
+        }
         let fresh = self.st.osd.is_none();
         self.st.osd = Some((kind, Instant::now()));
         if fresh || self.find(&SKind::Osd).is_empty() {

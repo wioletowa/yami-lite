@@ -28,7 +28,11 @@ impl App {
                 }
             }
             Msg::Ipc(cmd) => self.ipc(&cmd),
-            Msg::Audio(a) => {
+            Msg::Audio(mut a) => {
+                // тянут ползунок панели: свежее — его значение, а не запоздалый ответ
+                if self.ctl_holding() {
+                    a.volume = self.st.audio.volume;
+                }
                 let old = &self.st.audio;
                 let touched = old.ready && (a.volume != old.volume || a.muted != old.muted);
                 let mic = old.ready && (a.mic != old.mic || a.mic_muted != old.mic_muted);
@@ -112,7 +116,10 @@ impl App {
                 self.st.camera = u;
                 self.dirty(&SKind::Bar);
             }
-            Msg::Leds(l) => {
+            Msg::Leds(mut l) => {
+                if self.ctl_holding() {
+                    l.bright = self.st.leds.bright;
+                }
                 let old = std::mem::replace(&mut self.st.leds, l);
                 if self.st.started.elapsed() > Duration::from_millis(2500) {
                     if old.caps != l.caps {

@@ -222,8 +222,8 @@ impl App {
         let up = d < 0;
         match a {
             Act::Popup("sound" | "media") | Act::VolSlider | Act::VolMute => audio::step_volume(if up { 1 } else { -1 }),
-            Act::CtlBright => crate::leds::set_brightness(self.st.leds.bright.unwrap_or(0.5) + if up { 0.05 } else { -0.05 }),
-            Act::CtlVol => audio::step_volume(if up { 1 } else { -1 }),
+            Act::CtlBright => self.ctl_brightness(self.st.leds.bright.unwrap_or(0.5) + if up { 0.05 } else { -0.05 }),
+            Act::CtlVol => self.ctl_volume((self.st.audio.volume + if up { 0.05 } else { -0.05 }).clamp(0.0, 1.0)),
             Act::WallPick(_) | Act::WallsScroll => self.walls_scroll(if up { -1 } else { 1 }),
             Act::SFont(_) | Act::SFontScroll => self.font_scroll(if up { -1 } else { 1 }),
             Act::MicSlider | Act::MicMute => {

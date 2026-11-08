@@ -48,6 +48,7 @@ fn table() -> &'static HashMap<&'static str, &'static str> {
 
 const PAIRS: &[(&str, &str)] = &[
     // yami-lite
+    ("тёмная тема", "dark theme"),
     ("значки клетками", "pixel tray icons"),
     ("пауза / играть", "pause / play"),
     ("другой плеер", "another player"),

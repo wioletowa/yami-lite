@@ -204,6 +204,9 @@ pub struct State {
     pub osd: Option<(&'static str, Instant)>,
     pub leds: crate::leds::Leds,
     pub camera: Vec<String>,
+    /// ползунок панели управления тянут: до этого времени на экране — его значение (ответ системы
+    /// приходит позже и со старым), и OSD громкости и яркости молчит
+    pub ctl_hold: Option<Instant>,
     /// подсказка индикатора приватности: что и над какой зоной
     pub tip: Option<(&'static str, R)>,
     pub audio: audio::AudioState,
@@ -394,6 +397,7 @@ impl State {
             osd: None,
             leds: Default::default(),
             camera: vec![],
+            ctl_hold: None,
             tip: None,
             audio: audio::AudioState::default(),
             media: media::MediaState::default(),

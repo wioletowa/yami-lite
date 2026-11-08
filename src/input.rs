@@ -211,11 +211,11 @@ impl App {
         let vfrac = (1.0 - (y - zone.y as f64) / zone.h.max(1) as f64).clamp(0.0, 1.0);
         match act {
             Act::CtlVol => {
-                crate::audio::set_volume(vfrac);
+                self.ctl_volume(vfrac);
                 return;
             }
             Act::CtlBright => {
-                crate::leds::set_brightness(vfrac as f32);
+                self.ctl_brightness(vfrac as f32);
                 return;
             }
             Act::SSlider(key, from, to, seg) => {
