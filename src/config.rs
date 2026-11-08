@@ -180,6 +180,11 @@ pub struct Settings {
     pub lock_after: u32,
     pub screen_off_after: u32,
     pub dnd: bool,
+    /// время карточки: программа может попросить своё (notifAppTimeout), срочные висят до закрытия
+    /// (notifCriticalStay), под курсором таймер стоит (notifHoverPause)
+    pub notif_app_timeout: bool,
+    pub notif_critical_stay: bool,
+    pub notif_hover_pause: bool,
     /// пока показывается экран (демонстрация, запись) — уведомления молча в историю
     pub cast_dnd: bool,
     pub notif_timeout: u32,
@@ -389,6 +394,9 @@ impl Default for Settings {
             lock_after: 10,
             screen_off_after: 15,
             dnd: false,
+            notif_app_timeout: false,
+            notif_critical_stay: true,
+            notif_hover_pause: true,
             cast_dnd: true,
             notif_timeout: 7,
             notif_pos: "top-right".into(),

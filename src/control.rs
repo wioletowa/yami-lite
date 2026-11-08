@@ -105,7 +105,7 @@ pub fn draw(ui: &mut Ui, st: &State, b: R) {
     ui.cv.pxbox(card, &BoxStyle::new(t.code_bg, t.border));
     let inner = card.inset(2);
     ui.cv.push_clip(inner);
-    if let Some(img) = &st.wall {
+    if let Some(img) = &crate::wall::shown(st) {
         let k = (inner.w as f32 / img.w.max(1) as f32).max(inner.h as f32 / img.h.max(1) as f32);
         let (dw, dh) = ((img.w as f32 * k).ceil() as i32, (img.h as f32 * k).ceil() as i32);
         ui.cv.image_scaled(img, R::new(inner.x + (inner.w - dw) / 2, inner.y + (inner.h - dh) / 2, dw, dh), 1.0);

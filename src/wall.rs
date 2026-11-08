@@ -325,11 +325,61 @@ pub fn cover(ui: &mut Ui, img: &Img, w: i32, h: i32) {
     yami_px::face::cover(ui, img, w, h);
 }
 
+/// шагов проявления новых обоев: клетки открываются ступенями, а не плавно
+const FADE_STEPS: i32 = 16;
+
+/// сколько идёт смена обоев, с
+pub fn fade_secs(st: &State) -> f32 {
+    0.7 * st.set.anim_speed.max(0.1)
+}
+
+/// доля смены обоев 0..1; None — не идёт
+pub fn fade_k(st: &State) -> Option<f32> {
+    let t = st.wall_fade?;
+    st.wall_prev.as_ref()?;
+    Some((t.elapsed().as_secs_f32() / fade_secs(st)).min(1.0))
+}
+
+/// что сейчас на обоях: во время смены — новые, проступающие клетками сквозь старые (узор
+/// проявления из настроек), иначе просто картинка. Тот же кадр берёт карточка панели управления
+pub fn shown(st: &State) -> Option<std::rc::Rc<Img>> {
+    let new = st.wall.clone()?;
+    let (Some(k), Some(old)) = (fade_k(st), st.wall_prev.as_ref()) else { return Some(new) };
+    if k >= 1.0 || old.w != new.w || old.h != new.h {
+        return Some(new);
+    }
+    let step = (k * FADE_STEPS as f32) as i32;
+    if let Some((s, img)) = st.wall_mix.borrow().as_ref() {
+        if *s == step {
+            return Some(img.clone());
+        }
+    }
+    // клетка ~8 точек экрана: в точках картинки обоев (она уменьшена в cell раз)
+    let cell = ((8 / cell(st.set.wall_pixel) as i32).max(1) * yami_px::gfx::reveal_grain()).max(1);
+    let (cols, rows) = ((new.w + cell - 1) / cell, (new.h + cell - 1) / cell);
+    let lvl = step * 256 / FADE_STEPS;
+    let mut px = Vec::with_capacity(new.px.len());
+    for y in 0..new.h {
+        let by = y / cell;
+        let row = (y * new.w) as usize;
+        for x in 0..new.w {
+            let i = row + x as usize;
+            px.push(if yami_px::gfx::reveal_threshold(x / cell, by, cols, rows) < lvl { new.px[i] } else { old.px[i] });
+        }
+    }
+    let img = std::rc::Rc::new(Img { w: new.w, h: new.h, px });
+    *st.wall_mix.borrow_mut() = Some((step, img.clone()));
+    Some(img)
+}
+
 pub fn draw(ui: &mut Ui, st: &State, w: i32, h: i32) {
     let t = ui.t;
     ui.cv.fill(R::new(0, 0, w, h), t.bg);
-    if let Some(img) = &st.wall {
-        cover(ui, img, w, h);
+    if let Some(img) = shown(st) {
+        cover(ui, &img, w, h);
+    }
+    if fade_k(st).is_some_and(|k| k < 1.0) {
+        ui.anim = true;
     }
     if st.set.wall_kanji {
         let face = font::jp(32);
@@ -441,8 +491,16 @@ impl App {
         if n != self.wall_job {
             return;
         }
-        self.st.wall = img.map(std::rc::Rc::new);
+        let new = img.map(std::rc::Rc::new);
+        // смена обоев: новые проступают клетками сквозь прошлые (если размер тот же и анимации включены)
+        let old = self.st.wall.take().filter(|o| self.st.set.anim() && !self.st.wall_parked && new.as_ref().is_some_and(|n| n.w == o.w && n.h == o.h));
+        self.st.wall_fade = old.is_some().then(std::time::Instant::now);
+        self.st.wall_prev = old;
+        *self.st.wall_mix.borrow_mut() = None;
+        self.st.wall = new;
         self.st.wall_parked = false;
+        // карточка часов панели управления — на тех же обоях
+        self.dirty(&SKind::Popup);
         self.wall_reload = false;
         self.wall_at = std::time::Instant::now();
         self.st.wall_stamp += 1;

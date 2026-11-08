@@ -274,26 +274,32 @@ pub(crate) fn tab_system(ui: &mut Ui, st: &State, b: R) {
     ui.text_in(PX, R::new(b.x + bw * 2 + 18, y, b.w - bw * 2 - 18, 28), "или: yami-lite config list", ui.t.text_faint);
 }
 
-/// уведомления: как ведут себя карточки, где они и где громкость с яркостью
-/// уведомления: как ведут себя карточки и где они; OSD — на что отвечает, где и сколько висит
+/// уведомления: когда приходят, сколько висят и где; OSD — на что отвечает, где и сколько висит
 pub(crate) fn tab_notif(ui: &mut Ui, st: &State, b: R) {
     let s = &st.set;
     let half = (b.w - 20) / 2;
     let (lx, rx) = (b.x, b.x + half + 20);
-    let mut y = title(ui, b.x, b.y, b.w, "карточки");
-    ui.toggle(R::new(lx, y, half, 40), "не беспокоить", "только срочные", s.dnd, Act::SBool("dnd"));
-    ui.toggle(R::new(rx, y, half, 40), "тихо при показе экрана", "демонстрация или запись — в историю", s.cast_dnd, Act::SBool("cast_dnd"));
+    let mut y = title(ui, b.x, b.y, b.w, "когда показывать");
+    ui.toggle(R::new(lx, y, half, 40), "не беспокоить", "показываются только срочные", s.dnd, Act::SBool("dnd"));
+    ui.toggle(R::new(rx, y, half, 40), "тихо при демонстрации", "пока показываешь экран — сразу в историю", s.cast_dnd, Act::SBool("cast_dnd"));
     y += 48;
-    ui.slider(R::new(lx, y, half, 40), "сколько висит", (s.notif_timeout as f32 - 2.0) / 28.0, &crate::tf!("{} с", "{} s", s.notif_timeout), 12, Act::SSlider("notif_timeout", 2.0, 30.0, 14));
-    ui.toggle(R::new(rx, y, half, 40), "картинки в карточках", "значки и превью от программ", s.notif_images, Act::SBool("notif_images"));
+    y = title(ui, b.x, y, b.w, "сколько висят");
+    ui.slider(R::new(lx, y, half, 40), "время на экране", (s.notif_timeout as f32 - 2.0) / 28.0, &crate::tf!("{} с", "{} s", s.notif_timeout), 14, Act::SSlider("notif_timeout", 2.0, 30.0, 14));
+    ui.toggle(R::new(rx, y, half, 40), "пауза под курсором", "навёл — карточка не уходит", s.notif_hover_pause, Act::SBool("notif_hover_pause"));
     y += 48;
+    ui.toggle(R::new(lx, y, half, 40), "срочные — до закрытия", "иначе уходят по тому же времени", s.notif_critical_stay, Act::SBool("notif_critical_stay"));
+    ui.toggle(R::new(rx, y, half, 40), "время от программы", "если программа просит своё (до минуты)", s.notif_app_timeout, Act::SBool("notif_app_timeout"));
+    y += 52;
+    y = title(ui, b.x, y, b.w, "карточки");
     opt_btn(ui, R::new(lx, y, half, 26), "на экране сразу", &s.notif_max.to_string(), Act::SCycle("notif_max"));
     opt_btn(ui, R::new(rx, y, half, 26), "в истории", &s.notif_history.to_string(), Act::SCycle("notif_history"));
     y += 32;
-    opt_btn(ui, R::new(lx, y, half, 26), "где", crate::widgets::name_of(crate::notif::POS, &s.notif_pos), Act::SCycle("notif_pos"));
-    num_btn(ui, R::new(rx, y, half, 26), "от края", s.num("notif_offset"), "notif_offset");
+    opt_btn(ui, R::new(lx, y, half, 26), "место", crate::widgets::name_of(crate::notif::POS, &s.notif_pos), Act::SCycle("notif_pos"));
+    num_btn(ui, R::new(rx, y, half, 26), "отступ", s.num("notif_offset"), "notif_offset");
+    y += 32;
+    ui.toggle(R::new(lx, y, b.w, 26), "картинки и значки программ", "", s.notif_images, Act::SBool("notif_images"));
     y += 40;
-    y = title(ui, b.x, y, b.w, "OSD — громкость, микрофон, яркость, клавиши");
+    y = title(ui, b.x, y, b.w, "OSD");
     let cw = (b.w - 24) / 3;
     for (i, (k, name)) in crate::notif::OSD_KINDS.iter().enumerate() {
         let on = s.osd_kinds.iter().any(|x| x == k);
@@ -301,17 +307,17 @@ pub(crate) fn tab_notif(ui: &mut Ui, st: &State, b: R) {
         ui.toggle(r, name, "", on, Act::SOsd(k));
     }
     y += 70;
-    ui.slider(R::new(lx, y, half, 40), "сколько висит", (s.osd_time - 0.5) / 4.5, &crate::tf!("{:.1} с", "{:.1} s", s.osd_time), 9, Act::SSlider("osd_time", 0.5, 5.0, 9));
-    opt_btn(ui, R::new(rx, y + 8, half, 26), "где", crate::widgets::name_of(crate::notif::OSD_POS, &s.osd_pos), Act::SCycle("osd_pos"));
+    ui.slider(R::new(lx, y, half, 40), "время на экране", (s.osd_time - 0.5) / 4.5, &crate::tf!("{:.1} с", "{:.1} s", s.osd_time), 9, Act::SSlider("osd_time", 0.5, 5.0, 9));
+    opt_btn(ui, R::new(rx, y + 8, half, 26), "место", crate::widgets::name_of(crate::notif::OSD_POS, &s.osd_pos), Act::SCycle("osd_pos"));
     y += 48;
-    if s.osd_pos != "center" {
-        num_btn(ui, R::new(rx, y, half, 26), "от края", s.num("osd_offset"), "osd_offset");
-    }
     ui.button(R::new(lx, y, half, 26), "показать", "eye", Tone::Plain, false, true, Act::SCycle("osd_test"));
+    if s.osd_pos != "center" {
+        num_btn(ui, R::new(rx, y, half, 26), "отступ", s.num("osd_offset"), "osd_offset");
+    }
     y += 40;
-    y = title(ui, b.x, y, b.w, "сервер");
-    ui.toggle(R::new(lx, y, half, 40), "сервер уведомлений", "выкл — mako, dunst (после перезапуска)", s.agent_notif, Act::SBool("agent_notif"));
-    ui.toggle(R::new(rx, y, half, 40), "трей", "выкл — другой хост трея (после перезапуска)", s.agent_tray, Act::SBool("agent_tray"));
+    y = title(ui, b.x, y, b.w, "службы");
+    ui.toggle(R::new(lx, y, half, 40), "сервер уведомлений", "выключи, если пользуешься mako или dunst", s.agent_notif, Act::SBool("agent_notif"));
+    ui.toggle(R::new(rx, y, half, 40), "трей", "выключи, если трей держит другая программа", s.agent_tray, Act::SBool("agent_tray"));
 }
 
 pub(crate) fn tab_dock(ui: &mut Ui, st: &State, b: R) {
@@ -325,7 +331,7 @@ pub(crate) fn tab_dock(ui: &mut Ui, st: &State, b: R) {
     ui.toggle(R::new(b.x, y, half, 40), "открытые программы", "не только закреплённые", s.dock_running, Act::SBool("dock_running"));
     ui.toggle(R::new(b.x + half + 20, y, half, 40), "подписи", "имя или заголовок окна", s.dock_labels, Act::SBool("dock_labels"));
     y += 46;
-    ui.toggle(R::new(b.x, y, half, 40), "кнопка лаунчера", "своя команда: настройки → бар", s.dock_launcher, Act::SBool("dock_launcher"));
+    ui.toggle(R::new(b.x, y, half, 40), "кнопка лаунчера", "запускает команду из вкладки «бар»", s.dock_launcher, Act::SBool("dock_launcher"));
     ui.toggle(R::new(b.x + half + 20, y, half, 40), "корзина", "в конце дока", s.dock_trash, Act::SBool("dock_trash"));
     y += 48;
     let side = match s.dock_side.as_str() {

@@ -10,7 +10,7 @@ impl App {
     // ── тик: часы, датчики, файл настроек ───────────────────────────────────
     pub(crate) fn tick_interval(&self) -> Duration {
         let fast = !self.st.notifs.popups.is_empty() || self.st.osd.is_some() || self.st.field_focus.is_some() || self.st.locked;
-        let fast = fast || self.st.dock_leave.is_some() || !self.st.dock_bounce.is_empty();
+        let fast = fast || self.st.wall_fade.is_some() || self.st.dock_leave.is_some() || !self.st.dock_bounce.is_empty();
         let ms = if fast { 100 } else { 1000 };
         // текст песни с метками: следующий тик — к смене строки, а не через секунду
         let next = self.lyrics_live().then(|| self.st.lyrics.next_in(self.st.media.now_pos())).flatten().map(|s| (s * 1000.0) as u64 + 20);
@@ -102,6 +102,20 @@ impl App {
                 self.st.night.on = n;
                 self.dirty(&SKind::Bar);
             }
+        }
+        // смена обоев: карточка панели управления идёт вместе с обоями; конец — отпустить прошлые
+        if let Some(k) = crate::wall::fade_k(&self.st) {
+            if self.st.popup_is("control") {
+                self.dirty(&SKind::Popup);
+            }
+            if k >= 1.0 {
+                self.st.wall_prev = None;
+                self.st.wall_fade = None;
+                *self.st.wall_mix.borrow_mut() = None;
+                self.dirty(&SKind::Wall);
+            }
+        } else if self.st.wall_fade.is_some() {
+            self.st.wall_fade = None;
         }
         // уведомления и всплывашка громкости гаснут сами
         if self.notif_tick() {

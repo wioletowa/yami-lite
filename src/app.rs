@@ -243,6 +243,10 @@ pub struct State {
     /// в wall лежит уменьшенная копия (wall_park): полная уже у niri
     pub wall_parked: bool,
     pub wall_stamp: u64,
+    /// смена обоев: прошлая картинка, когда началась, и кадр смеси (шаг, картинка)
+    pub wall_prev: Option<std::rc::Rc<crate::gfx::Img>>,
+    pub wall_fade: Option<Instant>,
+    pub wall_mix: std::cell::RefCell<Option<(i32, std::rc::Rc<crate::gfx::Img>)>>,
     pub started: Instant,
     pub rss: f32,
     pub wall_field: Field,
@@ -426,6 +430,9 @@ impl State {
             wall: None,
             wall_parked: false,
             wall_stamp: 0,
+            wall_prev: None,
+            wall_fade: None,
+            wall_mix: std::cell::RefCell::new(None),
             started: Instant::now(),
             rss: 0.0,
             wall_field: Field::default(),

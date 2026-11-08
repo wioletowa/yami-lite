@@ -110,10 +110,10 @@ pub fn draw(ui: &mut Ui, st: &State, _w: i32, _h: i32) {
         let hov = ui.hover(r);
         ui.cv.pxbox(r, &BoxStyle::new(t.glass_panel(), if n.critical { t.ember } else if hov { t.red } else { t.border }).shadow(4));
         ui.cv.fill(R::new(r.x + 2, r.y + 2, 3, r.h - 4), if n.critical { t.ember } else { t.red });
-        if !n.critical && n.life > 0.0 {
+        if (!n.critical || !st.set.notif_critical_stay) && n.life > 0.0 {
             // остаток — по часам, а не по тику (100 мс): полоса идёт шагами по 2 px каждый кадр;
             // под курсором время стоит, и перерисовывать нечего
-            let ticking = !st.notifs.hover;
+            let ticking = !(st.set.notif_hover_pause && st.notifs.hover);
             let left = n.left - if ticking { st.notifs.last.map(|l| l.elapsed().as_secs_f32()).unwrap_or(0.0) } else { 0.0 };
             let lw = (((r.w - 9) as f32 * (left / n.life).clamp(0.0, 1.0)) / 2.0).round() as i32 * 2;
             ui.cv.fill(R::new(r.x + 5, r.bottom() - 4, lw, 2), t.red.fade(0.6));
@@ -232,7 +232,9 @@ impl App {
     pub fn on_notif(&mut self, n: Incoming) {
         let tm = local_now();
         let critical = n.urgency >= 2;
-        let life = if n.timeout > 0 { n.timeout as f32 / 1000.0 } else { self.st.set.notif_timeout as f32 };
+        // своё время программы — только если так выбрано, и не дольше минуты
+        let own = (self.st.set.notif_app_timeout && n.timeout > 0).then(|| (n.timeout as f32 / 1000.0).min(60.0));
+        let life = own.unwrap_or(self.st.set.notif_timeout as f32);
         let note = Note {
             id: n.id,
             app: n.app,
@@ -282,10 +284,16 @@ impl App {
         let dt = ns.last.map(|l| now.duration_since(l).as_secs_f32()).unwrap_or(0.0);
         ns.last = Some(now);
         let mut gone = vec![];
-        if !ns.hover {
+        // «наведено» — только пока курсор правда над карточками: карточка, пропавшая под курсором,
+        // не присылает выхода, и таймер стоял бы у всех навсегда
+        let over = self.ptr.and_then(|p| self.surfs.get(&p.0)).is_some_and(|s| s.kind == SKind::Notifs);
+        let ns = &mut self.st.notifs;
+        ns.hover &= over;
+        let (pause, stay) = (self.st.set.notif_hover_pause, self.st.set.notif_critical_stay);
+        if !(pause && ns.hover) {
             for id in ns.popups.clone() {
                 if let Some(n) = ns.history.iter_mut().find(|n| n.id == id) {
-                    if n.critical {
+                    if n.critical && stay {
                         continue;
                     }
                     n.left -= dt;
@@ -374,7 +382,15 @@ impl App {
 /// места карточек уведомлений (notifPos) и OSD (osdPos) по кругу в настройках: значение, подпись
 pub const POS: &[(&str, &str)] =
     &[("top-right", "справа сверху"), ("top-left", "слева сверху"), ("top", "сверху по центру"), ("bottom-right", "справа снизу"), ("bottom-left", "слева снизу"), ("bottom", "снизу по центру")];
-pub const OSD_POS: &[(&str, &str)] = &[("bottom", "снизу"), ("top", "сверху"), ("center", "по центру")];
+pub const OSD_POS: &[(&str, &str)] = &[
+    ("bottom", "снизу по центру"),
+    ("bottom-left", "слева снизу"),
+    ("bottom-right", "справа снизу"),
+    ("top", "сверху по центру"),
+    ("top-left", "слева сверху"),
+    ("top-right", "справа сверху"),
+    ("center", "в центре экрана"),
+];
 /// на что OSD может отвечать: ключ, подпись в настройках
 pub const OSD_KINDS: &[(&str, &str)] = &[("volume", "громкость"), ("mic", "микрофон"), ("bright", "яркость"), ("layout", "раскладка"), ("caps", "Caps Lock"), ("num", "Num Lock")];
 
@@ -392,11 +408,19 @@ impl App {
         self.st.osd = Some((kind, Instant::now()));
         if fresh || self.find(&SKind::Osd).is_empty() {
             let out = self.focus_out();
-            // osdPos: снизу над доком, сверху под баром, по центру экрана
-            let (anchor, margin) = match self.st.set.osd_pos.as_str() {
-                "top" => (Anchor::TOP, (self.bar_bottom(&out) + self.st.set.num("osd_offset"), 0, 0, 0)),
+            // osdPos: край и угол; отступ — от бара (или низа) по вертикали и от края экрана в углах
+            let off = self.st.set.num("osd_offset");
+            let pos = self.st.set.osd_pos.clone();
+            let (top, bottom) = (self.bar_bottom(&out) + off, self.bar_reserve_bottom(&out) + off);
+            let side = off.max(12);
+            let (anchor, margin) = match pos.as_str() {
                 "center" => (Anchor::empty(), (0, 0, 0, 0)),
-                _ => (Anchor::BOTTOM, (0, 0, self.bar_reserve_bottom(&out) + self.st.set.num("osd_offset"), 0)),
+                "top" => (Anchor::TOP, (top, 0, 0, 0)),
+                "top-left" => (Anchor::TOP | Anchor::LEFT, (top, 0, 0, side)),
+                "top-right" => (Anchor::TOP | Anchor::RIGHT, (top, side, 0, 0)),
+                "bottom-left" => (Anchor::BOTTOM | Anchor::LEFT, (0, 0, bottom, side)),
+                "bottom-right" => (Anchor::BOTTOM | Anchor::RIGHT, (0, side, bottom, 0)),
+                _ => (Anchor::BOTTOM, (0, 0, bottom, 0)),
             };
             let id = self.mk(SKind::Osd, &out, Layer::Overlay, "yami-osd", anchor, (308, 64 + 8), margin, -1, KeyboardInteractivity::None);
             if let Some(s) = self.surfs.get(&id) {
