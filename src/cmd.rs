@@ -59,8 +59,14 @@ impl Sty {
         println!("\n {} {}", self.acc("▪"), self.head(&name.to_uppercase()));
     }
     pub fn row(&self, cmd: &str, what: &str) {
-        let pad = 24usize.saturating_sub(cmd.chars().count());
-        println!("   {}{}{}", self.bold(cmd), " ".repeat(pad), self.dim(what));
+        let n = cmd.chars().count();
+        // команда не влезла в колонку — описание строкой ниже, а не впритык к ней
+        if n >= 24 {
+            println!("   {}", self.bold(cmd));
+            println!("   {}{}", " ".repeat(24), self.dim(what));
+            return;
+        }
+        println!("   {}{}{}", self.bold(cmd), " ".repeat(24 - n), self.dim(what));
     }
 }
 
