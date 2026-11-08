@@ -104,11 +104,11 @@ impl App {
             }
         }
         // смена обоев: карточка панели управления идёт вместе с обоями; конец — отпустить прошлые
-        if let Some(k) = crate::wall::fade_k(&self.st) {
+        if crate::wall::fade_k(&self.st).is_some() {
             if self.st.popup_is("control") {
                 self.dirty(&SKind::Popup);
             }
-            if k >= 1.0 {
+            if crate::wall::fade_done(&self.st) {
                 self.st.wall_prev = None;
                 self.st.wall_fade = None;
                 *self.st.wall_mix.borrow_mut() = None;

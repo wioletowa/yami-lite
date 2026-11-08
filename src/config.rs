@@ -110,6 +110,12 @@ pub struct Settings {
     pub wallpaper: String,
     /// папка выбора обоев (walls.rs); пусто — ~/Pictures/Wallpapers, папка текущих обоев или ~/Pictures
     pub wall_dir: String,
+    /// где выбор обоев был открыт в последний раз: туда он и открывается (и после «из палитры»)
+    pub wall_last_dir: String,
+    /// смена обоев: узор (wall::FADES; none — сразу), сколько идёт, крупность клеток (точек экрана)
+    pub wall_fade: String,
+    pub wall_fade_time: f32,
+    pub wall_fade_cell: i32,
     /// пикселизация своих обоев: 1 — как есть, дальше клетки крупнее (wall::cell)
     pub wall_pixel: i32,
     pub wall_kanji: bool,
@@ -335,6 +341,7 @@ pub const NUMS: &[(&str, i32, i32, i32)] = &[
     ("night_off_h", 0, 23, 1),
     ("notif_offset", 0, 400, 2),
     ("osd_offset", 0, 400, 4),
+    ("wall_fade_cell", 2, 48, 2),
 ];
 
 impl Default for Settings {
@@ -361,6 +368,10 @@ impl Default for Settings {
             icon_tint: false,
             wallpaper: String::new(),
             wall_dir: String::new(),
+            wall_last_dir: String::new(),
+            wall_fade: "dither".into(),
+            wall_fade_time: 1.2,
+            wall_fade_cell: 8,
             wall_pixel: 1,
             wall_kanji: true,
             wall_fit: "fill".into(),
@@ -510,6 +521,10 @@ impl Settings {
         if self.control_tiles.is_empty() {
             self.control_tiles.push("dnd".into());
         }
+        if !crate::wall::FADES.iter().any(|f| f.0 == self.wall_fade) {
+            self.wall_fade = "dither".into();
+        }
+        self.wall_fade_time = self.wall_fade_time.clamp(0.3, 4.0);
         if self.ws_style != "dots" {
             self.ws_style = "boxes".into();
         }
@@ -602,6 +617,7 @@ impl Settings {
             "bar_margin" => self.bar_margin,
             "notif_offset" => self.notif_offset,
             "osd_offset" => self.osd_offset,
+            "wall_fade_cell" => self.wall_fade_cell,
             _ => 0,
         };
         NUMS.iter().find(|n| n.0 == k).map(|n| v.clamp(n.1, n.2)).unwrap_or(v)
@@ -627,6 +643,7 @@ impl Settings {
             "bar_margin" => self.bar_margin = v,
             "notif_offset" => self.notif_offset = v,
             "osd_offset" => self.osd_offset = v,
+            "wall_fade_cell" => self.wall_fade_cell = v,
             _ => {}
         }
     }

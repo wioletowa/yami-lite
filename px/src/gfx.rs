@@ -179,23 +179,7 @@ fn hash(x: i32, y: i32) -> u32 {
     h ^ (h >> 12)
 }
 
-/// порог клетки (cx, cy) из cols×rows в 0..256 по узору проявления из настроек: клетка видна, когда
-/// уровень проявления выше порога (тот же узор, что у панелей, — для смены обоев)
-pub fn reveal_threshold(cx: i32, cy: i32, cols: i32, rows: i32) -> i32 {
-    let (style, _) = reveal();
-    let span = (cols + rows).max(1);
-    match style {
-        Reveal::Dither | Reveal::Blocks => BAYER[(cy & 3) as usize][(cx & 3) as usize] as i32 * 16 + (hash(cx, cy) & 15) as i32,
-        Reveal::Scan => SCAN[(cy & 15) as usize] as i32 * 16,
-        Reveal::Noise => (hash(cx, cy) & 255) as i32,
-        Reveal::Wipe => ((cx + cy) * 200 / span) + BAYER[(cy & 3) as usize][(cx & 3) as usize] as i32 * 3,
-    }
-}
 
-/// крупность клетки проявления из настроек
-pub fn reveal_grain() -> i32 {
-    reveal().1
-}
 
 impl<'a> Canvas<'a> {
     pub fn new(buf: &'a mut [u32], w: i32, h: i32) -> Canvas<'a> {

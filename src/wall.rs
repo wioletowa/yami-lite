@@ -7,7 +7,7 @@ use crate::app::{App, Msg, SKind, State};
 use crate::config::Settings;
 use crate::font::{self, PX};
 use crate::gfx::{BoxStyle, Img, C, R};
-use crate::settings::{opt_btn, title};
+use crate::settings::{num_btn, opt_btn, title};
 use crate::theme::Theme;
 use crate::ui::{Act, Cur, Tone, Ui};
 use image::RgbaImage;
@@ -325,46 +325,89 @@ pub fn cover(ui: &mut Ui, img: &Img, w: i32, h: i32) {
     yami_px::face::cover(ui, img, w, h);
 }
 
-/// шагов проявления новых обоев: клетки открываются ступенями, а не плавно
-const FADE_STEPS: i32 = 16;
+/// узоры смены обоев: ключ, подпись
+pub const FADES: &[(&str, &str)] = &[("dither", "дизеринг"), ("noise", "шум"), ("scan", "развёртка"), ("wipe", "диагональ"), ("blocks", "крупные блоки"), ("none", "сразу")];
+
+/// шагов смены: клетки открываются ступенями
+const FADE_STEPS: i32 = 24;
 
 /// сколько идёт смена обоев, с
 pub fn fade_secs(st: &State) -> f32 {
-    0.7 * st.set.anim_speed.max(0.1)
+    st.set.wall_fade_time.clamp(0.3, 4.0)
 }
 
-/// доля смены обоев 0..1; None — не идёт
+/// доля смены обоев 0..1 по времени; None — не идёт
 pub fn fade_k(st: &State) -> Option<f32> {
     let t = st.wall_fade?;
     st.wall_prev.as_ref()?;
     Some((t.elapsed().as_secs_f32() / fade_secs(st)).min(1.0))
 }
 
-/// что сейчас на обоях: во время смены — новые, проступающие клетками сквозь старые (узор
-/// проявления из настроек), иначе просто картинка. Тот же кадр берёт карточка панели управления
+/// смена закончилась: показан последний шаг
+pub fn fade_done(st: &State) -> bool {
+    st.wall_step.get() >= FADE_STEPS
+}
+
+fn hash(x: i32, y: i32) -> u32 {
+    let mut h = (x as u32).wrapping_mul(0x9e37_79b1) ^ (y as u32).wrapping_mul(0x85eb_ca77);
+    h ^= h >> 15;
+    h = h.wrapping_mul(0x2c1b_3c6d);
+    h ^ (h >> 12)
+}
+
+/// порог клетки 0..256 по узору смены
+fn threshold(style: &str, cx: i32, cy: i32, cols: i32, rows: i32) -> i32 {
+    const BAYER: [[i32; 4]; 4] = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]];
+    let b = BAYER[(cy & 3) as usize][(cx & 3) as usize];
+    match style {
+        "noise" => (hash(cx, cy) & 255) as i32,
+        "scan" => [0, 8, 4, 12, 2, 10, 6, 14, 1, 9, 5, 13, 3, 11, 7, 15][(cy & 15) as usize] * 16 + (cx * 7 / cols.max(1)).min(15),
+        "wipe" => ((cx + cy) * 220 / (cols + rows).max(1)) + b * 2,
+        _ => b * 16 + (hash(cx, cy) & 15) as i32,
+    }
+}
+
+/// что сейчас на обоях: во время смены — новые, проступающие клетками сквозь старые, иначе просто
+/// картинка. Тот же кадр берёт карточка панели управления
 pub fn shown(st: &State) -> Option<std::rc::Rc<Img>> {
     let new = st.wall.clone()?;
     let (Some(k), Some(old)) = (fade_k(st), st.wall_prev.as_ref()) else { return Some(new) };
-    if k >= 1.0 || old.w != new.w || old.h != new.h {
+    if old.w != new.w || old.h != new.h || st.set.wall_fade == "none" {
+        st.wall_step.set(FADE_STEPS);
         return Some(new);
     }
-    let step = (k * FADE_STEPS as f32) as i32;
+    // по времени, но не больше шага за кадр
+    let step = ((k * FADE_STEPS as f32) as i32).min(st.wall_step.get() + 1).max(1);
+    if step >= FADE_STEPS {
+        st.wall_step.set(FADE_STEPS);
+        return Some(new);
+    }
     if let Some((s, img)) = st.wall_mix.borrow().as_ref() {
         if *s == step {
             return Some(img.clone());
         }
     }
-    // клетка ~8 точек экрана: в точках картинки обоев (она уменьшена в cell раз)
-    let cell = ((8 / cell(st.set.wall_pixel) as i32).max(1) * yami_px::gfx::reveal_grain()).max(1);
+    st.wall_step.set(step);
+    // клетка — в точках экрана, а картинка обоев уменьшена в cell раз
+    let big = if st.set.wall_fade == "blocks" { 4 } else { 1 };
+    let cell = ((st.set.num("wall_fade_cell") * big) / cell(st.set.wall_pixel) as i32).max(1);
     let (cols, rows) = ((new.w + cell - 1) / cell, (new.h + cell - 1) / cell);
     let lvl = step * 256 / FADE_STEPS;
+    let style = st.set.wall_fade.as_str();
     let mut px = Vec::with_capacity(new.px.len());
+    // пороги — по ряду клеток один раз, дальше копирование кусками
+    let mut show = vec![false; cols as usize];
     for y in 0..new.h {
-        let by = y / cell;
+        if y % cell == 0 {
+            for (cx, v) in show.iter_mut().enumerate() {
+                *v = threshold(style, cx as i32, y / cell, cols, rows) < lvl;
+            }
+        }
         let row = (y * new.w) as usize;
-        for x in 0..new.w {
-            let i = row + x as usize;
-            px.push(if yami_px::gfx::reveal_threshold(x / cell, by, cols, rows) < lvl { new.px[i] } else { old.px[i] });
+        for (cx, &v) in show.iter().enumerate() {
+            let a = row + cx * cell as usize;
+            let e = (a + cell as usize).min(row + new.w as usize);
+            px.extend_from_slice(if v { &new.px[a..e] } else { &old.px[a..e] });
         }
     }
     let img = std::rc::Rc::new(Img { w: new.w, h: new.h, px });
@@ -378,7 +421,7 @@ pub fn draw(ui: &mut Ui, st: &State, w: i32, h: i32) {
     if let Some(img) = shown(st) {
         cover(ui, &img, w, h);
     }
-    if fade_k(st).is_some_and(|k| k < 1.0) {
+    if fade_k(st).is_some() && !fade_done(st) {
         ui.anim = true;
     }
     if st.set.wall_kanji {
@@ -459,6 +502,14 @@ pub fn tab(ui: &mut Ui, st: &State, b: R) {
     y = title(ui, b.x, y, b.w, "цвета");
     ui.toggle(R::new(b.x, y, half, 40), "палитра из обоев", "акцент из картинки", s.wall_accent, Act::SWall("accent"));
     ui.toggle(R::new(b.x + half + 20, y, half, 40), "иероглиф на обоях", "в правом нижнем углу", s.wall_kanji, Act::SBool("wall_kanji"));
+    y += 50;
+    y = title(ui, b.x, y, b.w, "смена обоев");
+    opt_btn(ui, R::new(b.x, y, half, 26), "узор", name_of(FADES, &s.wall_fade), Act::SWall("fade"));
+    num_btn(ui, R::new(b.x + half + 20, y, half, 26), "клетка", s.num("wall_fade_cell"), "wall_fade_cell");
+    y += 34;
+    if s.wall_fade != "none" {
+        ui.slider(R::new(b.x, y, b.w, 40), "длительность", (s.wall_fade_time - 0.3) / 3.7, &crate::tf!("{:.1} с", "{:.1} s", s.wall_fade_time), 37, Act::SSlider("wall_fade_time", 0.3, 4.0, 37));
+    }
 }
 
 impl App {
@@ -495,6 +546,7 @@ impl App {
         // смена обоев: новые проступают клетками сквозь прошлые (если размер тот же и анимации включены)
         let old = self.st.wall.take().filter(|o| self.st.set.anim() && !self.st.wall_parked && new.as_ref().is_some_and(|n| n.w == o.w && n.h == o.h));
         self.st.wall_fade = old.is_some().then(std::time::Instant::now);
+        self.st.wall_step.set(0);
         self.st.wall_prev = old;
         *self.st.wall_mix.borrow_mut() = None;
         self.st.wall = new;
@@ -580,6 +632,7 @@ impl App {
             }
             "fit" => s.wall_fit = next_of(FITS, &s.wall_fit).into(),
             "tone" => s.wall_tone = next_of(TONES, &s.wall_tone).into(),
+            "fade" => s.wall_fade = next_of(FADES, &s.wall_fade).into(),
             "accent" => s.wall_accent = !s.wall_accent,
             _ => return false,
         }

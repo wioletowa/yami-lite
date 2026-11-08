@@ -247,6 +247,9 @@ pub struct State {
     pub wall_prev: Option<std::rc::Rc<crate::gfx::Img>>,
     pub wall_fade: Option<Instant>,
     pub wall_mix: std::cell::RefCell<Option<(i32, std::rc::Rc<crate::gfx::Img>)>>,
+    /// последний показанный шаг смены: за кадр — не больше одного (иначе медленный кадр
+    /// проглатывает шаги и смена «перескакивает»)
+    pub wall_step: std::cell::Cell<i32>,
     pub started: Instant,
     pub rss: f32,
     pub wall_field: Field,
@@ -434,6 +437,7 @@ impl State {
             wall_prev: None,
             wall_fade: None,
             wall_mix: std::cell::RefCell::new(None),
+            wall_step: std::cell::Cell::new(0),
             started: Instant::now(),
             rss: 0.0,
             wall_field: Field::default(),

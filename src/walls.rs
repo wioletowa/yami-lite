@@ -302,7 +302,10 @@ impl App {
         let gen = self.st.walls.gen + 1;
         let shown = go.clone().unwrap_or_default();
         self.st.walls = Walls { gen, back, dir_mode, dir: shown, ..Default::default() };
-        let (wd, cur, tx) = (self.st.set.wall_dir.clone(), crate::wall::own(&self.st.set), self.tx.clone());
+        // последняя открытая папка, если она ещё есть; иначе папка обоев
+        let last = yami_px::paths::expand(&self.st.set.wall_last_dir);
+        let wd = if !self.st.set.wall_last_dir.is_empty() && last.is_dir() { self.st.set.wall_last_dir.clone() } else { self.st.set.wall_dir.clone() };
+        let (cur, tx) = (crate::wall::own(&self.st.set), self.tx.clone());
         let _ = std::thread::Builder::new().name("walls-list".into()).spawn(move || {
             let d = go.unwrap_or_else(|| dir(&wd, cur.as_deref()));
             let (dirs, files, more) = list(&d);
@@ -319,6 +322,8 @@ impl App {
             return;
         }
         // клетка 0 — пиксельные из палитры: пути нет, миниатюра рисуется здесь же
+        // запомнить, где были (сохранится само; пересобирать тему ради этого незачем)
+        self.st.set.wall_last_dir = yami_px::paths::pretty(&dir);
         let nd = dirs.len();
         let tiles: Arc<[PathBuf]> = std::iter::once(PathBuf::new()).chain(dirs).chain(files).collect();
         let own = crate::wall::own(&self.st.set);
