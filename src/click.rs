@@ -41,6 +41,8 @@ impl App {
             // ── выбор обоев ─────────────────────────────────────────────────
             Act::WallPick(i) => self.walls_pick(i),
             Act::WallsBack => self.walls_back(),
+            Act::WallsUp => self.walls_up(),
+            Act::WallsHere => self.walls_here(),
             // ── бар ─────────────────────────────────────────────────────────
             Act::Launcher | Act::DockLauncher => App::sh(&self.st.set.launcher_cmd.clone()),
             Act::NightToggle => self.night_toggle(),

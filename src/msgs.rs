@@ -121,7 +121,7 @@ impl App {
                 }
             }
             Msg::Wall(n, img, accent) => self.wall_ready(n, img, accent),
-            Msg::WallsListed(gen, dir, files, more) => self.walls_listed(gen, dir, files, more),
+            Msg::WallsListed(gen, dir, dirs, files, more) => self.walls_listed(gen, dir, dirs, files, more),
             Msg::WallThumb(gen, i, img) => self.walls_thumb(gen, i, img),
         }
     }

@@ -85,7 +85,7 @@ impl crate::app::App {
             "night" => self.night_toggle(),
             "power" => self.toggle_modal(Modal::Power),
             "settings" => self.toggle_modal(Modal::Settings),
-            "walls" => self.walls_open(false),
+            "walls" => self.walls_open(false, false),
             "lock" => self.lock_now(),
             "bar" => self.toggle_bar(),
             "edit" => {

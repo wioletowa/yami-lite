@@ -1,5 +1,7 @@
 // Выбор обоев (Modal::Walls, #11): сетка миниатюр папки обоев (wallDir; пусто — ~/Pictures/Wallpapers,
-// папка текущих обоев или ~/Pictures), первая клетка — пиксельные из палитры. Папку читает одна
+// папка текущих обоев или ~/Pictures), первая клетка — пиксельные из палитры, за ней — вложенные
+// папки (щелчок — войти, «вверх» в шапке — назад), потом картинки. В режиме «папка» шапка ещё
+// предлагает сделать открытую папку папкой обоев. Папку читает одна
 // нить, миниатюры — другая, через кеш миниатюр (yami-px icons::thumb): сперва видимые
 // строки, потом по две соседних, в памяти — не больше нескольких десятков. Щелчок ставит обои и
 // возвращает в настройки, если выбор открыли оттуда; закрылся — миниатюры отпущены.
@@ -8,7 +10,7 @@ use crate::app::{App, Modal, Msg, SKind, State};
 use crate::config;
 use crate::font::PX;
 use crate::gfx::{BoxStyle, Img, R};
-use crate::ui::{Act, Cur, Ui};
+use crate::ui::{Act, Cur, Tone, Ui};
 use smithay_client_toolkit::seat::keyboard::{KeyEvent, Keysym};
 use std::collections::HashMap;
 use std::os::unix::fs::MetadataExt;
@@ -54,9 +56,12 @@ pub struct Walls {
     /// номер открытия: ответы прошлого открытия выбрасываются
     pub gen: u64,
     pub dir: PathBuf,
-    /// клетки: 0 — пиксельные из палитры (state/yami/wallpaper.png), дальше картинки папки; пусто,
-    /// пока нить читает папку. Тот же список у нити миниатюр
+    /// клетки: 0 — пиксельные из палитры, дальше вложенные папки (dirs штук), потом картинки;
+    /// пусто, пока нить читает папку. Тот же список у нити миниатюр
     pub tiles: Arc<[PathBuf]>,
+    pub dirs: usize,
+    /// выбираем папку обоев (кнопка «эта папка» в шапке), а не картинку
+    pub dir_mode: bool,
     pub thumbs: HashMap<usize, Option<Rc<Img>>>,
     /// клетка под клавиатурой
     pub cur: usize,
@@ -94,16 +99,19 @@ fn file_name(p: &Path) -> String {
     p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()
 }
 
-/// картинки папки, которые шелл декодирует сам (без скрытых), по имени «естественно»; сколько
-/// отброшено сверх MAX
-fn list(dir: &Path) -> (Vec<PathBuf>, usize) {
-    let mut v: Vec<PathBuf> = std::fs::read_dir(dir)
-        .map(|rd| rd.flatten().map(|e| e.path()).filter(|p| !file_name(p).starts_with('.') && crate::wall::decodable(p) && p.is_file()).collect())
-        .unwrap_or_default();
-    v.sort_by(|a, b| yami_px::paths::natural(&file_name(a), &file_name(b)));
+/// вложенные папки и картинки, которые шелл декодирует сам (без скрытых), по имени «естественно»;
+/// сколько картинок отброшено сверх MAX
+fn list(dir: &Path) -> (Vec<PathBuf>, Vec<PathBuf>, usize) {
+    let all: Vec<PathBuf> = std::fs::read_dir(dir).map(|rd| rd.flatten().map(|e| e.path()).filter(|p| !file_name(p).starts_with('.')).collect()).unwrap_or_default();
+    let sort = |v: &mut Vec<PathBuf>| v.sort_by(|a, b| yami_px::paths::natural(&file_name(a).to_lowercase(), &file_name(b).to_lowercase()));
+    let mut dirs: Vec<PathBuf> = all.iter().filter(|p| p.is_dir()).cloned().collect();
+    sort(&mut dirs);
+    dirs.truncate(MAX);
+    let mut v: Vec<PathBuf> = all.into_iter().filter(|p| crate::wall::decodable(p) && p.is_file()).collect();
+    sort(&mut v);
     let more = v.len().saturating_sub(MAX);
     v.truncate(MAX);
-    (v, more)
+    (dirs, v, more)
 }
 
 /// клетки строк top.. (видимых) и по spare строк сверху и снизу
@@ -179,9 +187,17 @@ pub fn draw(ui: &mut Ui, st: &State, w: i32, h: i32) {
     ui.frame(fr, false);
     ui.header(R::new(1, 1, fr.w - 2, 30), "image", "обои", "");
     ui.ghost(R::new(fr.right() - 28, 5, 24, 22), "close", Act::WallsBack);
-    // папка — как есть (путь не переводится), кнопки справа
-    let (b1, b2) = (126, 156);
-    let bx = fr.right() - GX - b1 - b2 - 8;
+    // папка — как есть (путь не переводится), кнопки справа: «вверх» и (режим «папка») «эта папка»
+    let up_w = ui.w(PX, "вверх") + 36;
+    let here_w = if wl.dir_mode { ui.w(PX, "эта папка") + 36 } else { 0 };
+    let mut bx = fr.right() - GX;
+    if wl.dir_mode {
+        bx -= here_w;
+        ui.button(R::new(bx, 39, here_w, 24), "эта папка", "check", Tone::Primary, false, !loading, Act::WallsHere);
+        bx -= 8;
+    }
+    bx -= up_w;
+    ui.button(R::new(bx, 39, up_w, 24), "вверх", "up", Tone::Plain, false, wl.dir.parent().is_some(), Act::WallsUp);
     ui.cv.icon("folder", GX, 44, 2, t.text_faint);
     ui.cv.text_in(ui.f, PX, R::new(GX + 22, 38, bx - GX - 30, 26), &yami_px::paths::pretty(&wl.dir), t.text_dim);
     // сетка: под клетками — зона для колеса
@@ -191,6 +207,7 @@ pub fn draw(ui: &mut Ui, st: &State, w: i32, h: i32) {
     let mut hovered = None;
     for i in window(wl.top, wl.tiles.len(), 0) {
         let Some(r) = tile_rect(i, wl.top) else { continue };
+        let folder = i >= 1 && i <= wl.dirs;
         let on = if i == 0 { own.is_none() } else { own.as_deref() == Some(wl.tiles[i].as_path()) };
         let hov = ui.hover(r);
         if hov {
@@ -198,6 +215,17 @@ pub fn draw(ui: &mut Ui, st: &State, w: i32, h: i32) {
         }
         ui.cv.pxbox(r, &BoxStyle::new(t.code_bg, if on { t.red } else if hov { t.text_dim } else { t.border }).shadow(if hov { 2 } else { 0 }));
         let inner = r.inset(3);
+        if folder {
+            ui.cv.icon_in("folder", R::new(inner.x, inner.y, inner.w, inner.h - 18), 4, if hov { t.red } else { t.text_dim });
+            let band = R::new(inner.x, inner.bottom() - 18, inner.w, 18);
+            ui.cv.fill(band, t.bg.alpha(0.78));
+            ui.cv.text_in(ui.f, PX, R::new(band.x + 6, band.y, band.w - 8, band.h), &file_name(&wl.tiles[i]), t.text);
+            if wl.cur == i {
+                ui.cv.outline(R::new(r.x - 3, r.y - 3, r.w + 6, r.h + 6), t.ember, 1);
+            }
+            ui.zone(r, Act::WallPick(i), Cur::Pointer);
+            continue;
+        }
         match wl.thumbs.get(&i) {
             Some(Some(img)) => ui.cv.image(img, inner.x, inner.y, 1.0),
             // не вышло (битая или огромная): значок, щёлкнуть всё равно можно
@@ -222,8 +250,8 @@ pub fn draw(ui: &mut Ui, st: &State, w: i32, h: i32) {
     if loading {
         ui.text_center(PX, R::new(grid.x, GY + TH + GAP, grid.w, 24), "читаю папку…", t.text_faint);
     } else if wl.tiles.len() == 1 {
-        ui.text_center(PX, R::new(grid.x, GY + TH + GAP, grid.w, 24), "в папке нет картинок (png, jpg, webp)", t.text_faint);
-        ui.text_center(PX, R::new(grid.x, GY + TH + GAP + 24, grid.w, 24), "выбери другую папку", t.text_faint);
+        ui.text_center(PX, R::new(grid.x, GY + TH + GAP, grid.w, 24), "в папке нет картинок (png, jpg, webp) и папок", t.text_faint);
+        ui.text_center(PX, R::new(grid.x, GY + TH + GAP + 24, grid.w, 24), "«вверх» — на уровень выше", t.text_faint);
     }
     // полоса прокрутки, если строк больше, чем видно
     let rows = wl.tiles.len().div_ceil(COLS);
@@ -246,24 +274,25 @@ pub fn draw(ui: &mut Ui, st: &State, w: i32, h: i32) {
     let hint = if wl.more > 0 {
         crate::tf!("показаны первые {}, ещё {}", "the first {} shown, {} more", MAX, wl.more)
     } else {
-        crate::i18n::tr("стрелки, Enter — поставить, Esc — назад").to_string()
+        crate::i18n::tr("Enter — поставить или войти, Backspace — вверх, Esc — закрыть").to_string()
     };
     ui.cv.text_right(ui.f, PX, R::new(fr.w / 2, fy, fr.w / 2 - GX, 24), &hint, t.text_faint);
 }
 
 impl App {
-    /// открыть выбор (или закрыть, если открыт): back — из настроек, вернуться туда
-    pub fn walls_open(&mut self, back: bool) {
+    /// открыть выбор (или закрыть, если открыт): back — из настроек, вернуться туда; dir_mode —
+    /// выбрать папку обоев, а не картинку
+    pub fn walls_open(&mut self, back: bool, dir_mode: bool) {
         if self.st.modal == Some(Modal::Walls) {
             self.walls_back();
             return;
         }
-        self.walls_start(back);
+        self.walls_start(back, dir_mode, None);
     }
 
     /// открыть (уже открытый — заново, на новой папке): папку читает нить, клетки придут в
     /// walls_listed. Wayland-нить диск не ждёт: в ~/Pictures бывают тысячи фото, папка — сетевой
-    fn walls_start(&mut self, back: bool) {
+    fn walls_start(&mut self, back: bool, dir_mode: bool, go: Option<PathBuf>) {
         if self.st.modal != Some(Modal::Walls) {
             self.toggle_modal(Modal::Walls);
             if self.st.modal != Some(Modal::Walls) {
@@ -271,12 +300,13 @@ impl App {
             }
         }
         let gen = self.st.walls.gen + 1;
-        self.st.walls = Walls { gen, back, ..Default::default() };
+        let shown = go.clone().unwrap_or_default();
+        self.st.walls = Walls { gen, back, dir_mode, dir: shown, ..Default::default() };
         let (wd, cur, tx) = (self.st.set.wall_dir.clone(), crate::wall::own(&self.st.set), self.tx.clone());
         let _ = std::thread::Builder::new().name("walls-list".into()).spawn(move || {
-            let d = dir(&wd, cur.as_deref());
-            let (files, more) = list(&d);
-            let _ = tx.send(Msg::WallsListed(gen, d, files, more));
+            let d = go.unwrap_or_else(|| dir(&wd, cur.as_deref()));
+            let (dirs, files, more) = list(&d);
+            let _ = tx.send(Msg::WallsListed(gen, d, dirs, files, more));
             // кеш миниатюр: убрать старое (раз в сутки), уже после списка
             crate::icons::thumbs_tidy();
         });
@@ -284,27 +314,31 @@ impl App {
     }
 
     /// папка прочитана: клетки, текущие обои под клавиатурой и видны, нить миниатюр — с их строк
-    pub fn walls_listed(&mut self, gen: u64, dir: PathBuf, files: Vec<PathBuf>, more: usize) {
+    pub fn walls_listed(&mut self, gen: u64, dir: PathBuf, dirs: Vec<PathBuf>, files: Vec<PathBuf>, more: usize) {
         if gen != self.st.walls.gen || self.st.modal != Some(Modal::Walls) {
             return;
         }
         // клетка 0 — пиксельные из палитры: пути нет, миниатюра рисуется здесь же
-        let tiles: Arc<[PathBuf]> = std::iter::once(PathBuf::new()).chain(files).collect();
+        let nd = dirs.len();
+        let tiles: Arc<[PathBuf]> = std::iter::once(PathBuf::new()).chain(dirs).chain(files).collect();
         let own = crate::wall::own(&self.st.set);
-        let cur = own.and_then(|p| tiles.iter().skip(1).position(|t| *t == p).map(|i| i + 1)).unwrap_or(0);
+        let cur = own.and_then(|p| tiles.iter().skip(1 + nd).position(|t| *t == p).map(|i| i + 1 + nd)).unwrap_or(0);
         let top = (cur / COLS + 1).saturating_sub(ROWS);
+        // миниатюры нужны только картинкам: палитра рисуется здесь, у папок — значок
         let mut have = vec![false; tiles.len()];
-        have[0] = true;
+        for h in have.iter_mut().take(1 + nd) {
+            *h = true;
+        }
         let q = Arc::new((Mutex::new(Q { top, have, stop: false }), Condvar::new()));
         let tx = self.tx.clone();
         spawn(tiles.clone(), q.clone(), move |i, img| tx.send(Msg::WallThumb(gen, i, img)).is_ok());
-        let back = self.st.walls.back;
+        let (back, dir_mode) = (self.st.walls.back, self.st.walls.dir_mode);
         let t = &self.st.t;
         let pal = crate::wall::generate(t.bg, t.red, t.border, t.light);
         let small = image::imageops::resize(&pal, (TW - 6) as u32, (TH - 6) as u32, image::imageops::FilterType::Nearest);
         let mut thumbs = HashMap::new();
         thumbs.insert(0, Some(Rc::new(crate::icons::from_rgba(&small))));
-        self.st.walls = Walls { gen, dir, tiles, cur, top, back, more, thumbs, worker: Some(Worker(q)), ..Default::default() };
+        self.st.walls = Walls { gen, dir, tiles, dirs: nd, dir_mode, cur, top, back, more, thumbs, worker: Some(Worker(q)) };
         self.dirty(&SKind::Modal);
     }
 
@@ -390,10 +424,33 @@ impl App {
         self.set_wall(p);
     }
 
-    /// клетка выбрана: пиксельные (0) или картинка
+    /// клетка выбрана: пиксельные (0), папка — войти в неё, картинка — поставить обоями
     pub fn walls_pick(&mut self, i: usize) {
         let Some(p) = self.st.walls.tiles.get(i).cloned() else { return };
+        if i >= 1 && i <= self.st.walls.dirs {
+            return self.walls_go(p);
+        }
         self.walls_set(&if i == 0 { String::new() } else { p.to_string_lossy().to_string() });
+        self.walls_back();
+    }
+
+    /// перейти в другую папку, не закрывая выбор
+    pub fn walls_go(&mut self, d: PathBuf) {
+        let (back, dir_mode) = (self.st.walls.back, self.st.walls.dir_mode);
+        self.walls_start(back, dir_mode, Some(d));
+    }
+
+    /// на уровень выше
+    pub fn walls_up(&mut self) {
+        if let Some(p) = self.st.walls.dir.parent().map(Path::to_path_buf) {
+            self.walls_go(p);
+        }
+    }
+
+    /// режим «папка»: открытая папка — папка обоев (wallDir)
+    pub fn walls_here(&mut self) {
+        self.st.set.wall_dir = yami_px::paths::pretty(&self.st.walls.dir);
+        self.settings_changed();
         self.walls_back();
     }
 
@@ -404,6 +461,7 @@ impl App {
         let cur = self.st.walls.cur;
         let to = match e.keysym {
             Keysym::Escape => return self.walls_back(),
+            Keysym::BackSpace => return self.walls_up(),
             Keysym::Return | Keysym::KP_Enter | Keysym::space => return self.walls_pick(cur),
             Keysym::Right | Keysym::Tab => cur + 1,
             Keysym::Left | Keysym::ISO_Left_Tab => cur.saturating_sub(1),
@@ -455,7 +513,12 @@ mod tests {
         std::fs::write(d.join(".hidden.png"), b"x").unwrap();
         std::fs::write(d.join("notes.txt"), b"x").unwrap();
         std::fs::write(d.join("broken.png"), b"not a png").unwrap();
-        let (v, more) = list(&d);
+        std::fs::create_dir_all(d.join("sub 10")).unwrap();
+        std::fs::create_dir_all(d.join("Sub 9")).unwrap();
+        std::fs::create_dir_all(d.join(".cache")).unwrap();
+        let (dirs, v, more) = list(&d);
+        let dn: Vec<String> = dirs.iter().map(|p| file_name(p)).collect();
+        assert_eq!(dn, ["Sub 9", "sub 10"]);
         let names: Vec<String> = v.iter().map(|p| file_name(p)).collect();
         assert_eq!(names, ["A1.png", "b2.jpg", "b10.png", "broken.png"]);
         assert_eq!(more, 0);

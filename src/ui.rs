@@ -43,6 +43,8 @@ pub enum Act {
     WallPick(usize),
     WallsScroll,
     WallsBack,
+    WallsUp,
+    WallsHere,
     /// модуль бара во вкладке «бар»: тащить (сторона, индекс), новый, убрать
     SModDrag(usize, usize),
     SModNew(String),

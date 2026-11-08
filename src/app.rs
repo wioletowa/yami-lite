@@ -152,7 +152,7 @@ pub enum Msg {
     /// обои готовы (wall.rs): номер задания, картинка, акцент из неё
     Wall(u64, Option<crate::gfx::Img>, Option<u32>),
     /// папка выбора обоев прочитана (walls.rs): номер открытия, папка, картинки, сколько сверх MAX
-    WallsListed(u64, std::path::PathBuf, Vec<std::path::PathBuf>, usize),
+    WallsListed(u64, std::path::PathBuf, Vec<std::path::PathBuf>, Vec<std::path::PathBuf>, usize),
     /// миниатюра для выбора обоев (walls.rs): номер открытия, клетка, картинка
     WallThumb(u64, usize, Option<crate::gfx::Img>),
 }

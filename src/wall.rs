@@ -9,7 +9,7 @@ use crate::font::{self, PX};
 use crate::gfx::{BoxStyle, Img, C, R};
 use crate::settings::{opt_btn, title};
 use crate::theme::Theme;
-use crate::ui::{Act, Tone, Ui};
+use crate::ui::{Act, Cur, Tone, Ui};
 use image::RgbaImage;
 use std::path::{Path, PathBuf};
 
@@ -356,6 +356,15 @@ pub fn tab(ui: &mut Ui, st: &State, b: R) {
         ui.cv.image_scaled(img, R::new(inner.x + (inner.w - dw) / 2, inner.y + (inner.h - dh) / 2, dw, dh), 1.0);
     }
     ui.cv.pop_clip();
+    // щелчок по превью — выбрать картинку
+    let hov = ui.hover(pv);
+    if hov {
+        ui.cv.outline(pv, t.red, 2);
+        let band = R::new(inner.x, inner.bottom() - 20, inner.w, 20);
+        ui.cv.fill(band, t.bg.alpha(0.8));
+        ui.text_center(PX, band, "выбрать картинку", t.text);
+    }
+    ui.zone(pv, Act::SWall("pick"), Cur::Pointer);
     let (rx, rw) = (pv.right() + 16, b.right() - pv.right() - 16);
     let mut ry = y + 2;
     match source(st) {
@@ -377,9 +386,12 @@ pub fn tab(ui: &mut Ui, st: &State, b: R) {
         }
     }
     ry += 30;
-    ui.button(R::new(rx, ry, rw, 28), "выбрать картинку…", "folder", Tone::Primary, false, true, Act::SWall("pick"));
+    ui.button(R::new(rx, ry, rw, 28), "выбрать папку…", "folder", Tone::Primary, false, true, Act::SWall("dir"));
     ry += 34;
     ui.button(R::new(rx, ry, rw, 28), "пиксельные из палитры", "image", Tone::Plain, false, own(s).is_some(), Act::SWall("reset"));
+    ry += 34;
+    let folder = if s.wall_dir.trim().is_empty() { crate::i18n::tr("папка обоев: ~/Pictures/Wallpapers или папка картинки").to_string() } else { crate::tf!("папка обоев: {}", "wallpaper folder: {}", s.wall_dir) };
+    ui.cv.text_in(ui.f, PX, R::new(rx, ry, rw, 18), &folder, t.text_faint);
     y = pv.bottom() + 10;
     let focused = st.field_focus == Some("wall");
     ui.field(R::new(b.x, y, b.w - 130, 30), &st.wall_field, "или путь к файлу", focused, false, Act::SField("wall"));
@@ -499,9 +511,9 @@ impl App {
         let Act::SWall(k) = a else { return false };
         let s = &mut self.st.set;
         match *k {
-            // сетка картинок папки обоев (walls.rs); другой файл и папка — оттуда через yami-files
-            "pick" => {
-                self.walls_open(true);
+            // сетка картинок папки обоев (walls.rs): картинку или саму папку
+            "pick" | "dir" => {
+                self.walls_open(true, *k == "dir");
                 return true;
             }
             "reset" => {
