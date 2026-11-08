@@ -52,6 +52,15 @@ pub enum Act {
     SModDrag(usize, usize),
     SModNew(String),
     NightToggle,
+    /// модуль бара под курсором (ПКМ — его меню) и пустое место бара (ПКМ — панель управления)
+    BarMod(String),
+    BarBg,
+    /// панель управления: ползунки громкости и яркости (вертикальные), плитка
+    CtlVol,
+    CtlBright,
+    CtlTile(String),
+    /// настройки → бар: плитка панели управления вкл/выкл
+    SCtlTile(&'static str),
     /// индикатор приватности в баре: «mic», «screen», «cam» (наведение — кто)
     Privacy(&'static str),
     ReplySend,
@@ -120,7 +129,7 @@ pub enum Act {
 
 impl Act {
     pub fn is_drag(&self) -> bool {
-        matches!(self, Act::SSlider(..) | Act::VolSlider | Act::MicSlider | Act::AppVol(_) | Act::MediaSeek | Act::MDrag | Act::WDrag(_) | Act::SModDrag(..) | Act::SModNew(_))
+        matches!(self, Act::SSlider(..) | Act::CtlVol | Act::CtlBright | Act::VolSlider | Act::MicSlider | Act::AppVol(_) | Act::MediaSeek | Act::MDrag | Act::WDrag(_) | Act::SModDrag(..) | Act::SModNew(_))
     }
 }
 

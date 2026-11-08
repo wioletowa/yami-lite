@@ -89,6 +89,8 @@ pub fn draw(ui: &mut Ui, st: &State, out: &str, w: i32) {
         pw
     };
 
+    // пустое место: ПКМ — панель управления; модули ложатся сверху своими зонами
+    ui.zone(R::new(0, 0, w, H), Act::BarBg, Cur::Default);
     let mid = set.num("bar_mid");
     let (pad_l, pad_r) = (set.num("bar_pad_l"), set.num("bar_pad_r"));
     // окна стола (#28) — модуль как все, в любой группе: своя ширина по числу окон, а когда места
@@ -150,6 +152,8 @@ fn row(ui: &mut Ui, st: &State, out: &str, list: &mut dyn Iterator<Item = &Strin
         }
         if draw {
             let mx = if dir > 0 { x } else { x - mw };
+            // под зонами самого модуля: ПКМ по любой его части — меню модуля
+            ui.zone(R::new(mx - gap / 2, 0, mw + gap, H), Act::BarMod(m.clone()), Cur::Default);
             if m == "tasks" {
                 tasks(ui, st, out, R::new(mx, 0, mw, H - 1));
             } else {

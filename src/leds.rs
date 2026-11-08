@@ -61,3 +61,26 @@ pub fn spawn(tx: Sender<Msg>) {
         }
     });
 }
+
+/// яркость экрана 0..1 через logind (SetBrightness сессии): без прав на /sys и без brightnessctl.
+/// Одна нить на всё время: ползунок шлёт значения пачкой, уходит последнее
+pub fn set_brightness(v: f32) {
+    static TX: std::sync::OnceLock<std::sync::mpsc::Sender<f32>> = std::sync::OnceLock::new();
+    let tx = TX.get_or_init(|| {
+        let (tx, rx) = std::sync::mpsc::channel::<f32>();
+        let _ = std::thread::Builder::new().name("brightness".into()).spawn(move || {
+            let Some((path, max)) = backlight() else { return };
+            let Some(name) = path.parent().and_then(|d| d.file_name()).map(|n| n.to_string_lossy().to_string()) else { return };
+            let Ok(c) = zbus::blocking::Connection::system() else { return };
+            while let Ok(mut v) = rx.recv() {
+                while let Ok(n) = rx.try_recv() {
+                    v = n;
+                }
+                let val = ((v.clamp(0.01, 1.0) * max as f32).round() as u32).max(1);
+                let _ = c.call_method(Some("org.freedesktop.login1"), "/org/freedesktop/login1/session/auto", Some("org.freedesktop.login1.Session"), "SetBrightness", &("backlight", name.as_str(), val));
+            }
+        });
+        tx
+    });
+    let _ = tx.send(v);
+}

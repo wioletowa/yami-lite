@@ -46,6 +46,18 @@ impl App {
                 self.settings_changed();
                 return true;
             }
+            Act::SCtlTile(k) => {
+                match s.control_tiles.iter().position(|x| x == k) {
+                    // хоть одна плитка остаётся
+                    Some(i) if s.control_tiles.len() > 1 => {
+                        s.control_tiles.remove(i);
+                    }
+                    Some(_) => {}
+                    None if s.control_tiles.len() < 6 => s.control_tiles.push(k.to_string()),
+                    None => {}
+                }
+                self.settings_changed();
+            }
             Act::SOsd(k) => {
                 match s.osd_kinds.iter().position(|x| x == k) {
                     Some(i) => {

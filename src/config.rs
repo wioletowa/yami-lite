@@ -214,6 +214,8 @@ pub struct Settings {
     pub dock_launcher: bool,
     /// кнопка лаунчера в баре и доке запускает эту команду (fuzzel, rofi -show drun…); "" — кнопки нет
     pub launcher_cmd: String,
+    /// плитки панели управления (control::TILES), от 1 до 6
+    pub control_tiles: Vec<String>,
     pub dock_trash: bool,
     pub dock_pins: Vec<String>,
 
@@ -405,6 +407,7 @@ impl Default for Settings {
             dock_running: true,
             dock_launcher: true,
             launcher_cmd: String::new(),
+            control_tiles: ["wifi", "bt", "dnd", "night", "mic", "theme"].map(String::from).to_vec(),
             dock_trash: true,
             font_shell: String::new(),
             dock_pins: ["yami-files", "kitty", "librewolf", "firefox", "chromium", "org.telegram.desktop", "steam", "yami-view"].iter().map(|s| s.to_string()).collect(),
@@ -486,6 +489,12 @@ impl Settings {
         }
         if self.bar_pos != "bottom" {
             self.bar_pos = "top".into();
+        }
+        self.control_tiles.retain(|k| crate::control::TILES.iter().any(|t| t.0 == k));
+        self.control_tiles.dedup();
+        self.control_tiles.truncate(6);
+        if self.control_tiles.is_empty() {
+            self.control_tiles.push("dnd".into());
         }
         if self.ws_style != "dots" {
             self.ws_style = "boxes".into();

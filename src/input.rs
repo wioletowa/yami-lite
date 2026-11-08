@@ -207,7 +207,17 @@ impl App {
         let (dx, dy) = (ax - p.ax, ay - p.ay);
         let start = p.start;
         let frac = ((x - zone.x as f64) / zone.w.max(1) as f64).clamp(0.0, 1.0) as f32;
+        // вертикальные ползунки панели управления: снизу вверх
+        let vfrac = (1.0 - (y - zone.y as f64) / zone.h.max(1) as f64).clamp(0.0, 1.0);
         match act {
+            Act::CtlVol => {
+                crate::audio::set_volume(vfrac);
+                return;
+            }
+            Act::CtlBright => {
+                crate::leds::set_brightness(vfrac as f32);
+                return;
+            }
             Act::SSlider(key, from, to, seg) => {
                 let f = (frac * seg as f32).ceil() / seg as f32;
                 self.slider_set(key, from + f * (to - from));

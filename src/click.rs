@@ -11,6 +11,15 @@ const RMB: u32 = 0x111;
 const MMB: u32 = 0x112;
 
 impl App {
+    /// модуль бара под курсором (зона BarMod под зонами самого модуля)
+    fn bar_mod_at(&self, sid: u32) -> Option<String> {
+        let (_, x, y) = self.ptr.filter(|p| p.0 == sid)?;
+        self.surfs.get(&sid)?.zones.iter().rev().find_map(|z| match &z.act {
+            Act::BarMod(m) if z.r.contains(x, y) => Some(m.clone()),
+            _ => None,
+        })
+    }
+
     /// откуда открывать всплывашку: центр зоны в координатах монитора
     fn anchor(&self, sid: u32, zone: R) -> (String, i32, i32) {
         let s = self.surfs.get(&sid);
@@ -31,6 +40,17 @@ impl App {
             return;
         }
         let (out, ax, ay) = self.anchor(sid, zone);
+        // ПКМ по бару: окна и трей — свои меню, остальное — меню модуля, пустое место — панель
+        if kind == Some(SKind::Bar) && button == RMB && !matches!(a, Act::Task(_) | Act::Tray(_)) {
+            let (mx, _) = self.surfs.get(&sid).map(|s| s.margin).unwrap_or((0, 0));
+            let px = self.ptr.filter(|p| p.0 == sid).map_or(zone.x + zone.w / 2, |p| p.1 as i32);
+            let py = if crate::bar::low(&self.st.set) { ay } else { self.bar_bottom(&out) + 2 };
+            match self.bar_mod_at(sid) {
+                Some(m) => self.open_module_menu(&m, &out, mx + px - 20, py),
+                None => self.toggle_control(&out, mx + px),
+            }
+            return;
+        }
         match a {
             Act::Block => {
                 if self.st.field_focus.is_some() && kind != Some(SKind::Modal) {
@@ -46,6 +66,7 @@ impl App {
             // ── бар ─────────────────────────────────────────────────────────
             Act::Launcher | Act::DockLauncher => App::sh(&self.st.set.launcher_cmd.clone()),
             Act::NightToggle => self.night_toggle(),
+            Act::CtlTile(k) => self.control_tile(&k),
             Act::ReplySend => self.reply_send(),
             Act::Power => self.toggle_modal(Modal::Power),
             Act::Settings => self.toggle_settings(),
@@ -201,6 +222,8 @@ impl App {
         let up = d < 0;
         match a {
             Act::Popup("sound" | "media") | Act::VolSlider | Act::VolMute => audio::step_volume(if up { 1 } else { -1 }),
+            Act::CtlBright => crate::leds::set_brightness(self.st.leds.bright.unwrap_or(0.5) + if up { 0.05 } else { -0.05 }),
+            Act::CtlVol => audio::step_volume(if up { 1 } else { -1 }),
             Act::WallPick(_) | Act::WallsScroll => self.walls_scroll(if up { -1 } else { 1 }),
             Act::SFont(_) | Act::SFontScroll => self.font_scroll(if up { -1 } else { 1 }),
             Act::MicSlider | Act::MicMute => {

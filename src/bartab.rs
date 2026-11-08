@@ -258,6 +258,13 @@ fn tab_bar_look(ui: &mut Ui, st: &State, b: R) {
     // #21: ноутбук от сети — заряженная батарея в баре не нужна
     ui.toggle(R::new(col(0), y, cw * 2 + (col(1) - col(0) - cw), 26), "прятать полную батарею", "", s.bat_hide_full, Act::SBool("bat_hide_full"));
     y += 40;
+    // панель управления: ПКМ по пустому месту бара
+    y = title(ui, b.x, y, b.w, &crate::tf!("панель управления (ПКМ по пустому месту бара): плитки {}/6", "control panel (right click on the bar's empty space): tiles {}/6", s.control_tiles.len()));
+    for (i, (k, name, _)) in crate::control::TILES.iter().enumerate() {
+        let on = s.control_tiles.iter().any(|x| x == k);
+        ui.toggle(R::new(col(i as i32 % 3), y + (i as i32 / 3) * 32, cw, 26), name, "", on, Act::SCtlTile(k));
+    }
+    y += (crate::control::TILES.len() as i32 + 2) / 3 * 32 + 8;
     y = title(ui, b.x, y, b.w, "как выглядит");
     shape_preview(ui, st, R::new(b.x, y, b.w, (b.bottom() - y).clamp(40, 96)));
 }
