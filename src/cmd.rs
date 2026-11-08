@@ -79,7 +79,7 @@ fn help(y: &Sty) {
     y.section(&crate::tf!("вид", "look"));
     y.row("palette [name|#hex]", &crate::tf!("палитры или сменить: blood ash sakura …", "list palettes or switch: blood ash sakura …"));
     y.row("wallpaper [path]", &crate::tf!("свои обои; без пути — пиксельные из палитры", "own picture; no path: the palette's pixel art"));
-    y.row("theme save | list | apply NAME", &crate::tf!("свои темы: сохранить вид, список, применить (remove — удалить)", "your themes: keep the look, list, apply (remove deletes)"));
+    y.row("theme save|list|apply", &crate::tf!("свои темы: сохранить вид, список, применить (remove — удалить)", "your themes: keep the look, list, apply (remove deletes)"));
     y.section(&crate::tf!("настройки", "config"));
     y.row("config …", &crate::tf!("все настройки: list get set reset check path", "every setting: list get set reset check path"));
     y.row("version", &crate::tf!("версия", "version"));

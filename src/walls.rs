@@ -8,7 +8,7 @@ use crate::app::{App, Modal, Msg, SKind, State};
 use crate::config;
 use crate::font::PX;
 use crate::gfx::{BoxStyle, Img, R};
-use crate::ui::{Act, Cur, Tone, Ui};
+use crate::ui::{Act, Cur, Ui};
 use smithay_client_toolkit::seat::keyboard::{KeyEvent, Keysym};
 use std::collections::HashMap;
 use std::os::unix::fs::MetadataExt;
@@ -421,31 +421,6 @@ impl App {
     }
 }
 
-/// для `shot walls`: папка-образец с картинками в тонах палитры, без нити и диска
-pub fn mock(st: &mut State) {
-    let t = st.t;
-    let names = ["dusk-field.png", "pixel-rain.jpg", "ash-city.png", "night-train.webp", "tokyo-2.jpg", "tokyo-10.jpg", "lantern.png", "snow-dither.png", "neon-alley.jpg", "moon-sea.png"];
-    let dir = config::home().join("Pictures/Wallpapers");
-    let tiles: Arc<[PathBuf]> = std::iter::once(PathBuf::from("/shot/wallpaper.png")).chain(names.iter().map(|n| dir.join(n))).collect();
-    let (w, h) = (TW - 6, TH - 6);
-    let tones = [t.bg, t.panel, t.surface_hi, t.dim, t.red, t.ember, t.text_dim];
-    let mut thumbs = HashMap::new();
-    for i in 0..tiles.len() {
-        // полосы горизонта и «солнце»: у каждой своя высота и тон, чтобы клетки различались
-        let mut px = vec![0u32; (w * h) as usize];
-        for y in 0..h {
-            for x in 0..w {
-                let band = (y * 5 / h + i as i32) as usize % tones.len();
-                let (sx, sy) = (w * (2 + i as i32 % 5) / 8, h / 3 + i as i32 % 3 * 6);
-                let sun = (x - sx).pow(2) + (y - sy).pow(2) < (10 + i as i32 % 4 * 3).pow(2);
-                let c = if sun { t.ember } else { tones[band] };
-                px[(y * w + x) as usize] = 0xff000000 | (c.0 & 0xffffff);
-            }
-        }
-        thumbs.insert(i, if i == 7 { None } else { Some(Rc::new(Img { w, h, px })) });
-    }
-    st.walls = Walls { gen: 1, dir, tiles, thumbs, cur: 2, back: true, ..Default::default() };
-}
 
 #[cfg(test)]
 mod tests {
@@ -491,7 +466,7 @@ mod tests {
         }
         assert!(make(&v[3]).is_none());
         // второй раз — из кеша
-        assert!(std::fs::read_dir(d.join("cache/yami/thumbs")).unwrap().count() >= 3);
+        assert!(std::fs::read_dir(d.join("cache/yami-lite/thumbs")).unwrap().count() >= 3);
         match was {
             Some(v) => std::env::set_var("XDG_CACHE_HOME", v),
             None => std::env::remove_var("XDG_CACHE_HOME"),

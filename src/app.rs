@@ -304,7 +304,6 @@ pub struct App {
     /// курсор: (поверхность, x, y); для экрана блокировки sid = u32::MAX - n
     pub ptr: Option<(u32, f64, f64)>,
     pub press: Option<Press>,
-    pub(crate) last_click: Option<(Act, Instant)>,
     pub kb_surf: Option<u32>,
     pub mods: Modifiers,
     pub res: Res,
@@ -486,7 +485,6 @@ pub fn run() {
         next_id: 1,
         ptr: None,
         press: None,
-        last_click: None,
         kb_surf: None,
         mods: Modifiers::default(),
         res: Res { fonts: Fonts::with(&set_font), icons, font: set_font, iset },

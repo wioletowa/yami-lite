@@ -9,7 +9,7 @@ use crate::app::{App, Modal, SKind, State};
 use crate::font::PX;
 use crate::gfx::{BoxStyle, R};
 use crate::ui::{Act, Cur, Tone, Ui};
-pub use crate::bartab::{BDrag, BarEd};
+pub use crate::bartab::BarEd;
 use crate::settabs::{tab_about, tab_color, tab_dock, tab_look, tab_notif, tab_system, tab_widgets};
 use smithay_client_toolkit::seat::keyboard::{KeyEvent, Keysym};
 
@@ -24,15 +24,13 @@ pub struct Tab {
     pub id: &'static str,
     pub name: &'static str,
     pub icon: &'static str,
-    /// слова для поиска, по-русски и по-английски
-    pub find: &'static str,
     pub draw: fn(&mut Ui, &State, R),
     /// у вкладки свой список с прокруткой: общую не включать
     pub own_scroll: bool,
 }
 
-const fn tab(id: &'static str, name: &'static str, icon: &'static str, find: &'static str, draw: fn(&mut Ui, &State, R)) -> Tab {
-    Tab { id, name, icon, find, draw, own_scroll: false }
+const fn tab(id: &'static str, name: &'static str, icon: &'static str, draw: fn(&mut Ui, &State, R)) -> Tab {
+    Tab { id, name, icon, draw, own_scroll: false }
 }
 
 /// группы по смыслу: как выглядит, рабочий стол, что делают руки, система
@@ -40,26 +38,26 @@ pub const GROUPS: &[(&str, &[Tab])] = &[
     (
         "внешний вид",
         &[
-            tab("color", "цвет", "drop", "палитра акцент цвет тема темы программы gtk qt kitty foot alacritty fuzzel niri светлая тёмная palette accent colour color theme themes apps light dark", tab_color), // i18n-ok
-            tab("wall", "обои", "image", "обои картинка фон папка миниатюры wallpaper background image folder thumbnails", crate::wall::tab), // i18n-ok
-            tab("look", "вид", "eye", "шрифт анимации эффекты появление развёртка размытие значки font animation effects reveal scanlines blur icons", tab_look), // i18n-ok
+            tab("color", "цвет", "drop", tab_color),
+            tab("wall", "обои", "image", crate::wall::tab),
+            tab("look", "вид", "eye", tab_look),
         ],
     ),
     (
         "рабочий стол",
         &[
-            tab("bar", "бар", "menu", "бар модули часы разделитель плавающий ширина центр трей лаунчер bar modules clock separator floating width center tray launcher", crate::bartab::tab_bar), // i18n-ok
-            tab("widgets", "виджеты", "grid", "виджеты график часы widgets graph clock", tab_widgets), // i18n-ok
-            tab("dock", "док", "tile", "док закреплённые dock pinned", tab_dock), // i18n-ok
+            tab("bar", "бар", "menu", crate::bartab::tab_bar),
+            tab("widgets", "виджеты", "grid", tab_widgets),
+            tab("dock", "док", "tile", tab_dock),
         ],
     ),
     (
         "система",
         &[
-            tab("system", "система", "gear", "система язык сон блокировка ожидание ночной свет музыка обложки тексты system language idle sleep lock night light music covers lyrics", tab_system), // i18n-ok
-            tab("notif", "уведомления", "bell", "уведомления не беспокоить место история osd громкость трей notifications do not disturb position history osd volume tray", tab_notif), // i18n-ok
-            tab("games", "игры", "play", "игры steam gamescope не беспокоить games", crate::games::tab), // i18n-ok
-            tab("about", "о шелле", "about", "о шелле версия память about version memory", tab_about), // i18n-ok
+            tab("system", "система", "gear", tab_system),
+            tab("notif", "уведомления", "bell", tab_notif),
+            tab("games", "игры", "play", crate::games::tab),
+            tab("about", "о шелле", "about", tab_about),
         ],
     ),
 ];
@@ -218,10 +216,6 @@ pub fn opt_btn(ui: &mut Ui, r: R, label: &str, val: &str, act: Act) {
     ui.zone(r, act, Cur::Pointer);
 }
 
-/// следующее значение из ряда (после последнего — первое)
-pub fn step_in(list: &[i32], cur: i32) -> i32 {
-    list.iter().copied().find(|v| *v > cur).unwrap_or(list[0])
-}
 
 pub(crate) fn cycle<'a>(list: &[(&'a str, &'a str)], cur: &str) -> &'a str {
     let i = list.iter().position(|x| x.0 == cur).map(|i| (i + 1) % list.len()).unwrap_or(0);

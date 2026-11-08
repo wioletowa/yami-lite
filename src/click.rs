@@ -19,7 +19,7 @@ impl App {
         (out, mx + zone.x + zone.w / 2, my + zone.bottom())
     }
 
-    pub fn on_click(&mut self, a: Act, button: u32, sid: u32, zone: R, double: bool) {
+    pub fn on_click(&mut self, a: Act, button: u32, sid: u32, zone: R) {
         let kind = self.surf_kind(sid);
         // клик мимо всплывашки/меню
         if kind == Some(SKind::Catcher) {

@@ -38,10 +38,6 @@ pub struct BDrag {
 }
 
 pub(crate) fn mod_name(m: &str) -> &str {
-    // модуль-скрипт — по имени файла
-    if let Some(n) = m.strip_prefix("x:") {
-        return n;
-    }
     ALL_MODULES.iter().find(|x| x.0 == m).map(|x| x.1).unwrap_or(m)
 }
 
@@ -172,6 +168,14 @@ pub(crate) fn tab_bar(ui: &mut Ui, st: &State, b: R) {
         ui.cv.icon("plus", r.right() - 17, r.cy() - 7, 2, t.text_faint);
         ui.zone(*r, Act::SModNew(id.to_string()), Cur::Grab);
     }
+    // лаунчер — своя программа: модуль и кнопка дока запускают эту команду
+    y = rs.last().map_or(y, |r| r.bottom()) + 16;
+    ui.text_in(PX, R::new(b.x, y, b.w, 20), "команда лаунчера (модуль «лаунчер» и кнопка в доке):", t.text_dim);
+    y += 24;
+    let focused = st.field_focus == Some("launcher_cmd");
+    let shown = if s.launcher_cmd.is_empty() { "fuzzel, rofi -show drun, …" } else { s.launcher_cmd.as_str() };
+    ui.field(R::new(b.x, y, b.w - 130, 28), &st.launcher_field, shown, focused, false, Act::SField("launcher_cmd"));
+    ui.button(R::new(b.right() - 120, y + 1, 120, 26), "применить", "check", Tone::Primary, false, true, Act::SCycle("launcher_apply"));
     // фишка в руке — поверх всего
     if let Some(d) = drag {
         let w = chip_w(ui, &d.name);

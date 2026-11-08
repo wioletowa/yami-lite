@@ -11,8 +11,6 @@ use std::sync::mpsc;
 
 #[derive(Clone, Debug, Default)]
 pub struct Layout {
-    /// положение плитки (плавающей) в координатах стола
-    pub pos: Option<(f64, f64)>,
     pub size: (f64, f64),
     /// колонка и место в ней (лента)
     pub col: Option<(u32, u32)>,
@@ -29,7 +27,6 @@ pub struct Win {
     pub urgent: bool,
     pub ts: f64,
     pub layout: Layout,
-    pub pid: Option<u32>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -50,15 +47,7 @@ pub struct Niri {
     pub kb_names: Vec<String>,
     pub kb_idx: usize,
     pub overview: bool,
-    /// yami-niri: понимает наши правила (allow-tearing)
-    pub yami: bool,
-    /// форк умеет `show-only-in` (шторка для трансляций): уровень ≥ 4
-    pub cast_only: bool,
-    /// уровень форка (0 — сток): от него зависит, какие правила niri поймёт
-    pub level: u32,
-    pub stacking: bool,
-    /// сток: окна, которые сделали плавающими мы, и спрятанные «свёрнутые»
-    pub floated_by_us: Vec<u64>,
+    /// спрятанные «свёрнутые» окна
     pub hidden: Vec<u64>,
     pub min_order: Vec<u64>,
     tx: Option<mpsc::Sender<Value>>,
@@ -71,31 +60,8 @@ pub enum Ev {
     Changed,
 }
 
-/// наш ли это форк и какой: уровень из версии «26.04-yami.N (rev)», N — сколько патчей в серии,
-/// 0 — сток. Это запущенный niri (после сборки до перезахода работает ещё старый бинарь)
-pub fn fork_level() -> u32 {
-    let v = request(&json!("Version")).and_then(|v| v["Ok"]["Version"].as_str().map(str::to_string)).unwrap_or_default();
-    let Some(i) = v.find("yami") else { return 0 };
-    // до уровней в версии: allow-tearing и realtime, три патча
-    v[i + 4..].strip_prefix('.').and_then(|r| r.split(|c: char| !c.is_ascii_digit()).next()?.parse().ok()).unwrap_or(3)
-}
 
-/// уровень для yami-fx.kdl: конфиг должен понять и запущенный niri, и тот, что будет после входа.
-/// Форк выключен до следующего входа (`yami-niri.sh off` убирает ссылку ~/.local/bin/niri) — его
-/// ключи сломали бы конфиг пакетному niri (тот стартовал бы со своим, без шелла): тогда 0.
-/// Спрашивается при каждой записи, а не раз при старте: off мог случиться при живом шелле
-pub fn config_level(running: u32) -> u32 {
-    if next_login_fork() {
-        running
-    } else {
-        0
-    }
-}
 
-/// следующий вход — тоже yami-niri: `yami-niri.sh on` ставит ссылку niri в ~/.local/bin на сборку
-fn next_login_fork() -> bool {
-    std::fs::read_link(crate::config::home().join(".local/bin/niri")).map(|t| t.to_string_lossy().contains("/yami-niri/")).unwrap_or(false)
-}
 
 fn socket() -> Option<String> {
     std::env::var("NIRI_SOCKET").ok()
@@ -158,9 +124,7 @@ fn parse_win(v: &Value) -> Win {
         focused: v["is_focused"].as_bool().unwrap_or(false),
         urgent: v["is_urgent"].as_bool().unwrap_or(false),
         ts: ts_of(&v["focus_timestamp"]),
-        pid: v["pid"].as_u64().map(|p| p as u32),
         layout: Layout {
-            pos: pair(&l["tile_pos_in_workspace_view"]),
             size: pair(&l["tile_size"]).unwrap_or((0.0, 0.0)),
             col: l["pos_in_scrolling_layout"].get(0).and_then(|c| Some((c.as_u64()? as u32, l["pos_in_scrolling_layout"][1].as_u64()? as u32))),
         },
@@ -218,13 +182,7 @@ impl Niri {
                 }
             })
             .ok();
-        let mut n = Niri { tx: Some(tx), ..Default::default() };
-        n.stacking = std::fs::read_to_string(crate::config::state_dir().join("stacking")).map(|s| s.trim() == "1").unwrap_or(false);
-        let lvl = fork_level();
-        n.yami = lvl > 0;
-        n.cast_only = lvl >= 4;
-        n.level = lvl;
-        n
+        Niri { tx: Some(tx), ..Default::default() }
     }
 
     pub fn act(&self, a: Value) {
@@ -327,12 +285,6 @@ impl Niri {
         self.act(json!({"MoveWindowToWorkspace": {"window_id": id, "reference": {"Index": idx}, "focus": false}}));
         self.act(json!({"FocusWindow": {"id": id}}));
     }
-    pub fn restore_last(&mut self) {
-        if let Some(w) = self.minimized().last() {
-            let id = w.id;
-            self.restore(id);
-        }
-    }
     pub fn toggle_minimize(&mut self, id: u64) {
         let Some(w) = self.win(id).cloned() else { return };
         if self.is_min(&w) {
@@ -344,24 +296,6 @@ impl Niri {
         }
     }
 
-    /// режим «стол» ↔ «лента»
-    pub fn set_stacking(&mut self, on: bool) {
-        self.stacking = on;
-        let _ = std::fs::write(crate::config::state_dir().join("stacking"), if on { "1\n" } else { "0\n" });
-        if on {
-            let ids: Vec<u64> = self.wins.iter().filter(|w| !w.floating && !self.is_min(w)).map(|w| w.id).collect();
-            for id in ids {
-                self.floated_by_us.push(id);
-                self.act(json!({"ToggleWindowFloating": {"id": id}}));
-            }
-        } else {
-            let ids: Vec<u64> = self.wins.iter().filter(|w| w.floating && self.floated_by_us.contains(&w.id)).map(|w| w.id).collect();
-            for id in ids {
-                self.act(json!({"ToggleWindowFloating": {"id": id}}));
-            }
-            self.floated_by_us.clear();
-        }
-    }
 
     // ── поток событий ───────────────────────────────────────────────────────
     pub fn handle(&mut self, ev: Value) -> Vec<Ev> {
@@ -406,11 +340,6 @@ impl Niri {
                 }
                 if !known {
                     out.push(Ev::NewWindow(w.id));
-                    // сток в режиме «стол»: новые окна тоже плавающие
-                    if self.stacking && !w.floating {
-                        self.floated_by_us.push(w.id);
-                        self.act(json!({"ToggleWindowFloating": {"id": w.id}}));
-                    }
                 }
                 if let Some(x) = self.wins.iter_mut().find(|x| x.id == w.id) {
                     *x = w;
@@ -422,7 +351,6 @@ impl Niri {
                 let id = d["id"].as_u64().unwrap_or(0);
                 self.wins.retain(|x| x.id != id);
                 self.hidden.retain(|x| *x != id);
-                self.floated_by_us.retain(|x| *x != id);
                 self.min_order.retain(|x| *x != id);
             }
             "WindowFocusChanged" => {

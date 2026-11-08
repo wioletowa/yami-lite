@@ -4,7 +4,7 @@
 // вкладка «обои».
 
 use crate::app::{App, Msg, SKind, State};
-use crate::config::{self, Settings};
+use crate::config::Settings;
 use crate::font::{self, PX};
 use crate::gfx::{BoxStyle, Img, C, R};
 use crate::settings::{opt_btn, title};
@@ -520,7 +520,19 @@ impl App {
 
 #[cfg(test)]
 mod tests {
-    use yami_px::gfx::Img;
+    use yami_px::gfx::{Img, C};
+    #[test]
+    fn generated_wallpaper_glows_in_the_accent() {
+        let (bg, acc) = (C(0xff101010), C(0xffd0352d));
+        let img = super::generate(bg, acc, C(0xff303030), false);
+        assert_eq!(img.dimensions(), (480, 270));
+        // правый нижний угол светится акцентом, середина — почти фон
+        let corner = img.get_pixel(478, 268).0;
+        let mid = img.get_pixel(240, 136).0;
+        assert!(corner[0] > mid[0] && corner[0] > 0x10);
+        assert!(mid[0] <= 0x30 && mid[1] <= 0x20);
+    }
+
     #[test]
     fn shrink_odd_sizes() {
         for (w, h) in [(4000, 3), (3, 4000), (1, 1), (1920, 1080), (641, 2)] {

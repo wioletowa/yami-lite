@@ -136,8 +136,8 @@ pub struct Settings {
     pub tray_pixel: bool,
     /// модуль bat прячется от сети без зарядки: полная или держит порог заряда (#21)
     pub bat_hide_full: bool,
-    /// чужие программы, которые theme.py красит по палитре (THEME_APPS; настройки → цвет → программы,
-    /// установщик); выключенную yami не трогает. До 2.7 — appThemes: foot, cava, starship сверх остальных
+    /// чужие программы в цветах палитры (recolor::APPS; настройки → цвет → программы); по умолчанию
+    /// ни одной: выключенную шелл не трогает
     pub theme_apps: Vec<String>,
     pub clock_seconds: bool,
     pub clock_date: bool,
@@ -291,23 +291,8 @@ pub const ALL_MODULES: &[(&str, &str)] = &[
     ("sep", "разделитель"),
 ];
 
-/// виды всплывашки музыки (#13): обложка с эквалайзером, обложка и текст, текст, коротко
-/// чужие программы в цветах палитры (themeApps): id, имя, что пишется. Шелл, экран входа, рамки niri и
-/// свои шаблоны — всегда; курсор — отдельный ключ cursor
-pub const THEME_APPS: &[(&str, &str, &str)] = &[
-    ("gtk", "GTK", "тема, шрифт, тёмная или светлая"),
-    ("qt", "Qt и KDE", "qt6ct, kdeglobals"),
-    ("kitty", "kitty", "строка include в kitty.conf"),
-    ("fastfetch", "fastfetch", "свой конфиг с логотипом"),
-    ("btop", "btop", "тема yami"),
-    ("firefox", "Firefox", "меню: userChrome.css"),
-    ("mangohud", "MangoHud", "только наш конфиг"),
-    ("foot", "foot", "include в foot.ini"),
-    ("cava", "cava", "градиент полос"),
-    ("starship", "starship", "палитра приглашения"),
-];
-/// ключи прошлых версий: их читает миграция (load), `config check` не зовёт их незнакомыми
-const RETIRED: &[&str] = &["appThemes"];
+/// ключи прошлых версий: `config check` не зовёт их незнакомыми
+const RETIRED: &[&str] = &[];
 
 pub const MEDIA_VIEWS: &[(&str, &str)] = &[("cover", "обложка"), ("both", "обложка и текст"), ("lyrics", "текст"), ("minimal", "коротко")];
 
@@ -368,7 +353,7 @@ impl Default for Settings {
             tray_mode: "icons".into(),
             tray_pixel: false,
             bat_hide_full: false,
-            theme_apps: THEME_APPS.iter().map(|a| a.0.to_string()).collect(),
+            theme_apps: vec![],
             clock_seconds: false,
             clock_date: true,
             task_width: 190,
@@ -490,8 +475,8 @@ impl Settings {
         if self.temp_style != "compact" {
             self.temp_style = "full".into();
         }
-        self.theme_apps.retain(|a| THEME_APPS.iter().any(|t| t.0 == a));
-        self.theme_apps.sort_by_key(|a| THEME_APPS.iter().position(|t| t.0 == a));
+        self.theme_apps.retain(|a| crate::recolor::APPS.iter().any(|t| t.0 == a));
+        self.theme_apps.sort_by_key(|a| crate::recolor::APPS.iter().position(|t| t.0 == a));
         self.theme_apps.dedup();
         if self.tray_mode != "arrow" {
             self.tray_mode = "icons".into();

@@ -1,9 +1,7 @@
 // Внешние программы: запуск отвязанными (setsid), долгие дети нитей (PDEATHSIG), curl к чужим
-// сайтам, окно выбора yami-files, tools/theme.py с пониженным приоритетом, подбор детей,
-// доставшихся от образа до перезапуска.
+// сайтам, подбор детей, доставшихся от образа до перезапуска.
 
 use crate::app::App;
-use crate::config;
 
 /// curl к чужому сайту (погода, тексты песен, тема по ссылке): только https, и после
 /// переадресаций; потолок времени и размера; имя yami в User-Agent. Флаги -f, -G, -L, -o — у вызова
@@ -38,22 +36,7 @@ pub fn owned(cmd: &mut std::process::Command) -> &mut std::process::Command {
     }
 }
 
-/// исполняемый файл bin в PATH или в ~/.local/bin (туда ставит установщик): yami-files, yami-view и
-/// yami-play ставятся по выбору, шелл без них открывает чужими программами
-pub fn have(bin: &str) -> bool {
-    use std::os::unix::fs::PermissionsExt;
-    let local = yami_px::paths::home().join(".local/bin");
-    let path = std::env::var_os("PATH").unwrap_or_default();
-    std::env::split_paths(&path).chain(std::iter::once(local)).any(|d| d.join(bin).metadata().is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0))
-}
 
-/// окно выбора yami-files (`--pick MODE`, папка, свои ключи): первая строка ответа или None
-/// (отмена). Ждёт, пока окно открыто, — только из нити; окно закрывается вместе с нитью (owned)
-pub fn files_pick(mode: &str, folder: &std::path::Path, args: &[&str]) -> Option<String> {
-    let mut c = std::process::Command::new("yami-files");
-    c.args(["--pick", mode]).args(args).arg("--folder").arg(folder);
-    owned(&mut c).output().ok().filter(|o| o.status.success()).and_then(|o| String::from_utf8_lossy(&o.stdout).lines().next().map(str::to_string))
-}
 
 /// дети, доставшиеся от образа до перезапуска: их Child остались в старых нитях, ждать их некому.
 /// Список берётся до первого запуска чего-либо (все дети на этот момент — чужие) и
@@ -61,12 +44,8 @@ pub fn files_pick(mode: &str, folder: &std::path::Path, args: &[&str]) -> Option
 static INHERITED: std::sync::Mutex<Vec<i32>> = std::sync::Mutex::new(Vec::new());
 
 pub(crate) fn note_inherited() {
-    // `msg restart` и обновление — exec в том же pid с меткой в окружении (её снимаем: детям шелла
-    // она ни к чему); при входе в систему меток нет
-    if std::env::var_os("YAMI_RESTARTED").is_some() {
-        std::env::remove_var("YAMI_RESTARTED");
-        RESTARTED.store(true, std::sync::atomic::Ordering::Relaxed);
-    }
+    // `msg restart` — exec в том же pid с меткой в окружении: детям шелла она ни к чему
+    std::env::remove_var("YAMI_RESTARTED");
     // дети всех нитей: /proc/self/task/*/children (на старте нить одна); нет файла (ядро без
     // CONFIG_PROC_CHILDREN) — обход всего /proc
     let mut kids: Vec<i32> = vec![];
@@ -95,12 +74,7 @@ pub(crate) fn note_inherited() {
     }
 }
 
-static RESTARTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-/// шелл запущен заново из себя же (`msg restart`, обновление), а не при входе в систему
-pub(crate) fn restarted() -> bool {
-    RESTARTED.load(std::sync::atomic::Ordering::Relaxed)
-}
 
 pub(crate) fn reap_inherited() {
     let Ok(mut v) = INHERITED.lock() else { return };
@@ -109,17 +83,6 @@ pub(crate) fn reap_inherited() {
 }
 
 
-/// фоновая работа (theme.py, распознавание текста): nice 10 у процесса, шелл свой не меняет
-pub fn gentle(cmd: &mut std::process::Command) -> &mut std::process::Command {
-    use std::os::unix::process::CommandExt;
-    // SAFETY: между fork и exec только setpriority
-    unsafe {
-        cmd.pre_exec(|| {
-            libc::setpriority(libc::PRIO_PROCESS, 0, 10);
-            Ok(())
-        })
-    }
-}
 
 
 impl App {

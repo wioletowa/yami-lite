@@ -12,7 +12,7 @@ use smithay_client_toolkit::{
     },
     shell::WaylandSurface,
 };
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use wayland_client::protocol::wl_surface;
 use wayland_protocols::wp::cursor_shape::v1::client::wp_cursor_shape_device_v1::Shape;
 
@@ -125,7 +125,7 @@ impl App {
                         self.on_drag(x, y);
                     }
                     if z.act.is_drag() {
-                        self.set_cursor(if matches!(z.act, Act::TSize(_)) { Cur::Resize } else { Cur::Grab });
+                        self.set_cursor(Cur::Grab);
                     }
                 } else {
                     // клик мимо панели — по затемнению или ловцу: закрыть
@@ -153,9 +153,7 @@ impl App {
                     }
                     let z = self.zone_at(sid, x, y);
                     if z.map(|z| z.act == p.act).unwrap_or(false) && p.button == button {
-                        let double = matches!(&self.last_click, Some((a, t)) if *a == p.act && t.elapsed() < Duration::from_millis(350));
-                        self.last_click = Some((p.act.clone(), Instant::now()));
-                        self.on_click(p.act, button, sid, p.zone, double);
+                        self.on_click(p.act, button, sid, p.zone);
                     }
                 }
             }
