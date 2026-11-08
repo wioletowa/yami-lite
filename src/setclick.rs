@@ -202,6 +202,19 @@ impl App {
                     s.lang = yami_px::i18n::next(&s.lang).into();
                     self.settings_changed();
                 }
+                "wh_key_apply" => {
+                    let k: String = self.st.wh_key_field.text.trim().chars().filter(|c| c.is_ascii_alphanumeric()).collect();
+                    self.st.set.wallhaven_key = k;
+                    yami_px::ui::wipe(&mut self.st.wh_key_field.text);
+                    self.st.wh_key_field.cur = 0;
+                    self.st.field_focus = None;
+                    self.settings_changed();
+                }
+                "wh_dir_apply" => {
+                    self.st.set.wallhaven_dir = self.st.wh_dir_field.text.trim().to_string();
+                    self.st.field_focus = None;
+                    self.settings_changed();
+                }
                 "wall_apply" => {
                     let p = self.st.wall_field.text.clone();
                     self.set_wall(&p);
@@ -375,6 +388,10 @@ impl App {
             }
             Act::SField(k) => {
                 self.st.field_focus = Some(k);
+                if *k == "wh_dir" && self.st.wh_dir_field.text.is_empty() {
+                    let p = self.st.set.wallhaven_dir.clone();
+                    self.st.wh_dir_field.set(&p);
+                }
                 if *k == "launcher_cmd" && self.st.launcher_field.text.is_empty() {
                     let p = self.st.set.launcher_cmd.clone();
                     self.st.launcher_field.set(&p);

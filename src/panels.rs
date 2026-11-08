@@ -64,6 +64,9 @@ impl App {
         if self.st.modal == Some(Modal::Walls) {
             self.walls_free();
         }
+        if std::mem::take(&mut self.st.walls_anchored) && self.st.menu.is_none() && self.st.popup.is_none() {
+            self.close_kind(&SKind::Catcher);
+        }
         // код выбора обоев велик, а нужен изредка: через полминуты — из памяти. После
         // частых окон — нет: выгрузка задевает и горячий код (бар, тик), а он
         // тут же читается с диска обратно
@@ -93,6 +96,7 @@ impl App {
             "net" => net::refresh_wifi(self.tx.clone()),
             "bt" => net::refresh_bt(self.tx.clone()),
             "cal" => self.st.cal_month = 0,
+            "wallhaven" => self.wh_opened(),
             _ => {}
         }
         self.viz_sync();

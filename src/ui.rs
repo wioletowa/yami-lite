@@ -50,6 +50,7 @@ pub enum Act {
     WallsBack,
     WallsUp,
     WallsHere,
+    WallsSort,
     /// модуль бара во вкладке «бар»: тащить (сторона, индекс), новый, убрать
     SModDrag(usize, usize),
     SModNew(String),
@@ -63,11 +64,23 @@ pub enum Act {
     NightToggle,
     /// бар под модулями (ПКМ — панель управления)
     BarBg,
+    /// модуль «обои»: выбор обоев у курсора
+    BarWalls,
     /// панель управления: ползунки громкости и яркости (вертикальные), плитка
     CtlVol,
     CtlBright,
     CtlTile(String),
     CtlWall,
+    /// Wallhaven: искать, категория, чистота, сортировка, порядок, стороны, «от/ровно», страница, картинка
+    WhSearch,
+    WhCat(usize),
+    WhPurity(usize),
+    WhSort,
+    WhOrder,
+    WhRatio,
+    WhExact,
+    WhPage(i32),
+    WhPick(String),
     /// настройки → бар: плитка панели управления вкл/выкл
     SCtlTile(&'static str),
     /// индикатор приватности в баре: «mic», «screen», «cam» (наведение — кто)

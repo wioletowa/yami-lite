@@ -289,6 +289,10 @@ impl App {
                         self.settings_click(&Act::SCycle("game_apply"));
                     } else if f == "night_geo" {
                         self.settings_click(&Act::SCycle("geo_apply"));
+                    } else if f == "wh_key" {
+                        self.settings_click(&Act::SCycle("wh_key_apply"));
+                    } else if f == "wh_dir" {
+                        self.settings_click(&Act::SCycle("wh_dir_apply"));
                     } else if f == "font_search" {
                         self.font_first();
                     } else if f == "launcher_cmd" {
@@ -305,6 +309,8 @@ impl App {
                         "night_geo" => &mut self.st.geo_field,
                         "launcher_cmd" => &mut self.st.launcher_field,
                         "font_search" => &mut self.st.font_search,
+                        "wh_key" => &mut self.st.wh_key_field,
+                        "wh_dir" => &mut self.st.wh_dir_field,
                         _ => &mut self.st.wall_field,
                     };
                     App::edit_field(field, e, &mods);

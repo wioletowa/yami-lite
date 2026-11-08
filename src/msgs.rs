@@ -112,6 +112,9 @@ impl App {
                 self.dirty_where(|k| matches!(k, SKind::Popup | SKind::Bar));
             }
             Msg::Pam(ok) => self.on_pam(ok),
+            Msg::WhResults(gen, r) => self.wh_results(gen, r),
+            Msg::WhThumb(gen, id, img) => self.wh_thumb(gen, id, img),
+            Msg::WhApplied(r) => self.wh_applied(r),
             Msg::Camera(u) => {
                 self.st.camera = u;
                 self.dirty(&SKind::Bar);

@@ -112,6 +112,11 @@ pub struct Settings {
     pub wall_dir: String,
     /// где выбор обоев был открыт в последний раз: туда он и открывается (и после «из палитры»)
     pub wall_last_dir: String,
+    /// порядок картинок в выборе обоев: new — сначала новые, name — по имени
+    pub walls_sort: String,
+    /// Wallhaven: ключ API (NSFW и больше запросов) и куда качать ("" — папка обоев)
+    pub wallhaven_key: String,
+    pub wallhaven_dir: String,
     /// смена обоев: узор (wall::FADES; none — сразу), сколько идёт, крупность клеток (точек экрана)
     pub wall_fade: String,
     pub wall_fade_time: f32,
@@ -286,7 +291,7 @@ fn group(m: &str) -> i32 {
         "launcher" => 0,
         "workspaces" => 1,
         "tray" => 3,
-        "net" | "netspeed" | "bt" | "kb" | "cpu" | "ram" | "temp" | "bat" | "night" | "privacy_mic" | "privacy_screen" | "privacy_cam" => 4,
+        "net" | "netspeed" | "bt" | "kb" | "cpu" | "ram" | "temp" | "bat" | "night" | "walls" | "wallhaven" | "privacy_mic" | "privacy_screen" | "privacy_cam" => 4,
         "vol" | "media" => 5,
         "clock" | "notif" | "settings" | "power" => 6,
         _ => 7,
@@ -311,6 +316,8 @@ pub const ALL_MODULES: &[(&str, &str)] = &[
     ("vol", "звук"),
     ("bat", "батарея"),
     ("night", "ночной свет"),
+    ("walls", "обои"),
+    ("wallhaven", "Wallhaven"),
     ("privacy_mic", "микрофон занят"),
     ("privacy_screen", "показ экрана"),
     ("privacy_cam", "камера занята"),
@@ -371,6 +378,9 @@ impl Default for Settings {
             wallpaper: String::new(),
             wall_dir: String::new(),
             wall_last_dir: String::new(),
+            walls_sort: "new".into(),
+            wallhaven_key: String::new(),
+            wallhaven_dir: String::new(),
             wall_fade: "dither".into(),
             wall_fade_time: 1.2,
             wall_fade_cell: 8,
@@ -492,6 +502,7 @@ impl Settings {
         };
         name(&mut self.font_shell);
         name(&mut self.font_widgets);
+        self.wallhaven_key.retain(|c| c.is_ascii_alphanumeric());
         self.lang = yami_px::i18n::normalize(&self.lang).into();
         if !self.accent.is_empty() && crate::theme::parse_hex(&self.accent).is_none() {
             self.accent.clear();

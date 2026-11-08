@@ -149,6 +149,9 @@ impl App {
                         Some(SKind::Catcher) => {
                             self.close_popup();
                             self.close_menu();
+                            if self.st.walls_anchored {
+                                self.close_modal();
+                            }
                         }
                         _ => {}
                     }

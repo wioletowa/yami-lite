@@ -149,6 +149,10 @@ pub enum Msg {
     Leds(crate::leds::Leds),
     /// кто держит камеру (camera.rs)
     Camera(Vec<String>),
+    /// Wallhaven: страница найденного (номер запроса), миниатюра, скачанная и поставленная картинка
+    WhResults(u64, Result<(Vec<crate::wallhaven::Item>, u32), String>),
+    WhThumb(u64, String, Option<crate::gfx::Img>),
+    WhApplied(Result<std::path::PathBuf, String>),
     Art(String, Option<crate::gfx::Img>),
     /// текст песни нашёлся (или нет) для трека Lyrics.key
     Lyrics(crate::lyrics::Lyrics),
@@ -203,6 +207,8 @@ pub struct State {
     pub editing: bool,
     /// окно настроек открыто (бар подсвечивает шестерёнку)
     pub settings_shown: bool,
+    /// выбор обоев открыт из модуля бара: под баром у курсора, без затемнения (закрывается ловцом)
+    pub walls_anchored: bool,
     pub notifs: notif::Notifs,
     pub osd: Option<(&'static str, Instant)>,
     pub leds: crate::leds::Leds,
@@ -210,6 +216,10 @@ pub struct State {
     /// ползунок панели управления тянут: до этого времени на экране — его значение (ответ системы
     /// приходит позже и со старым), и OSD громкости и яркости молчит
     pub ctl_hold: Option<Instant>,
+    pub wh: crate::wallhaven::Wh,
+    /// поля ключа Wallhaven и его папки во вкладке «обои»
+    pub wh_key_field: Field,
+    pub wh_dir_field: Field,
     /// подсказка индикатора приватности: что и над какой зоной
     pub tip: Option<(&'static str, R)>,
     pub audio: audio::AudioState,
@@ -405,11 +415,15 @@ impl State {
             sel_widget: 0,
             editing: false,
             settings_shown: false,
+            walls_anchored: false,
             notifs: notif::Notifs::default(),
             osd: None,
             leds: Default::default(),
             camera: vec![],
             ctl_hold: None,
+            wh: Default::default(),
+            wh_key_field: Field::default(),
+            wh_dir_field: Field::default(),
             tip: None,
             audio: audio::AudioState::default(),
             media: media::MediaState::default(),

@@ -6,12 +6,13 @@
 // строки, потом по две соседних, в памяти — не больше нескольких десятков. Щелчок ставит обои и
 // возвращает в настройки, если выбор открыли оттуда; закрылся — миниатюры отпущены.
 
-use crate::app::{App, Modal, Msg, State};
+use crate::app::{App, Modal, Msg, SKind, State};
 use crate::config;
 use crate::font::PX;
 use crate::gfx::{BoxStyle, Img, R};
 use crate::ui::{Act, Cur, Tone, Ui};
 use smithay_client_toolkit::seat::keyboard::{KeyEvent, Keysym};
+use smithay_client_toolkit::shell::wlr_layer::{Anchor, KeyboardInteractivity, Layer};
 use std::collections::HashMap;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
@@ -101,14 +102,22 @@ fn file_name(p: &Path) -> String {
 
 /// вложенные папки и картинки, которые шелл декодирует сам (без скрытых), по имени «естественно»;
 /// сколько картинок отброшено сверх MAX
-fn list(dir: &Path) -> (Vec<PathBuf>, Vec<PathBuf>, usize) {
+fn list(dir: &Path, newest: bool) -> (Vec<PathBuf>, Vec<PathBuf>, usize) {
     let all: Vec<PathBuf> = std::fs::read_dir(dir).map(|rd| rd.flatten().map(|e| e.path()).filter(|p| !file_name(p).starts_with('.')).collect()).unwrap_or_default();
     let sort = |v: &mut Vec<PathBuf>| v.sort_by(|a, b| yami_px::paths::natural(&file_name(a).to_lowercase(), &file_name(b).to_lowercase()));
     let mut dirs: Vec<PathBuf> = all.iter().filter(|p| p.is_dir()).cloned().collect();
     sort(&mut dirs);
     dirs.truncate(MAX);
     let mut v: Vec<PathBuf> = all.into_iter().filter(|p| crate::wall::decodable(p) && p.is_file()).collect();
-    sort(&mut v);
+    if newest {
+        // сначала новые: по времени изменения файла
+        let t = |p: &PathBuf| std::fs::metadata(p).and_then(|m| m.modified()).ok();
+        let mut tv: Vec<(Option<std::time::SystemTime>, PathBuf)> = v.into_iter().map(|p| (t(&p), p)).collect();
+        tv.sort_by(|a, b| b.0.cmp(&a.0));
+        v = tv.into_iter().map(|x| x.1).collect();
+    } else {
+        sort(&mut v);
+    }
     let more = v.len().saturating_sub(MAX);
     v.truncate(MAX);
     (dirs, v, more)
@@ -198,6 +207,10 @@ pub fn draw(ui: &mut Ui, st: &State, w: i32, h: i32) {
     }
     bx -= up_w;
     ui.button(R::new(bx, 39, up_w, 24), "вверх", "up", Tone::Plain, false, wl.dir.parent().is_some(), Act::WallsUp);
+    let sort = if st.set.walls_sort == "name" { "по имени" } else { "сначала новые" };
+    let sort_w = ui.w(PX, sort) + 36;
+    bx -= sort_w + 8;
+    ui.button(R::new(bx, 39, sort_w, 24), sort, "menu", Tone::Ghost, false, true, Act::WallsSort);
     ui.cv.icon("folder", GX, 44, 2, t.text_faint);
     ui.cv.text_in(ui.f, PX, R::new(GX + 22, 38, bx - GX - 30, 26), &yami_px::paths::pretty(&wl.dir), t.text_dim);
     // сетка: под клетками — зона для колеса
@@ -305,10 +318,10 @@ impl App {
         // последняя открытая папка, если она ещё есть; иначе папка обоев
         let last = yami_px::paths::expand(&self.st.set.wall_last_dir);
         let wd = if !self.st.set.wall_last_dir.is_empty() && last.is_dir() { self.st.set.wall_last_dir.clone() } else { self.st.set.wall_dir.clone() };
-        let (cur, tx) = (crate::wall::own(&self.st.set), self.tx.clone());
+        let (cur, tx, newest) = (crate::wall::own(&self.st.set), self.tx.clone(), self.st.set.walls_sort != "name");
         let _ = std::thread::Builder::new().name("walls-list".into()).spawn(move || {
             let d = go.unwrap_or_else(|| dir(&wd, cur.as_deref()));
-            let (dirs, files, more) = list(&d);
+            let (dirs, files, more) = list(&d, newest);
             let _ = tx.send(Msg::WallsListed(gen, d, dirs, files, more));
             // кеш миниатюр: убрать старое (раз в сутки), уже после списка
             crate::icons::thumbs_tidy();
@@ -439,6 +452,28 @@ impl App {
         self.walls_back();
     }
 
+    /// модуль «обои» в баре: выбор под баром у курсора, своим размером, без затемнения
+    pub fn walls_at(&mut self, out: &str, ax: i32) {
+        if self.st.modal == Some(Modal::Walls) {
+            self.close_modal();
+            return;
+        }
+        self.close_all();
+        if self.st.locked {
+            return;
+        }
+        let (w, h) = SIZE;
+        let (ow, _) = self.output_size(out);
+        let x = (ax - w / 2).clamp(6, (ow - w - 6).max(6));
+        let low = self.bar_reserve_bottom(out);
+        let (anchor, margin) = if low > 0 { (Anchor::BOTTOM | Anchor::LEFT, (0, 0, low + 6, x)) } else { (Anchor::TOP | Anchor::LEFT, (self.bar_bottom(out) + 6, 0, 0, x)) };
+        self.st.modal = Some(Modal::Walls);
+        self.st.walls_anchored = true;
+        self.mk_catcher(out);
+        self.mk(SKind::Modal, out, Layer::Overlay, "yami-walls", anchor, (w, h + 12), margin, -1, KeyboardInteractivity::Exclusive);
+        self.walls_start(false, false, None);
+    }
+
     /// перейти в другую папку, не закрывая выбор
     pub fn walls_go(&mut self, d: PathBuf) {
         let (back, dir_mode) = (self.st.walls.back, self.st.walls.dir_mode);
@@ -521,7 +556,7 @@ mod tests {
         std::fs::create_dir_all(d.join("sub 10")).unwrap();
         std::fs::create_dir_all(d.join("Sub 9")).unwrap();
         std::fs::create_dir_all(d.join(".cache")).unwrap();
-        let (dirs, v, more) = list(&d);
+        let (dirs, v, more) = list(&d, false);
         let dn: Vec<String> = dirs.iter().map(|p| file_name(p)).collect();
         assert_eq!(dn, ["Sub 9", "sub 10"]);
         let names: Vec<String> = v.iter().map(|p| file_name(p)).collect();

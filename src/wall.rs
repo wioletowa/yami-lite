@@ -509,7 +509,19 @@ pub fn tab(ui: &mut Ui, st: &State, b: R) {
     y += 34;
     if s.wall_fade != "none" {
         ui.slider(R::new(b.x, y, b.w, 40), "длительность", (s.wall_fade_time - 0.3) / 3.7, &crate::tf!("{:.1} с", "{:.1} s", s.wall_fade_time), 37, Act::SSlider("wall_fade_time", 0.3, 4.0, 37));
+        y += 48;
     }
+    // Wallhaven: модуль бара; ключ — для NSFW и большего числа запросов
+    y = title(ui, b.x, y, b.w, "Wallhaven");
+    let kf = st.field_focus == Some("wh_key");
+    let kh = if s.wallhaven_key.is_empty() { "ключ API (wallhaven.cc → настройки аккаунта)" } else { "ключ сохранён" };
+    ui.field(R::new(b.x, y, b.w - 130, 28), &st.wh_key_field, kh, kf, !kf, Act::SField("wh_key"));
+    ui.button(R::new(b.right() - 120, y + 1, 120, 26), "сохранить", "check", Tone::Primary, false, true, Act::SCycle("wh_key_apply"));
+    y += 36;
+    let df = st.field_focus == Some("wh_dir");
+    let dh = if s.wallhaven_dir.is_empty() { "куда качать: папка обоев" } else { s.wallhaven_dir.as_str() };
+    ui.field(R::new(b.x, y, b.w - 130, 28), &st.wh_dir_field, dh, df, false, Act::SField("wh_dir"));
+    ui.button(R::new(b.right() - 120, y + 1, 120, 26), "применить", "check", Tone::Plain, false, true, Act::SCycle("wh_dir_apply"));
 }
 
 impl App {

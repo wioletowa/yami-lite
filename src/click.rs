@@ -25,9 +25,12 @@ impl App {
         if kind == Some(SKind::Catcher) {
             self.close_popup();
             self.close_menu();
+            if self.st.walls_anchored {
+                self.close_modal();
+            }
             return;
         }
-        if self.settings_click(&a) {
+        if self.settings_click(&a) || self.wh_click(&a) {
             return;
         }
         let (out, ax, ay) = self.anchor(sid, zone);
@@ -52,9 +55,15 @@ impl App {
             Act::WallsBack => self.walls_back(),
             Act::WallsUp => self.walls_up(),
             Act::WallsHere => self.walls_here(),
+            Act::WallsSort => {
+                self.st.set.walls_sort = if self.st.set.walls_sort == "name" { "new" } else { "name" }.into();
+                let d = self.st.walls.dir.clone();
+                self.walls_go(d);
+            }
             // ── бар ─────────────────────────────────────────────────────────
             Act::Launcher | Act::DockLauncher => App::sh(&self.st.set.launcher_cmd.clone()),
             Act::NightToggle => self.night_toggle(),
+            Act::BarWalls => self.walls_at(&out, ax),
             Act::CtlTile(k) => self.control_tile(&k),
             Act::CtlWall => {
                 self.close_popup();

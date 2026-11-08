@@ -11,7 +11,7 @@ use crate::widgets;
 use smithay_client_toolkit::seat::keyboard::{KeyEvent, Keysym};
 
 /// виды всплывашек: `popup KIND`, `yami open KIND`, shot
-pub const KINDS: &[&str] = &["cal", "sound", "media", "net", "bt", "sys", "bat", "tray", "control"];
+pub const KINDS: &[&str] = &["cal", "sound", "media", "net", "bt", "sys", "bat", "tray", "control", "wallhaven"];
 
 impl State {
     /// открыта всплывашка этого вида
@@ -82,6 +82,7 @@ pub fn size(kind: &str, st: &State) -> (i32, i32) {
         "tray" => (300, 66 + tray_items(st).filter(|it| !tray_in_bar(st, it)).count().clamp(1, 12) as i32 * 32),
         "bat" => (340, 44 + 40),
         "control" => (crate::control::SIZE.0 + 38, crate::control::SIZE.1 + 30),
+        "wallhaven" => (crate::wallhaven::SIZE.0 + 38, crate::wallhaven::SIZE.1 + 30),
         _ => (300, 200),
     }
 }
@@ -104,6 +105,7 @@ pub fn draw(ui: &mut Ui, st: &State, w: i32, h: i32) {
         "bat" => battery(ui, st, body),
         "tray" => tray(ui, st, body),
         "control" => crate::control::draw(ui, st, body),
+        "wallhaven" => crate::wallhaven::draw(ui, st, body),
         _ => {}
     }
 }
@@ -568,6 +570,9 @@ fn sys(ui: &mut Ui, st: &State, b: R) {
 
 impl App {
     pub fn popup_key(&mut self, e: &KeyEvent) {
+        if self.wh_key(e) {
+            return;
+        }
         if self.st.field_focus == Some("wifi") {
             match e.keysym {
                 Keysym::Escape => {
