@@ -195,8 +195,7 @@ pub(crate) fn tab_look(ui: &mut Ui, st: &State, b: R) {
     let s = &st.set;
     let half = (b.w - 20) / 2;
     let mut y = title(ui, b.x, b.y, b.w, "шрифт и значки");
-    crate::fonttab::row(ui, st, R::new(b.x, y, b.w, 26));
-    y += 34;
+    y += crate::fonttab::row(ui, st, R::new(b.x, y, b.w, 26)) + 8;
     ui.toggle(R::new(b.x, y, half, 40), "пиксельные значки", "значки программ — 16×16 в тонах палитры", s.icon_pixel, Act::SBool("icon_pixel"));
     ui.toggle(R::new(b.x + half + 20, y, half, 40), "значки в цвет палитры", "", s.icon_tint, Act::SBool("icon_tint"));
     y += 50;

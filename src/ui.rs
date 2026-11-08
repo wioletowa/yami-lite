@@ -31,6 +31,9 @@ pub enum Act {
     SBool(&'static str),
     /// настройки → уведомления: отвечает ли OSD на это (notif::OSD_KINDS)
     SOsd(&'static str),
+    /// шрифт шелла из списка ("" — Tiny5, "sans" — системный); колесо над списком
+    SFont(String),
+    SFontScroll,
     /// настройки → цвет → программы: красить ли эту программу (recolor::APPS)
     SThemeApp(&'static str),
     SSlider(&'static str, f32, f32, i32),

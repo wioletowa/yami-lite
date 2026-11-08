@@ -181,7 +181,9 @@ impl App {
                     // окно настроек: колесо листает вкладку, если есть куда (ползунки и числа под
                     // курсором не меняются сами, пока листаешь); листать нечего — как раньше
                     let settings = self.surfs.get(&sid).is_some_and(|s| s.kind == SKind::Settings);
-                    if settings && matches!(z.act, Act::SSideScroll | Act::STab(_)) {
+                    if settings && matches!(z.act, Act::SFont(_) | Act::SFontScroll) {
+                        self.on_wheel(z.act, d);
+                    } else if settings && matches!(z.act, Act::SSideScroll | Act::STab(_)) {
                         self.settings_side_scroll(d);
                     } else if !(settings && self.settings_scroll(d)) {
                         self.on_wheel(z.act, d);

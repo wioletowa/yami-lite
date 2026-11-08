@@ -93,7 +93,8 @@ impl App {
                 }
                 self.settings_changed();
             }
-            Act::SCycle("font_shell") => self.font_cycle(),
+            Act::SCycle("font_open") => self.font_toggle(),
+            Act::SFont(n) => self.font_pick(n.clone()),
             Act::SCycle(k) => match *k {
                 "cpu_style" => {
                     s.cpu_style = cycle(&[("gauge", ""), ("graph", ""), ("number", "")], &s.cpu_style).into();

@@ -253,6 +253,10 @@ pub struct State {
     pub geo_field: Field,
     /// своя команда лаунчера (настройки → бар)
     pub launcher_field: Field,
+    /// список шрифтов во вкладке «вид»: открыт ли, поиск, первая видимая строка
+    pub font_open: bool,
+    pub font_search: Field,
+    pub font_scroll: usize,
     pub game_field: Field,
     pub dock_hover: bool,
     pub dock_leave: Option<Instant>,
@@ -427,6 +431,9 @@ impl State {
             reply: Default::default(),
             geo_field: Field::default(),
             launcher_field: Field::default(),
+            font_open: false,
+            font_search: Field::default(),
+            font_scroll: 0,
             game_field: Field::default(),
             dock_hover: false,
             dock_leave: None,

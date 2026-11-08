@@ -289,6 +289,8 @@ impl App {
                         self.settings_click(&Act::SCycle("game_apply"));
                     } else if f == "night_geo" {
                         self.settings_click(&Act::SCycle("geo_apply"));
+                    } else if f == "font_search" {
+                        self.font_first();
                     } else if f == "launcher_cmd" {
                         self.settings_click(&Act::SCycle("launcher_apply"));
                     } else {
@@ -302,9 +304,14 @@ impl App {
                         "game_apps" => &mut self.st.game_field,
                         "night_geo" => &mut self.st.geo_field,
                         "launcher_cmd" => &mut self.st.launcher_field,
+                        "font_search" => &mut self.st.font_search,
                         _ => &mut self.st.wall_field,
                     };
                     App::edit_field(field, e, &mods);
+                    // поиск сменился — список с начала
+                    if f == "font_search" {
+                        self.st.font_scroll = 0;
+                    }
                 }
             }
             self.dirty_panels();
