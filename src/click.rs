@@ -137,6 +137,13 @@ impl App {
             // ── всплывашки ──────────────────────────────────────────────────
             Act::CalMonth(d) => {
                 self.st.cal_month = if d == 0 { 0 } else { self.st.cal_month + d };
+                // «к сегодня» — и выбор снимается
+                if d == 0 {
+                    self.st.cal_pick = None;
+                }
+            }
+            Act::CalDay(day) => {
+                self.st.cal_pick = if self.st.cal_pick == Some(day) { None } else { Some(day) };
             }
             Act::VolSlider | Act::MicSlider | Act::AppVol(_) => {}
             Act::VolMute => audio::toggle_mute(),
@@ -238,6 +245,11 @@ impl App {
             Act::Popup("sound" | "media") | Act::VolSlider | Act::VolMute => audio::step_volume(if up { 1 } else { -1 }),
             Act::CtlBright => self.ctl_brightness(self.st.leds.bright.unwrap_or(0.5) + if up { 0.05 } else { -0.05 }),
             Act::CtlVol => self.ctl_volume((self.st.audio.volume + if up { 0.05 } else { -0.05 }).clamp(0.0, 1.0)),
+            Act::Popup("fan") | Act::FanLevel => {
+                self.st.fan.step(up);
+                self.dirty(&SKind::Popup);
+                self.dirty(&SKind::Bar);
+            }
             Act::WallPick(_) | Act::WallsScroll => self.walls_scroll(if up { -1 } else { 1 }),
             Act::DropPick(_) | Act::DropScroll => self.drop_scroll(if up { -1 } else { 1 }),
             Act::SFont(_) | Act::SFontScroll => self.font_scroll(if up { -1 } else { 1 }),

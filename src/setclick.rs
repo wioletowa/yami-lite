@@ -20,11 +20,13 @@ impl App {
                 self.st.bar_ed.add = None;
                 self.tab_probe();
             }
+            Act::SWallPick(i) => self.wall_pick(*i),
             Act::SPreset(i) => {
                 s.palette = PRESETS[*i].id.into();
                 s.accent.clear();
                 // цвет выбран руками: обои его больше не перекрашивают
                 s.wall_accent = false;
+                s.accent2.clear();
                 self.st.hex.set(&format!("#{:06x}", PRESETS[*i].accent));
                 self.settings_changed();
             }
@@ -326,6 +328,7 @@ impl App {
         if parse_hex(&h).is_some() {
             self.st.set.accent = h.to_lowercase();
             self.st.set.wall_accent = false;
+            self.st.set.accent2.clear();
             self.st.field_focus = None;
             self.settings_changed();
         }

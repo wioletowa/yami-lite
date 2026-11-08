@@ -70,6 +70,8 @@ pub enum SKind {
     /// окно настроек (xdg-shell, не слой)
     Settings,
     EditBar,
+    /// сетка расстановки виджетов: на слое обоев, над ними — под виджетами и окнами
+    EditGrid,
     /// подсказка у индикатора приватности (privacy.rs)
     Tip,
     Dock,
@@ -159,7 +161,7 @@ pub enum Msg {
     /// свои темы (themetab.rs): список, что сделано, применена ли тема (перечитать настройки)
     Themes(Vec<crate::bundle::Card>, String, bool),
     /// обои готовы (wall.rs): номер задания, картинка, акцент из неё
-    Wall(u64, Option<crate::gfx::Img>, Option<u32>),
+    Wall(u64, Option<crate::gfx::Img>, Vec<u32>),
     /// папка выбора обоев прочитана (walls.rs): номер открытия, папка, картинки, сколько сверх MAX
     WallsListed(u64, std::path::PathBuf, Vec<std::path::PathBuf>, Vec<std::path::PathBuf>, usize),
     /// миниатюра для выбора обоев (walls.rs): номер открытия, клетка, картинка
@@ -205,6 +207,12 @@ pub struct State {
     pub bar_ed: crate::settings::BarEd,
     pub sel_widget: u32,
     pub editing: bool,
+    /// выбранный в календаре день (days_from_civil); None — не выбран
+    pub cal_pick: Option<i64>,
+    /// виджет прилип к кресту посередине экрана: (по x, по y) — линия креста горит
+    pub snap_cross: (bool, bool),
+    /// расстановка закрыла окно настроек: вернуть его, когда закончат
+    pub edit_reopen: bool,
     /// окно настроек открыто (бар подсвечивает шестерёнку)
     pub settings_shown: bool,
     /// выбор обоев открыт из модуля бара: под баром у курсора, без затемнения (закрывается ловцом)
@@ -219,6 +227,9 @@ pub struct State {
     /// открытый выпадающий список
     pub drop: Option<crate::dropdown::Drop>,
     pub wh: crate::wallhaven::Wh,
+    pub fan: crate::fan::Fan,
+    /// цвета текущих обоев по весу (wall::candidates): образцы во вкладке цвета
+    pub wall_cands: Vec<u32>,
     /// поля ключа Wallhaven и его папки во вкладке «обои»
     pub wh_key_field: Field,
     pub wh_dir_field: Field,
@@ -397,7 +408,7 @@ impl State {
     pub fn new(set: Settings, niri: Niri) -> State {
         yami_px::gfx::set_reveal(yami_px::gfx::Reveal::from_id(&set.reveal), set.reveal_grain);
         State {
-            t: Theme::new(set.accent_rgb(), set.tint, set.glass, set.lift, set.inner, set.light).apply(),
+            t: Theme::new(set.accent_rgb(), set.tint, set.glass, set.lift, set.inner, set.light).with_accent2(set.accent2_rgb()).apply(),
             niri,
             sys: Sys::new(),
             apps: icons::load_apps(),
@@ -416,6 +427,9 @@ impl State {
             bar_ed: Default::default(),
             sel_widget: 0,
             editing: false,
+            cal_pick: None,
+            snap_cross: (false, false),
+            edit_reopen: false,
             settings_shown: false,
             walls_anchored: false,
             notifs: notif::Notifs::default(),
@@ -425,6 +439,8 @@ impl State {
             ctl_hold: None,
             drop: None,
             wh: Default::default(),
+            fan: Default::default(),
+            wall_cands: vec![],
             wh_key_field: Field::default(),
             wh_dir_field: Field::default(),
             tip: None,

@@ -132,6 +132,10 @@ pub struct Settings {
     pub wall_dim: f32,
     /// акцент (а с ним вся палитра) берётся из своих обоев
     pub wall_accent: bool,
+    /// какой по весу цвет обоев брать акцентом (0 — главный); на новых обоях — тот же номер
+    pub wall_pick: u32,
+    /// второй акцент из обоев (#rrggbb); пусто — напротив основного
+    pub accent2: String,
 
     // бар: модули по сторонам и их порядок
     pub bar_left: Vec<String>,
@@ -141,6 +145,8 @@ pub struct Settings {
     pub bar_hidden: Vec<String>,
     /// gauge | graph | number
     pub cpu_style: String,
+    /// модуль fan: gauge | graph | number — как цп и память (процент работы), rpm — значок и обороты
+    pub fan_style: String,
     /// столы в баре: boxes — квадраты с номером, dots — точки, активный — квадрат
     pub ws_style: String,
     /// модуль temp: "full" — как цп и память (подпись, шкала или график), "compact" — столбик и число
@@ -293,7 +299,7 @@ fn group(m: &str) -> i32 {
         "launcher" => 0,
         "workspaces" => 1,
         "tray" => 3,
-        "net" | "netspeed" | "bt" | "kb" | "cpu" | "ram" | "temp" | "bat" | "night" | "walls" | "wallhaven" | "privacy_mic" | "privacy_screen" | "privacy_cam" => 4,
+        "net" | "netspeed" | "bt" | "kb" | "cpu" | "ram" | "temp" | "bat" | "night" | "walls" | "wallhaven" | "fan" | "privacy_mic" | "privacy_screen" | "privacy_cam" => 4,
         "vol" | "media" => 5,
         "clock" | "notif" | "settings" | "power" => 6,
         _ => 7,
@@ -315,6 +321,7 @@ pub const ALL_MODULES: &[(&str, &str)] = &[
     ("temp", "температура"),
     ("gpu", "видеокарта"),
     ("disk", "диск"),
+    ("fan", "вентилятор"),
     ("vol", "звук"),
     ("bat", "батарея"),
     ("night", "ночной свет"),
@@ -393,11 +400,14 @@ impl Default for Settings {
             wall_tone: String::new(),
             wall_dim: 0.0,
             wall_accent: false,
+            wall_pick: 0,
+            accent2: String::new(),
             bar_left: v(&["launcher", "sep", "workspaces"]),
             bar_center: v(&["tasks"]),
             bar_hidden: vec![],
             bar_right: v(&["privacy_mic", "privacy_screen", "privacy_cam", "tray", "sep", "net", "kb", "cpu", "ram", "bat", "sep", "vol", "sep", "clock", "sep", "settings", "power"]),
             cpu_style: "gauge".into(),
+            fan_style: "gauge".into(),
             ws_style: "boxes".into(),
             temp_style: "full".into(),
             tray_mode: "icons".into(),
@@ -546,6 +556,13 @@ impl Settings {
         self.wall_fade_time = self.wall_fade_time.clamp(0.3, 4.0);
         if self.ws_style != "dots" {
             self.ws_style = "boxes".into();
+        }
+        if !matches!(self.fan_style.as_str(), "graph" | "number" | "rpm") {
+            self.fan_style = "gauge".into();
+        }
+        // второй акцент бывает только из обоев
+        if !self.wall_accent || crate::theme::parse_hex(&self.accent2).is_none() {
+            self.accent2.clear();
         }
         if self.temp_style != "compact" {
             self.temp_style = "full".into();
@@ -747,6 +764,11 @@ impl Settings {
 
     pub fn to_json(&self) -> String {
         serde_json::to_string_pretty(self).unwrap_or_default() + "\n"
+    }
+
+    /// второй акцент из обоев; None — напротив основного (Theme)
+    pub fn accent2_rgb(&self) -> Option<u32> {
+        crate::theme::parse_hex(&self.accent2)
     }
 
     pub fn accent_rgb(&self) -> u32 {

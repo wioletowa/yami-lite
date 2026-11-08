@@ -170,6 +170,7 @@ fn palette(y: &Sty, args: &[&str]) -> i32 {
             }
             // выбрана руками: обои больше не перекрашивают
             s.wall_accent = false;
+            s.accent2.clear();
             if crate::config::write_atomic(&crate::config::settings_path(), &s.to_json()).is_err() {
                 return 1;
             }

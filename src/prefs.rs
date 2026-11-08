@@ -20,7 +20,7 @@ impl App {
             self.res.wfonts = Fonts::with(&wf);
             self.res.wfont = wf;
         }
-        self.st.t = Theme::new(s.accent_rgb(), s.tint, s.glass, s.lift, s.inner, s.light).apply();
+        self.st.t = Theme::new(s.accent_rgb(), s.tint, s.glass, s.lift, s.inner, s.light).with_accent2(s.accent2_rgb()).apply();
         yami_px::gfx::set_reveal(yami_px::gfx::Reveal::from_id(&s.reveal), s.reveal_grain);
         // набор значков системы сменился — собрать заново
         let iset = crate::icons::system_theme();
@@ -83,7 +83,17 @@ impl App {
         }
         self.palette_written = key;
         let (p, apps) = (crate::recolor::Pal::of(&self.st.t), self.st.set.theme_apps.clone());
-        std::thread::spawn(move || crate::recolor::apply(&p, &apps));
+        // по одной перекраске за раз, и только последняя: две быстрые смены (тема, потом акцент из
+        // обоев) иначе гонятся, и gsettings мог остаться за прошлой
+        static GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        static RUN: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let gen = GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+        std::thread::spawn(move || {
+            let _one = RUN.lock();
+            if GEN.load(std::sync::atomic::Ordering::SeqCst) == gen {
+                crate::recolor::apply(&p, &apps);
+            }
+        });
     }
 
     /// ползунок настроек: значение в настройки, всё зависящее — следом

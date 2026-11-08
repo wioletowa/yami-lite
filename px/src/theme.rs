@@ -30,6 +30,9 @@ pub struct Theme {
     pub border: C,
     pub dim: C,
     pub red: C,
+    /// второй акцент: вторые линии графиков (отдача сети, уровень вентилятора). Свой — из
+    /// обоев (with_accent2), иначе — напротив акцента по кругу оттенков
+    pub accent2: C,
     pub blood: C,
     pub glow: C,
     pub ember: C,
@@ -97,6 +100,23 @@ pub fn scale_v(c: C, k: f32) -> C {
     from_hsv(h, s, v)
 }
 
+/// тот же цвет напротив по кругу оттенков
+pub fn opposite(c: C) -> C {
+    let (h, s, v) = hsv(c);
+    from_hsv((h + 0.5).fract(), s, v)
+}
+
+/// темнее, пока не читается на светлом фоне (как акцент светлой темы)
+fn readable_on_light(mut c: C) -> C {
+    for _ in 0..12 {
+        if lightness(c) <= 0.46 {
+            break;
+        }
+        c = scale_v(c, 0.9);
+    }
+    c
+}
+
 pub fn lightness(c: C) -> f32 {
     let (r, g, b) = c.rgbf();
     (r.max(g).max(b) + r.min(g).min(b)) / 2.0
@@ -147,6 +167,7 @@ impl Theme {
             warn: C::hex(0xffaa28),
             glass,
             light: false,
+            accent2: opposite(a),
         }
     }
 
@@ -192,7 +213,16 @@ impl Theme {
             warn: C::hex(0xb86a00),
             glass,
             light: true,
+            accent2: readable_on_light(opposite(src)),
         }
+    }
+
+    /// свой второй акцент (из обоев); None — напротив основного
+    pub fn with_accent2(mut self, c: Option<u32>) -> Theme {
+        if let Some(c) = c {
+            self.accent2 = if self.light { readable_on_light(C::hex(c)) } else { C::hex(c) };
+        }
+        self
     }
 
     /// сделать тему текущей для процесса: то, что холсты берут сами (тень)

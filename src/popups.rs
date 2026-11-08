@@ -11,7 +11,7 @@ use crate::widgets;
 use smithay_client_toolkit::seat::keyboard::{KeyEvent, Keysym};
 
 /// виды всплывашек: `popup KIND`, `yami open KIND`, shot
-pub const KINDS: &[&str] = &["cal", "sound", "media", "net", "bt", "sys", "bat", "tray", "control", "wallhaven"];
+pub const KINDS: &[&str] = &["cal", "sound", "media", "net", "bt", "sys", "bat", "tray", "control", "wallhaven", "fan"];
 
 impl State {
     /// открыта всплывашка этого вида
@@ -83,6 +83,7 @@ pub fn size(kind: &str, st: &State) -> (i32, i32) {
         "bat" => (340, 44 + 40),
         "control" => (crate::control::SIZE.0 + 38, crate::control::SIZE.1 + 30),
         "wallhaven" => (crate::wallhaven::SIZE.0 + 38, crate::wallhaven::SIZE.1 + 30),
+        "fan" => (crate::fan::SIZE.0 + 38, crate::fan::SIZE.1 + 30),
         _ => (300, 200),
     }
 }
@@ -106,6 +107,7 @@ pub fn draw(ui: &mut Ui, st: &State, w: i32, h: i32) {
         "tray" => tray(ui, st, body),
         "control" => crate::control::draw(ui, st, body),
         "wallhaven" => crate::wallhaven::draw(ui, st, body),
+        "fan" => crate::fan::draw(ui, st, body),
         _ => {}
     }
     crate::dropdown::draw(ui, st, &crate::app::SKind::Popup, w, h);
@@ -130,7 +132,12 @@ fn cal(ui: &mut Ui, st: &State, b: R) {
     let face = font::px(32);
     ui.text(face, b.x, b.y - 2, &format!("{:02}:{:02}", now.hour, now.min), t.text);
     let date = crate::tf!("{}, {} {}", "{}, {} {}", crate::i18n::tr(crate::clock::RU_DAY_FULL[now.wday as usize]), now.day, crate::i18n::tr(crate::clock::RU_MON[(now.mon - 1) as usize]));
-    ui.text_in(PX, R::new(b.x, b.y + 34, 300, 20), &date, t.text_dim);
+    let dw = ui.text_in(PX, R::new(b.x, b.y + 34, 300, 20), &date, t.text_dim);
+    // выбранный день: через сколько он (или сколько прошло)
+    if let Some(day) = st.cal_pick {
+        let left = widgets::days_until(day - widgets::days_from_civil(now.year, now.mon as u32, now.day as u32));
+        ui.text_in(PX, R::new(b.x + dw + 12, b.y + 34, 290 - dw, 20), &left, t.text_faint);
+    }
     let cr = R::new(b.x, b.y + 66, 290, b.h - 66);
     widgets::calendar(ui, st, cr, st.cal_month, t.red, true);
     // уведомления
@@ -138,16 +145,30 @@ fn cal(ui: &mut Ui, st: &State, b: R) {
     ui.cv.fill(R::new(nx - 10, b.y, 1, b.h), t.border);
     let nr = R::new(nx, b.y, b.right() - nx, b.h);
     let n = st.notifs.history.len();
-    let sub = if n == 0 { String::new() } else { format!("{n}") };
     ui.cv.icon(if st.quiet() { "bellx" } else { "bell" }, nr.x, nr.y + 3, 2, t.red);
-    ui.text_in(PX, R::new(nr.x + 22, nr.y, 160, 20), &crate::tf!("уведомления {sub}", "notifications {sub}"), t.text);
-    ui.button(R::new(nr.right() - 172, nr.y - 2, 104, 24), "не беспокоить", "", Tone::Ghost, st.set.dnd, true, Act::Dnd);
-    ui.button(R::new(nr.right() - 64, nr.y - 2, 64, 24), "очистить", "", Tone::Ghost, false, n > 0, Act::NotifClear);
+    let tw = ui.text_in(PX, R::new(nr.x + 22, nr.y, nr.w - 90, 20), "уведомления", t.text);
+    // число — плашкой, а не текстом через пробел
+    if n > 0 {
+        let num = n.to_string();
+        let bw = ui.w(PX, &num) + 10;
+        let br = R::new(nr.x + 30 + tw, nr.y + 1, bw, 18);
+        ui.cv.fill(br, t.red);
+        ui.text_center(PX, br, &num, t.on_accent);
+    }
+    // справа — значки: «не беспокоить» (горит, когда включено) и «очистить»
+    ui.button(R::new(nr.right() - 58, nr.y - 2, 26, 24), "", if st.set.dnd { "bellx" } else { "bell" }, Tone::Ghost, st.set.dnd, true, Act::Dnd);
+    ui.button(R::new(nr.right() - 26, nr.y - 2, 26, 24), "", "trash", Tone::Ghost, false, n > 0, Act::NotifClear);
     ui.cv.fill(R::new(nr.x, nr.y + 26, nr.w, 1), t.border);
     let mut y = nr.y + 34;
     if n == 0 {
-        ui.text_center(PX, R::new(nr.x, y + 60, nr.w, 20), "тихо. ничего нового", t.text_faint);
-        ui.cv.icon_in("bell", R::new(nr.x, y + 20, nr.w, 30), 3, t.border);
+        // пусто: значок и подпись посередине свободного места
+        let free = R::new(nr.x, y, nr.w, nr.bottom() - y);
+        let cy = free.cy();
+        ui.cv.icon_in(if st.set.dnd { "bellx" } else { "bell" }, R::new(free.x, cy - 34, free.w, 28), 4, t.border);
+        ui.text_center(PX, R::new(free.x, cy + 4, free.w, 20), "тихо. ничего нового", t.text_faint);
+        if st.set.dnd {
+            ui.text_center(PX, R::new(free.x, cy + 24, free.w, 20), "не беспокоить включено", t.text_faint.fade(0.7));
+        }
         return;
     }
     ui.cv.push_clip(R::new(nr.x, y, nr.w, nr.bottom() - y));
@@ -443,7 +464,7 @@ fn net(ui: &mut Ui, st: &State, b: R) {
     y += 24;
     let gr = R::new(b.x, y, b.w, 90);
     ui.cv.pxbox(gr, &BoxStyle::new(t.code_bg, t.border));
-    widgets::graph(ui, gr.inset(6), &rx, "line", "scroll", st.sys_phase(), t.red, Some((&tx, t.text_dim)));
+    widgets::graph(ui, gr.inset(6), &rx, "line", "scroll", st.sys_phase(), t.red, Some((&tx, t.accent2)));
     y += 100;
     // Wi-Fi
     if st.net.wifi_present {

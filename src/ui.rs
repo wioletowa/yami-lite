@@ -28,6 +28,8 @@ pub enum Act {
     SScroll,
     SSideScroll,
     SPreset(usize),
+    /// вкладка цвета: акцент — i-й цвет обоев
+    SWallPick(usize),
     SBool(&'static str),
     /// выпадающий список (dropdown.rs): открыть по ключу, выбрать значение, закрыть, листать
     Drop(&'static str),
@@ -76,6 +78,8 @@ pub enum Act {
     CtlBright,
     CtlTile(String),
     CtlWall,
+    /// всплывашка вентилятора: шкала C · A · 0…7 · F (тянуть или щёлкать)
+    FanLevel,
     /// Wallhaven: искать, категория, чистота, порядок, «от/ровно», страница, картинка
     WhSearch,
     WhCat(usize),
@@ -105,6 +109,8 @@ pub enum Act {
     MenuBack,
     // всплывашки
     CalMonth(i32),
+    /// календарь всплывашки: выбрать день (номер дня от 1970-01-01), повторно — снять
+    CalDay(i64),
     VolSlider,
     VolMute,
     Sink(String),
@@ -154,7 +160,7 @@ pub enum Act {
 
 impl Act {
     pub fn is_drag(&self) -> bool {
-        matches!(self, Act::SSlider(..) | Act::CtlVol | Act::CtlBright | Act::VolSlider | Act::MicSlider | Act::AppVol(_) | Act::MediaSeek | Act::MDrag | Act::WDrag(_) | Act::SModDrag(..) | Act::SModNew(_))
+        matches!(self, Act::SSlider(..) | Act::CtlVol | Act::CtlBright | Act::FanLevel | Act::VolSlider | Act::MicSlider | Act::AppVol(_) | Act::MediaSeek | Act::MDrag | Act::WDrag(_) | Act::SModDrag(..) | Act::SModNew(_))
     }
 }
 

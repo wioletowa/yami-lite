@@ -358,7 +358,7 @@ pub fn draw(ui: &mut Ui, st: &State, id: u32, sw: i32, sh: i32) {
     if let Some(light) = bright {
         let s = &st.set;
         if light != saved.light {
-            ui.t = Theme::new(s.accent_rgb(), s.tint, s.glass, s.lift, s.inner, light);
+            ui.t = Theme::new(s.accent_rgb(), s.tint, s.glass, s.lift, s.inner, light).with_accent2(s.accent2_rgb());
         }
         ui.cv.text_shade = Some(if light { C(0xffffffff).alpha(0.55) } else { C(0xff000000).alpha(0.6) });
     }
@@ -540,7 +540,7 @@ pub fn media_card(ui: &mut Ui, st: &State, r: R, style: &str, c: C, label: bool,
 }
 
 /// месяц сеткой: сегодня — в акценте, выходные — тусклее
-pub fn calendar(ui: &mut Ui, _st: &State, r: R, month_shift: i32, c: C, nav: bool) {
+pub fn calendar(ui: &mut Ui, st: &State, r: R, month_shift: i32, c: C, nav: bool) {
     let t = ui.t;
     let now = local_now();
     let mut y = now.year;
@@ -572,11 +572,39 @@ pub fn calendar(ui: &mut Ui, _st: &State, r: R, month_shift: i32, c: C, nav: boo
         let (cx, cy) = (r.x + (cell % 7) * cw, gy + (cell / 7) * ch);
         let rr = R::new(cx + 1, cy, cw - 2, ch - 2);
         let today = month_shift == 0 && d == now.day as i32;
+        let day = first + d as i64 - 1;
+        let picked = nav && st.cal_pick == Some(day);
         if today {
             ui.cv.pxbox(rr, &BoxStyle::new(c, t.ember).bevel(true));
+        } else if picked {
+            ui.cv.pxbox(rr, &BoxStyle::new(t.surface_hi, c));
+        } else if nav && ui.hover(rr) {
+            ui.cv.fill(rr, t.surface_hi);
         }
-        let col = if today { t.on_accent } else if cell % 7 >= 5 { t.red.lerp(t.text, 0.4) } else { t.text };
+        let col = if today { t.on_accent } else if picked { t.text_hi } else if cell % 7 >= 5 { t.red.lerp(t.text, 0.4) } else { t.text };
         ui.text_center(PX, rr, &d.to_string(), col);
+        // во всплывашке день выбирается щелчком: сверху — через сколько он
+        if nav {
+            ui.zone(rr, Act::CalDay(day), Cur::Pointer);
+        }
+    }
+}
+
+/// подпись к выбранному дню: «завтра», «через 13 дней», «3 дня назад»; сегодня — пусто
+pub fn days_until(d: i64) -> String {
+    let n = d.abs();
+    // 1 день, 2–4 дня, 5–20 дней; 21 день, 22 дня…
+    let word = match (n % 10, n % 100) {
+        (1, x) if x != 11 => "день",
+        (2..=4, x) if !(12..=14).contains(&x) => "дня",
+        _ => "дней",
+    };
+    match d {
+        0 => String::new(),
+        1 => crate::i18n::tr("завтра").into(),
+        -1 => crate::i18n::tr("вчера").into(),
+        d if d > 0 => crate::tf!("через {} {}", "in {} {}", n, if crate::i18n::en() { "days" } else { word }),
+        _ => crate::tf!("{} {} назад", "{} {} ago", n, if crate::i18n::en() { "days" } else { word }),
     }
 }
 
@@ -602,6 +630,88 @@ pub fn days_in_month(y: i32, m: u32) -> u32 {
         4 | 6 | 9 | 11 => 30,
         _ => 31,
     }
+}
+
+/// шаг сетки расстановки, px
+pub const GRID: i32 = 32;
+/// откуда притягивают края, крест, бар и соседи; сетка — слабее
+const MAGNET: i32 = 12;
+const GRID_MAGNET: i32 = 8;
+
+/// положение виджета w×h на мониторе ow×oh: хоть кусок GRID×GRID остаётся на экране
+pub fn keep_visible(x: i32, y: i32, w: i32, h: i32, ow: i32, oh: i32) -> (i32, i32) {
+    (x.clamp(GRID - w, (ow - GRID).max(GRID - w)), y.clamp(GRID - h, (oh - GRID).max(GRID - h)))
+}
+
+/// одна ось: начало pos у отрезка длиной size. guides — линии (координата, это крест); к линии
+/// прилипает начало или конец отрезка, к кресту — ещё и середина. Нет линии рядом — сетка
+/// (начало или конец на её линии). Возвращает начало и прилип ли к кресту
+fn snap_axis(pos: i32, size: i32, guides: &[(i32, bool)]) -> (i32, bool) {
+    let mut best: Option<(i32, i32, bool)> = None;
+    for &(g, cross) in guides {
+        let mut cands = vec![g, g - size];
+        if cross {
+            cands.push(g - size / 2);
+        }
+        for c in cands {
+            let d = (c - pos).abs();
+            if d <= MAGNET && best.is_none_or(|b| d < b.0) {
+                best = Some((d, c, cross));
+            }
+        }
+    }
+    if let Some((_, c, cross)) = best {
+        return (c, cross);
+    }
+    let round = |v: i32| (v as f32 / GRID as f32).round() as i32 * GRID;
+    let (a, b) = (round(pos), round(pos + size) - size);
+    let c = if (a - pos).abs() <= (b - pos).abs() { a } else { b };
+    if (c - pos).abs() <= GRID_MAGNET {
+        (c, false)
+    } else {
+        (pos, false)
+    }
+}
+
+/// куда встать виджету w×h, который тянут в (x, y): края монитора, крест посередине, края бара
+/// (bars — горизонтальные линии), стороны других виджетов — встык и вровень; дальше — сетка
+#[allow(clippy::too_many_arguments)]
+pub fn snap(x: i32, y: i32, w: i32, h: i32, ow: i32, oh: i32, bars: &[i32], others: &[R]) -> (i32, i32, (bool, bool)) {
+    let mut gx = vec![(0, false), (ow, false), (ow / 2, true)];
+    let mut gy = vec![(0, false), (oh, false), (oh / 2, true)];
+    gy.extend(bars.iter().filter(|b| **b > 0 && **b < oh).map(|b| (*b, false)));
+    for o in others {
+        gx.extend([(o.x, false), (o.right(), false)]);
+        gy.extend([(o.y, false), (o.bottom(), false)]);
+    }
+    let (nx, cx) = snap_axis(x, w, &gx);
+    let (ny, cy) = snap_axis(y, h, &gy);
+    let (nx, ny) = keep_visible(nx, ny, w, h, ow, oh);
+    (nx, ny, (cx, cy))
+}
+
+/// сетка расстановки поверх обоев: вуаль для контраста, линии через GRID точками, крест посередине
+/// (горит, когда к нему прилип виджет)
+pub fn draw_grid(ui: &mut Ui, st: &State, w: i32, h: i32) {
+    let t = ui.t;
+    ui.cv.fill(R::new(0, 0, w, h), t.bg.alpha(0.3));
+    let dot = t.text.fade(0.22);
+    for x in (GRID..w).step_by(GRID as usize) {
+        for y in (0..h).step_by(4) {
+            ui.cv.fill(R::new(x, y, 1, 1), dot);
+        }
+    }
+    for y in (GRID..h).step_by(GRID as usize) {
+        for x in (0..w).step_by(4) {
+            ui.cv.fill(R::new(x, y, 1, 1), dot);
+        }
+    }
+    let (cx, cy) = st.snap_cross;
+    let line = |on: bool| if on { (t.red, 2) } else { (t.red.fade(0.45), 1) };
+    let (c, lw) = line(cx);
+    ui.cv.fill(R::new(w / 2 - lw / 2, 0, lw, h), c);
+    let (c, lw) = line(cy);
+    ui.cv.fill(R::new(0, h / 2 - lw / 2, w, lw), c);
 }
 
 pub fn draw_editbar(ui: &mut Ui, _st: &State, w: i32, _h: i32) {
@@ -683,13 +793,13 @@ impl App {
                 y = auto_y;
                 auto_y += wh + 16;
             }
-            x = x.clamp(0, (ow - ww).max(0));
-            y = y.clamp(top, (oh - wh).max(top));
-            let raised = self.st.editing;
+            // можно за край монитора и под бар, но хоть кусок остаётся на экране — за него и вытащить
+            (x, y) = keep_visible(x, y, ww, wh, ow, oh);
             let sid = have.iter().find(|(_, id)| *id == w.id).map(|(s, _)| *s);
             match sid {
                 None => {
-                    let s = self.mk(SKind::Widget(w.id), &out, if raised { Layer::Top } else { Layer::Bottom }, "yami-widget", Anchor::TOP | Anchor::LEFT, (ww, wh), (y, 0, 0, x), -1, KeyboardInteractivity::None);
+                    // и при расстановке — под окнами: стол виден, когда окна убраны
+                    let s = self.mk(SKind::Widget(w.id), &out, Layer::Bottom, "yami-widget", Anchor::TOP | Anchor::LEFT, (ww, wh), (y, 0, 0, x), -1, KeyboardInteractivity::None);
                     if let Some(s) = self.surfs.get_mut(&s) {
                         s.margin = (x, y);
                         s.applied = (x, y);
@@ -705,7 +815,6 @@ impl App {
                         if s.w != ww || s.h != wh {
                             s.layer.set_size(ww as u32, wh as u32);
                         }
-                        s.layer.set_layer(if raised { Layer::Top } else { Layer::Bottom });
                         s.layer.commit();
                         s.dirty = true;
                     }
@@ -716,15 +825,33 @@ impl App {
     }
 
     pub fn set_editing(&mut self, on: bool) {
+        let was = self.st.editing;
         self.st.editing = on;
         if on {
+            // окно настроек уходит на время расстановки и вернётся на той же вкладке
+            if self.st.settings_shown {
+                self.st.edit_reopen = true;
+                self.close_settings();
+            }
             let out = self.focus_out();
+            if self.find(&SKind::EditGrid).is_empty() {
+                let id = self.mk(SKind::EditGrid, &out, Layer::Background, "yami-grid", Anchor::all(), (0, 0), (0, 0, 0, 0), -1, KeyboardInteractivity::None);
+                // мышь сквозь сетку — к виджетам и столу
+                if let Some(s) = self.surfs.get_mut(&id) {
+                    s.input = Some(vec![]);
+                }
+            }
             if self.find(&SKind::EditBar).is_empty() {
                 let top = self.bar_bottom(&out) + 12;
                 self.mk(SKind::EditBar, &out, Layer::Overlay, "yami-menu", Anchor::TOP, (520, 52), (top, 0, 0, 0), -1, KeyboardInteractivity::Exclusive);
             }
         } else {
             self.close_kind(&SKind::EditBar);
+            self.close_kind(&SKind::EditGrid);
+            self.st.snap_cross = (false, false);
+            if was && std::mem::take(&mut self.st.edit_reopen) {
+                self.open_settings();
+            }
         }
         self.sync_widgets();
         self.dirty_where(|k| matches!(k, SKind::Widget(_)));
@@ -743,5 +870,43 @@ impl App {
         if e.keysym == Keysym::Escape && self.st.editing {
             self.set_editing(false);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn widgets_stick_to_edges_neighbours_cross_and_grid() {
+        let (ow, oh) = (1920, 1080);
+        // у левого края — к краю
+        assert_eq!(snap(9, 300, 200, 100, ow, oh, &[], &[]).0, 0);
+        // правым краем к правому краю монитора
+        assert_eq!(snap(1715, 300, 200, 100, ow, oh, &[], &[]).0, 1720);
+        // серединой к кресту — и он горит
+        let (x, _, cross) = snap(855, 300, 200, 100, ow, oh, &[], &[]);
+        assert_eq!((x, cross.0), (860, true));
+        // встык справа к соседу
+        let n = R::new(400, 300, 200, 100);
+        assert_eq!(snap(607, 500, 100, 100, ow, oh, &[], &[n]).0, 600);
+        // нижней кромкой бара сверху, но и под бар можно
+        assert_eq!(snap(300, 40, 100, 100, ow, oh, &[36], &[]).1, 36);
+        assert_eq!(snap(300, 10, 100, 100, ow, oh, &[36], &[]).1, 0);
+        // в стороне от всего — линия сетки, далеко от неё — как есть
+        assert_eq!(snap(990, 701, 100, 100, ow, oh, &[], &[]).0, 992);
+        assert_eq!(snap(1010, 701, 100, 100, ow, oh, &[], &[]).0, 1010);
+        // за край монитора можно, но кусок остаётся
+        assert_eq!(snap(-500, 300, 200, 100, ow, oh, &[], &[]).0, GRID - 200);
+    }
+
+    #[test]
+    fn days_until_reads_in_russian() {
+        assert_eq!(days_until(0), "");
+        assert_eq!(days_until(13), "через 13 дней");
+        assert_eq!(days_until(21), "через 21 день");
+        assert_eq!(days_until(22), "через 22 дня");
+        assert_eq!(days_until(-3), "3 дня назад");
+        assert_eq!(days_until(-11), "11 дней назад");
     }
 }

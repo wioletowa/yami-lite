@@ -3,7 +3,7 @@
 // его место и размер решает niri.
 
 use smithay_client_toolkit::shell::{
-    wlr_layer::{Anchor, KeyboardInteractivity, Layer, LayerSurface},
+    wlr_layer::{Anchor, KeyboardInteractivity, LayerSurface},
     xdg::window::Window,
     WaylandSurface,
 };
@@ -54,11 +54,6 @@ impl Shell {
     pub fn set_exclusive_zone(&self, z: i32) {
         if let Shell::Layer(l) = self {
             l.set_exclusive_zone(z);
-        }
-    }
-    pub fn set_layer(&self, layer: Layer) {
-        if let Shell::Layer(l) = self {
-            l.set_layer(layer);
         }
     }
     pub fn set_keyboard_interactivity(&self, k: KeyboardInteractivity) {

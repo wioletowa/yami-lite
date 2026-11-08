@@ -94,6 +94,11 @@ pub fn draw(ui: &mut Ui, st: &State, out: &str, w: i32) {
 
     // весь бар: ПКМ — панель управления; модули ложатся сверху своими зонами
     ui.zone(R::new(0, 0, w, H), Act::BarBg, Cur::Default);
+    // наведение — по одной горизонтали: курсор у самого края экрана (или на тени) подсвечивает
+    // модуль так же, как посередине; зоны растянуты на всю высоту в конце
+    if let Some((px, _)) = ui.ptr {
+        ui.ptr = Some((px, ((H - 1) / 2) as f64));
+    }
     let mid = set.num("bar_mid");
     let (pad_l, pad_r) = (set.num("bar_pad_l"), set.num("bar_pad_r"));
     // окна стола (#28) — модуль как все, в любой группе: своя ширина по числу окон, а когда места
@@ -125,6 +130,11 @@ pub fn draw(ui: &mut Ui, st: &State, out: &str, w: i32) {
     ui.cv.push_clip(R::new(x0, 0, (x1 - x0).max(0), H));
     row(ui, st, out, &mut set.bar_center.iter(), cx, 1, true, ctw);
     ui.cv.pop_clip();
+    // модули ловят мышь на всю высоту бара — и у самого края экрана, и на нижней линии;
+    // рисуются они как раньше, растягиваются только зоны
+    for z in ui.zones.iter_mut().filter(|z| z.act != Act::BarBg) {
+        z.r = R::new(z.r.x, 0, z.r.w, H + SHADE);
+    }
 }
 
 /// ряд модулей от x0 в сторону dir (1 — вправо, -1 — влево). Разделитель — только между двумя
@@ -328,16 +338,8 @@ fn module(ui: &mut Ui, st: &State, out: &str, m: &str, x: i32, measure: bool) ->
             if measure || w <= 0 {
                 return w.max(0);
             }
+            // стрелка первой, закреплённые значки — за ней
             let mut ix = x;
-            for it in &icons {
-                let r = R::new(ix, cy - 11, 22, 22);
-                if ui.hover(r) {
-                    ui.cv.pxbox(r, &BoxStyle::new(t.surface_hi, t.red));
-                }
-                tray_icon(ui, it, ix + 3, cy - 8, st.set.tray_pixel);
-                ui.zone(r, Act::Tray(it.service.clone()), Cur::Pointer);
-                ix += 24;
-            }
             if arrow {
                 // стрелка: точка — кто-то из спрятанных зовёт
                 let r = R::new(ix, cy - 11, 22, 22);
@@ -351,6 +353,16 @@ fn module(ui: &mut Ui, st: &State, out: &str, m: &str, x: i32, measure: bool) ->
                     ui.cv.fill(R::new(ix + 17, cy - 9, 4, 4), t.ember);
                 }
                 ui.zone(r, Act::Popup("tray"), Cur::Pointer);
+                ix += 22 + if icons.is_empty() { 0 } else { 2 };
+            }
+            for it in &icons {
+                let r = R::new(ix, cy - 11, 22, 22);
+                if ui.hover(r) {
+                    ui.cv.pxbox(r, &BoxStyle::new(t.surface_hi, t.red));
+                }
+                tray_icon(ui, it, ix + 3, cy - 8, st.set.tray_pixel);
+                ui.zone(r, Act::Tray(it.service.clone()), Cur::Pointer);
+                ix += 24;
             }
             w
         }
@@ -462,12 +474,12 @@ fn module(ui: &mut Ui, st: &State, out: &str, m: &str, x: i32, measure: bool) ->
             }
             let s = &st.sys;
             let (label, v, txt, hot) = match m {
-                "cpu" => ("цп", s.cpu, format!("{}%", (s.cpu * 100.0).round()), s.cpu > 0.85),
-                "ram" => ("озу", s.mem, format!("{}%", (s.mem * 100.0).round()), s.mem > 0.85),
+                "cpu" => ("cpu", s.cpu, format!("{}%", (s.cpu * 100.0).round()), s.cpu > 0.85),
+                "ram" => ("ram", s.mem, format!("{}%", (s.mem * 100.0).round()), s.mem > 0.85),
                 // спящую дискретку ноутбука не будим (sys.rs): «сон» вместо цифр
-                "gpu" if s.gpu_sleep => ("гп", 0.0, crate::i18n::tr("сон").to_string(), false),
-                "gpu" => ("гп", s.gpu_load, format!("{}%", (s.gpu_load * 100.0).round()), s.gpu_load > 0.95 || s.gpu_temp > 85.0),
-                "disk" => ("диск", s.disk, format!("{}%", (s.disk * 100.0).round()), s.disk > 0.9),
+                "gpu" if s.gpu_sleep => ("gpu", 0.0, crate::i18n::tr("сон").to_string(), false),
+                "gpu" => ("gpu", s.gpu_load, format!("{}%", (s.gpu_load * 100.0).round()), s.gpu_load > 0.95 || s.gpu_temp > 85.0),
+                "disk" => ("disk", s.disk, format!("{}%", (s.disk * 100.0).round()), s.disk > 0.9),
                 _ => ("t°", (s.temp / 100.0).min(1.0), format!("{}°", s.temp.round()), s.temp > 80.0),
             };
             let lw = ui.w(PX, label);
@@ -574,6 +586,53 @@ fn module(ui: &mut Ui, st: &State, out: &str, m: &str, x: i32, measure: bool) ->
                 ui.zone(r, Act::NightToggle, Cur::Pointer);
             }
             14
+        }
+        // вентилятор ThinkPad (fan.rs): значок и обороты; цвет значка — кто ведёт
+        "fan" => {
+            let f = &st.fan;
+            if !f.present {
+                return 0;
+            }
+            // шкала или график — как у цп и памяти: подпись, заполнение, процент работы вентиляторов
+            if st.set.fan_style != "rpm" {
+                let label = "fan";
+                let lw = ui.w(PX, label);
+                let gw = if st.set.fan_style == "number" { 0 } else { 48 };
+                let w = lw + 6 + gw + if gw > 0 { 6 } else { 0 } + 34;
+                if measure {
+                    return w;
+                }
+                let r = R::new(x, 0, w, H - 1);
+                let hov = ui.hover(r);
+                ui.text_in(PX, R::new(x, 0, lw, H - 1), label, if hov { t.text_dim } else { t.text_faint });
+                let gx = x + lw + 6;
+                let col = if f.critical { t.ember } else { t.red };
+                if st.set.fan_style == "graph" {
+                    let pts = f.h_pct.tail(24);
+                    for (i, p) in pts.iter().enumerate() {
+                        let hh = ((p.clamp(0.0, 1.0) * 14.0).round() as i32).max(1);
+                        ui.cv.fill(R::new(gx + i as i32 * 2, cy + 7 - hh, 2, hh), if i == pts.len() - 1 { t.ember } else { col.fade(0.8) });
+                    }
+                    ui.cv.fill(R::new(gx, cy + 8, 48, 1), t.border);
+                } else if gw > 0 {
+                    ui.cv.gauge(R::new(gx, cy - 5, 48, 10), 6, f.pct(), col, t.surface_hi.lerp(t.border, 0.45), 2);
+                }
+                let tx = gx + gw + if gw > 0 { 6 } else { 0 };
+                ui.text_in(PX, R::new(tx, 0, 34, H - 1), &format!("{}%", (f.pct() * 100.0).round()), if f.critical { t.ember } else { t.text_dim });
+                ui.zone(r, Act::Popup("fan"), Cur::Pointer);
+                return w;
+            }
+            let txt = f.rpm.map_or("—".to_string(), |r| r.to_string());
+            let w = 14 + 5 + ui.w(PX, "8888").max(ui.w(PX, &txt));
+            if !measure {
+                let r = R::new(x - 2, 0, w + 4, H - 1);
+                let hov = ui.hover(r);
+                let c = if f.critical { t.ember } else if st.popup_is("fan") || hov { t.text_hi } else if f.curve { t.red } else { t.text };
+                ui.cv.icon("fan", x, cy - 7, 2, c);
+                ui.text_in(PX, R::new(x + 19, 0, w - 19, H - 1), &txt, if f.critical { t.ember } else { t.text });
+                ui.zone(r, Act::Popup("fan"), Cur::Pointer);
+            }
+            w
         }
         // выбор обоев и Wallhaven — под баром у курсора
         "walls" | "wallhaven" => {

@@ -72,7 +72,8 @@ fn vslider(ui: &mut Ui, r: R, icon: &str, v: f32, off: bool, act: Act) {
 fn face_of(st: &State, k: &str, name: &'static str, icon: &'static str) -> (&'static str, &'static str) {
     match k {
         "theme" if st.set.light => ("sun", "светлая тема"),
-        "theme" => ("shade", "тёмная тема"),
+        "theme" => ("moon", "тёмная тема"),
+        "dnd" if !st.quiet() => ("bell", name),
         "mute" if st.audio.muted => ("mute", name),
         _ => (icon, name),
     }
@@ -140,6 +141,9 @@ pub fn draw(ui: &mut Ui, st: &State, b: R) {
     }
     let gx = b.x + 2 * (sw + 10);
     let tiles: Vec<(&String, &str, &str)> = st.set.control_tiles.iter().filter_map(|k| TILES.iter().find(|x| x.0 == k).map(|x| (k, x.1, x.2))).collect();
+    // три и больше в ряд — подписей нет ни у одной: значки одного размера, без подписи у части
+    let per_row = if tiles.len() <= 2 { tiles.len() } else { tiles.len().div_ceil(2) };
+    let labels = per_row < 3;
     for (rr, (k, name, icon)) in tile_rects(R::new(gx, y, b.right() - gx, h), tiles.len()).into_iter().zip(tiles) {
         let (icon, name) = face_of(st, k, name, icon);
         let lit = on(st, k);
@@ -148,7 +152,7 @@ pub fn draw(ui: &mut Ui, st: &State, b: R) {
         let fg = if lit { t.on_accent } else { t.text };
         // подпись — если влезает по ширине и есть место под значком; нет — один значок по центру
         let label = crate::i18n::tr(name);
-        let fits = ui.f.width(PX, label) <= rr.w - 12 && rr.h >= 64;
+        let fits = labels && ui.f.width(PX, label) <= rr.w - 12 && rr.h >= 64;
         let cell = if rr.w.min(rr.h) >= 120 { 4 } else if rr.w.min(rr.h) >= 64 { 3 } else { 2 };
         let iy = if fits { rr.cy() - cell * 7 / 2 - 10 } else { rr.cy() - cell * 7 / 2 };
         ui.cv.icon(icon, rr.x + (rr.w - cell * 7) / 2, iy, cell, fg);
@@ -205,9 +209,10 @@ impl App {
                 self.st.set.light = !self.st.set.light;
                 self.settings_changed();
             }
+            // как кнопка в баре: открыто — закрыть
             "settings" => {
                 self.close_popup();
-                self.open_settings();
+                self.toggle_settings();
             }
             "lock" => {
                 self.close_popup();

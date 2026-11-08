@@ -75,6 +75,13 @@ impl App {
             let hidden = self.st.game.fullscreen && self.output_names().iter().all(|n| *n == fo || !self.bar_on(n));
             self.st.sys.want_gpu = self.st.sys.has_gpu && self.uses("gpu") && !hidden;
             self.st.sys.sample();
+            // вентилятор: история копится, пока модуль в баре, — открытая всплывашка видит прошлое
+            if self.st.set.on_bar("fan") || self.st.popup_is("fan") {
+                self.st.fan.sample();
+                if self.st.popup_is("fan") {
+                    self.dirty(&SKind::Popup);
+                }
+            }
             self.wall_park();
             self.bat_check();
             // память видна только в настройках: не читать её каждую секунду зря

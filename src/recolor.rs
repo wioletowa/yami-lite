@@ -251,6 +251,43 @@ fn gtk(p: &Pal, on: bool) {
         let scheme = if p.light { "prefer-light" } else { "prefer-dark" };
         let _ = std::process::Command::new("gsettings").args(["set", "org.gnome.desktop.interface", "color-scheme", scheme]).output();
     }
+    if on {
+        gtk_variant(p.light);
+    }
+}
+
+/// тема GTK в пару к схеме: Electron (Discord, Claude) и старые программы смотрят не только на
+/// color-scheme, но и на имя темы (adw-gtk3-dark). Меняется только суффикс -dark у своей темы, и
+/// только если вторая из пары установлена. gtk-application-prefer-dark-theme — всегда 0: GTK
+/// читает его один раз при запуске программы, и Chromium на смене темы спрашивал бы старое «тёмная»
+/// поверх светлой схемы из портала — программа светлела и тут же темнела обратно
+fn gtk_variant(light: bool) {
+    let get = std::process::Command::new("gsettings").args(["get", "org.gnome.desktop.interface", "gtk-theme"]).output();
+    let cur = get.ok().map(|o| String::from_utf8_lossy(&o.stdout).trim().trim_matches('\'').to_string()).unwrap_or_default();
+    if let Some(want) = variant_name(&cur, light).filter(|w| theme_installed(w)) {
+        let _ = std::process::Command::new("gsettings").args(["set", "org.gnome.desktop.interface", "gtk-theme", &want]).output();
+    }
+    for v in ["gtk-3.0", "gtk-4.0"] {
+        let conf = cfg(v).join("settings.ini");
+        let Ok(t) = std::fs::read_to_string(&conf) else { continue };
+        let mut kv = vec![("gtk-application-prefer-dark-theme", "0".to_string())];
+        if let Some(want) = t.lines().find_map(|l| l.trim().strip_prefix("gtk-theme-name=")).and_then(|n| variant_name(n.trim(), light)).filter(|w| theme_installed(w)) {
+            kv.push(("gtk-theme-name", want));
+        }
+        set_ini(&conf, "Settings", &kv);
+    }
+}
+
+/// имя пары к теме: светлая — без -dark, тёмная — с ним; None — менять нечего
+fn variant_name(cur: &str, light: bool) -> Option<String> {
+    let base = cur.strip_suffix("-dark").unwrap_or(cur);
+    let want = if light { base.to_string() } else { format!("{base}-dark") };
+    (!base.is_empty() && want != cur).then_some(want)
+}
+
+fn theme_installed(name: &str) -> bool {
+    let home = std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default());
+    [home.join(".themes"), home.join(".local/share/themes"), std::path::PathBuf::from("/usr/share/themes")].iter().any(|d| d.join(name).is_dir())
 }
 
 fn qt(p: &Pal, on: bool) {
@@ -473,6 +510,14 @@ fn niri(p: &Pal, on: bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gtk_theme_pairs_by_dark_suffix() {
+        assert_eq!(variant_name("adw-gtk3-dark", true).as_deref(), Some("adw-gtk3"));
+        assert_eq!(variant_name("adw-gtk3", false).as_deref(), Some("adw-gtk3-dark"));
+        assert_eq!(variant_name("adw-gtk3", true), None);
+        assert_eq!(variant_name("", false), None);
+    }
 
     fn tmp(name: &str) -> PathBuf {
         let d = std::env::temp_dir().join(format!("yami-lite-recolor-{}-{name}", std::process::id()));

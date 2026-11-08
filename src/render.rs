@@ -153,11 +153,12 @@ impl App {
                 SKind::Osd => crate::notif::draw_osd(&mut ui, st, w, h),
                 SKind::Widget(wid) => crate::widgets::draw(&mut ui, st, *wid, w, h),
                 SKind::EditBar => crate::widgets::draw_editbar(&mut ui, st, w, h),
+                SKind::EditGrid => crate::widgets::draw_grid(&mut ui, st, w, h),
                 SKind::Dock => crate::dock::draw(&mut ui, st, w, h),
                 SKind::DockEdge => {}
             }
             // развёртка — только панели, не обои
-            if st.set.scanlines && !matches!(s.kind, SKind::Dim | SKind::Catcher | SKind::Wall | SKind::DockEdge) {
+            if st.set.scanlines && !matches!(s.kind, SKind::Dim | SKind::Catcher | SKind::Wall | SKind::EditGrid | SKind::DockEdge) {
                 ui.cv.scanlines(if st.t.light { 0.06 } else { 0.22 });
             }
             if k < 1.0 && !matches!(s.kind, SKind::Dim | SKind::Catcher) {

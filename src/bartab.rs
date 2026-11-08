@@ -66,7 +66,7 @@ pub(crate) fn chip(ui: &mut Ui, r: R, m: &str, lifted: bool) {
 
 /// есть ли у модуля свои настройки (шестерёнка)
 fn has_opts(m: &str) -> bool {
-    matches!(m, "workspaces" | "clock" | "cpu" | "ram" | "gpu" | "disk" | "temp" | "tray" | "media" | "bat" | "tasks" | "sep" | "launcher" | "notif" | "night")
+    matches!(m, "workspaces" | "clock" | "cpu" | "ram" | "gpu" | "disk" | "temp" | "tray" | "media" | "bat" | "tasks" | "sep" | "launcher" | "notif" | "night" | "fan")
 }
 
 const ROW: i32 = 30;
@@ -233,6 +233,7 @@ fn gear_dialog(ui: &mut Ui, st: &State, b: R, m: &str) {
             tog(ui, &mut y, "дата", s.clock_date, "clock_date");
         }
         "cpu" | "ram" | "gpu" | "disk" => opt(ui, &mut y, "вид", pick(&[("gauge", "шкала"), ("graph", "график"), ("number", "число")], &s.cpu_style), Act::Drop("cpu_style")),
+        "fan" => opt(ui, &mut y, "вид", pick(&[("gauge", "шкала"), ("graph", "график"), ("number", "число"), ("rpm", "значок и обороты")], &s.fan_style), Act::Drop("fan_style")),
         "temp" => opt(ui, &mut y, "вид", if s.temp_style == "compact" { "коротко" } else { "как у процессора" }, Act::Drop("temp_style")),
         "tray" => {
             let mode = match s.tray_mode.as_str() {

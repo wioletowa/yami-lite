@@ -45,6 +45,27 @@ pub(crate) fn tab_color(ui: &mut Ui, st: &State, b: R) {
     // та же галочка, что во вкладке «обои», пресет её снимает
     ui.toggle(R::new(b.x, y, b.w, 40), "палитра из обоев", "акцент из картинки, с новыми обоями — заново", s.wall_accent, Act::SWall("accent"));
     y += 50;
+    // цвета обоев по весу: щелчок — этот акцент (и тот же номер на следующих обоях); справа — второй
+    if !st.wall_cands.is_empty() {
+        ui.text_in(PX, R::new(b.x, y, 150, 30), "цвета обоев", t.text_dim);
+        let pick = (s.wall_pick as usize).min(st.wall_cands.len() - 1);
+        for (i, c) in st.wall_cands.iter().enumerate() {
+            let r = R::new(b.x + 150 + i as i32 * 44, y, 36, 30);
+            let sel = s.wall_accent && i == pick;
+            let hov = ui.hover(r);
+            let cc = C(0xff000000 | c);
+            ui.cv.pxbox(r, &BoxStyle::new(cc, if sel { t.text_hi } else if hov { t.red } else { t.border }).bevel(true));
+            if sel {
+                ui.cv.fill(R::new(r.x + 4, r.bottom() - 6, r.w - 8, 2), t.text_hi);
+            }
+            ui.zone(r, Act::SWallPick(i), Cur::Pointer);
+        }
+        let x2 = b.x + 150 + 5 * 44 + 20;
+        ui.text_in(PX, R::new(x2, y, 80, 30), "второй", t.text_dim);
+        let c2 = t.accent2;
+        ui.cv.pxbox(R::new(x2 + 70, y, 36, 30), &BoxStyle::new(c2, t.border).bevel(true));
+        y += 42;
+    }
     y = title(ui, b.x, y, b.w, "свой цвет");
     let ok = parse_hex(&st.hex.text).is_some();
     let focused = st.field_focus == Some("hex");

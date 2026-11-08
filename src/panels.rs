@@ -96,8 +96,12 @@ impl App {
         match kind {
             "net" => net::refresh_wifi(self.tx.clone()),
             "bt" => net::refresh_bt(self.tx.clone()),
-            "cal" => self.st.cal_month = 0,
+            "cal" => {
+                self.st.cal_month = 0;
+                self.st.cal_pick = None;
+            }
             "wallhaven" => self.wh_opened(),
+            "fan" => self.st.fan.sample(),
             _ => {}
         }
         self.viz_sync();

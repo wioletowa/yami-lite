@@ -131,18 +131,19 @@ impl Job {
     }
 }
 
-/// готовая картинка и (если просили) акцент из неё
-pub fn prepare(j: &Job) -> (Option<Img>, Option<u32>) {
+/// готовая картинка и цвета из неё (candidates; у сгенерированных — нет)
+pub fn prepare(j: &Job) -> (Option<Img>, Vec<u32>) {
     let bg = C(j.ramp[0]);
     if !j.own {
         // сгенерированные уже в палитре и в четверть экрана: только затемнение
         let mut i = generate(bg, C(j.ramp[3]), C(j.border), j.light);
         dim(&mut i, bg, j.dim);
-        return (Some(crate::icons::from_rgba(&i)), None);
+        return (Some(crate::icons::from_rgba(&i)), vec![]);
     }
-    let Ok(src) = image::open(&j.path) else { return (None, None) };
+    let Ok(src) = image::open(&j.path) else { return (None, vec![]) };
     let src = src.to_rgba8();
-    let accent = if j.accent { dominant(&image::imageops::thumbnail(&src, 64, 64)) } else { None };
+    // цвета нужны и без «палитры из обоев»: вкладка цвета показывает их образцами
+    let accent = candidates(&image::imageops::thumbnail(&src, 64, 64));
     let (sw, sh) = src.dimensions();
     let (tw, th) = ((j.w / j.cell).max(1), (j.h / j.cell).max(1));
     let filt = image::imageops::FilterType::Triangle;
@@ -228,40 +229,95 @@ fn dim(i: &mut RgbaImage, bg: C, k: f32) {
     }
 }
 
-/// главный цвет картинки: самый весомый тон среди насыщенных и не тёмных пикселей,
-/// доведённый до яркости, на которой акцент читается на тёмных панелях
-fn dominant(i: &RgbaImage) -> Option<u32> {
+/// серый акцент для бесцветных обоев: читается на тёмных панелях, без оттенка
+const GREY: u32 = 0xb4b4b4;
+
+/// корзины по 15° оттенка: вес и взвешенная сумма цвета. Пиксель голосует, если он не темнее
+/// min_v и не серее min_s; вес — насыщенность² × яркость (яркость — от самой светлой точки
+/// картинки, чтобы тёмные обои голосовали наравне со светлыми). Второе — сколько пикселей цветные
+fn hue_bins(i: &RgbaImage, min_v: f32, min_s: f32, top_v: f32) -> ([(f32, [f32; 3]); 24], usize) {
     let mut bins = [(0f32, [0f32; 3]); 24];
+    let mut coloured = 0;
     for p in i.pixels() {
         let [r, g, b] = [p.0[0] as f32 / 255.0, p.0[1] as f32 / 255.0, p.0[2] as f32 / 255.0];
         let (mx, mn) = (r.max(g).max(b), r.min(g).min(b));
         let s = if mx > 0.0 { (mx - mn) / mx } else { 0.0 };
-        if mx < 0.15 || s < 0.2 {
+        if mx < min_v || s < min_s {
             continue;
         }
+        coloured += 1;
         let h = hue(r, g, b, mx, mn);
-        let wt = s * s * mx;
+        let wt = s * s * (mx / top_v.max(1e-3)).min(1.0);
         let bin = &mut bins[((h / 15.0) as usize).min(23)];
         bin.0 += wt;
         for (c, v) in bin.1.iter_mut().zip([r, g, b]) {
             *c += v * wt;
         }
     }
-    let (wt, sum) = bins.iter().enumerate().map(|(k, _)| {
-        // соседние корзины вместе: тон на границе не делится пополам
-        let (a, b, c) = (bins[(k + 23) % 24], bins[k], bins[(k + 1) % 24]);
-        (a.0 * 0.5 + b.0 + c.0 * 0.5, b)
-    }).max_by(|a, b| a.0.total_cmp(&b.0))?;
-    let total: f32 = bins.iter().map(|b| b.0).sum();
-    if wt < 0.5 || total < 1.0 || sum.0 <= 0.0 {
-        return None;
+    (bins, coloured)
+}
+
+/// цвета картинки по весу, до 5: тона среди насыщенных пикселей, каждый доведён до яркости, на
+/// которой акцент читается на тёмных панелях. Первый — главный. Тёмные обои (красный узор по
+/// чёрному) — второй проход с низким порогом яркости; цвета нет вовсе — серый; цвета мало — серый
+/// последним вариантом
+fn candidates(i: &RgbaImage) -> Vec<u32> {
+    let n = (i.width() * i.height()).max(1) as usize;
+    let top_v = i.pixels().map(|p| p.0[0].max(p.0[1]).max(p.0[2])).max().unwrap_or(0) as f32 / 255.0;
+    // обычный проход: тёмное и серое не голосует
+    let (mut bins, mut coloured) = hue_bins(i, 0.15, 0.2, 1.0);
+    // цветных почти нет — тёмные обои: голосует всё, что не чёрное и заметно окрашено
+    if coloured * 100 < n {
+        (bins, coloured) = hue_bins(i, 0.03, 0.3, top_v);
     }
-    let [r, g, b] = sum.1.map(|v| v / sum.0);
-    let (mx, mn) = (r.max(g).max(b), r.min(g).min(b));
-    let h = hue(r, g, b, mx, mn);
-    let s = ((mx - mn) / mx.max(1e-3)).clamp(0.55, 0.9);
-    let v = mx.clamp(0.7, 0.92);
-    Some(hsv(h, s, v))
+    if coloured * 100 < n {
+        return vec![GREY];
+    }
+    // соседние корзины вместе: тон на границе не делится пополам
+    let mut order: Vec<(usize, f32)> = (0..24).map(|k| (k, bins[(k + 23) % 24].0 * 0.5 + bins[k].0 + bins[(k + 1) % 24].0 * 0.5)).collect();
+    order.sort_by(|a, b| b.1.total_cmp(&a.1));
+    let top = order[0].1;
+    // картинка в основном серая — серый тоже вариант, последним
+    let grey = coloured * 4 < n;
+    let room = if grey { 4 } else { 5 };
+    let mut taken: Vec<usize> = vec![];
+    let mut out = vec![];
+    for (k, wt) in order {
+        if out.len() == room || wt < top * 0.04 {
+            break;
+        }
+        // соседка уже взятой — тот же тон, не новый кандидат
+        if bins[k].0 <= 0.0 || taken.iter().any(|&t| (k + 24 - t) % 24 <= 1 || (t + 24 - k) % 24 <= 1) {
+            continue;
+        }
+        taken.push(k);
+        let sum = bins[k];
+        let [r, g, b] = sum.1.map(|v| v / sum.0);
+        let (mx, mn) = (r.max(g).max(b), r.min(g).min(b));
+        let h = hue(r, g, b, mx, mn);
+        let s = ((mx - mn) / mx.max(1e-3)).clamp(0.55, 0.9);
+        let v = mx.clamp(0.7, 0.92);
+        out.push(hsv(h, s, v));
+    }
+    if grey || out.is_empty() {
+        out.push(GREY);
+    }
+    out
+}
+
+/// второй акцент к выбранному кандидату: самый весомый из далёких по тону (от 60°); таких нет —
+/// None, тема возьмёт противоположный
+pub fn second(cands: &[u32], pick: usize) -> Option<u32> {
+    let h = |c: u32| {
+        let [r, g, b] = [((c >> 16) & 255) as f32 / 255.0, ((c >> 8) & 255) as f32 / 255.0, (c & 255) as f32 / 255.0];
+        let (mx, mn) = (r.max(g).max(b), r.min(g).min(b));
+        hue(r, g, b, mx, mn)
+    };
+    let base = h(*cands.get(pick)?);
+    cands.iter().enumerate().filter(|(i, _)| *i != pick).map(|(_, c)| *c).find(|c| {
+        let d = (h(*c) - base).abs();
+        d.min(360.0 - d) >= 60.0
+    })
 }
 
 fn hue(r: f32, g: f32, b: f32, mx: f32, mn: f32) -> f32 {
@@ -560,7 +616,7 @@ impl App {
         });
     }
 
-    pub fn wall_ready(&mut self, n: u64, img: Option<Img>, accent: Option<u32>) {
+    pub fn wall_ready(&mut self, n: u64, img: Option<Img>, cands: Vec<u32>) {
         if n != self.wall_job {
             return;
         }
@@ -598,14 +654,31 @@ impl App {
         self.dirty_panels();
         // новые обои: виджеты на них — в тон
         self.widget_contrast();
+        self.st.wall_cands = cands;
+        if accent_from_image(&self.st.set) {
+            let pick = self.st.set.wall_pick as usize;
+            self.wall_pick(pick);
+        }
+    }
+
+    /// акцент — i-й по весу цвет обоев (номер запоминается для следующих), второй — к нему
+    pub fn wall_pick(&mut self, i: usize) {
+        let cands = &self.st.wall_cands;
+        if cands.is_empty() {
+            return;
+        }
+        let at = i.min(cands.len() - 1);
+        let hex = format!("#{:06x}", cands[at]);
+        let hex2 = second(cands, at).map(|c| format!("#{c:06x}")).unwrap_or_default();
         let s = &mut self.st.set;
-        if let (Some(a), true) = (accent, accent_from_image(s)) {
-            let hex = format!("#{a:06x}");
-            if hex != s.accent {
-                s.accent = hex.clone();
-                self.st.hex.set(&hex);
-                self.settings_changed();
-            }
+        let changed = hex != s.accent || hex2 != s.accent2 || !s.wall_accent || s.wall_pick != i as u32;
+        s.wall_accent = true;
+        s.wall_pick = i as u32;
+        s.accent = hex.clone();
+        s.accent2 = hex2;
+        if changed {
+            self.st.hex.set(&hex);
+            self.settings_changed();
         }
     }
 
@@ -660,7 +733,12 @@ impl App {
                 self.set_wall("");
                 return true;
             }
-            "accent" => s.wall_accent = !s.wall_accent,
+            "accent" => {
+                s.wall_accent = !s.wall_accent;
+                if !s.wall_accent {
+                    s.accent2.clear();
+                }
+            }
             _ => return false,
         }
         self.settings_changed();
@@ -671,6 +749,30 @@ impl App {
 #[cfg(test)]
 mod tests {
     use yami_px::gfx::{Img, C};
+
+    #[test]
+    fn wallpaper_colours_by_weight_and_a_far_second() {
+        // три четверти оранжевого, четверть синего, серое не голосует
+        let img = image::RgbaImage::from_fn(64, 64, |x, y| match (x < 48, y < 60) {
+            (_, false) => image::Rgba([120, 120, 120, 255]),
+            (true, _) => image::Rgba([230, 140, 40, 255]),
+            (false, _) => image::Rgba([40, 110, 230, 255]),
+        });
+        let c = super::candidates(&img);
+        assert_eq!(c.len(), 2, "{c:x?}");
+        let hue = |v: u32| if (v >> 16) & 255 > v & 255 { "warm" } else { "cold" };
+        assert_eq!((hue(c[0]), hue(c[1])), ("warm", "cold"));
+        assert_eq!(super::second(&c, 0), Some(c[1]));
+        assert_eq!(super::second(&c, 1), Some(c[0]));
+        assert_eq!(super::second(&c[..1], 0), None);
+        // серая картинка — серый акцент, а не «ничего»
+        assert_eq!(super::candidates(&image::RgbaImage::from_pixel(8, 8, image::Rgba([90, 90, 90, 255]))), vec![super::GREY]);
+        // тёмно-красный узор по чёрному (ярче 13% нет ничего) — красный главный, серый последним
+        let dark = image::RgbaImage::from_fn(64, 64, |x, y| if (x * 7 + y * 3) % 5 == 0 { image::Rgba([30, 2, 2, 255]) } else { image::Rgba([3, 0, 0, 255]) });
+        let c = super::candidates(&dark);
+        assert!(c.len() >= 2 && c[0] != super::GREY && *c.last().unwrap() == super::GREY, "{c:x?}");
+        assert!((c[0] >> 16) & 255 > 150 && (c[0] >> 8) & 255 < 60, "{:06x}", c[0]);
+    }
     #[test]
     fn generated_wallpaper_glows_in_the_accent() {
         let (bg, acc) = (C(0xff101010), C(0xffd0352d));

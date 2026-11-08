@@ -58,6 +58,7 @@ mod tick;
 mod ui;
 mod wall;
 mod wallhaven;
+mod fan;
 mod walls;
 mod themetab;
 mod widgets;
