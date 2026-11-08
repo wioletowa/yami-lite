@@ -33,6 +33,8 @@ pub enum Act {
     SOsd(&'static str),
     /// шрифт шелла из списка ("" — Tiny5, "sans" — системный); колесо над списком
     SFont(String),
+    /// открыть список шрифтов: font_shell или font_widgets
+    SFontOpen(&'static str),
     SFontScroll,
     /// настройки → цвет → программы: красить ли эту программу (recolor::APPS)
     SThemeApp(&'static str),

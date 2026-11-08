@@ -185,8 +185,9 @@ pub(crate) fn tab_widgets(ui: &mut Ui, st: &State, b: R) {
     ui.button(R::new(px + bw + 6, y, bw, 28), "на место", "reboot", Tone::Plain, false, true, Act::SResetPos);
     ui.button(R::new(px + 2 * (bw + 6), y, bw, 28), "убрать", "trash", Tone::Danger, false, true, Act::SWidgetDel(id));
     y += 44;
-    // для всех виджетов без подложки: читаемы на любых обоях
-    y = title(ui, px, y, pw, "без подложки");
+    // для всех виджетов: шрифт и читаемость без подложки
+    y = title(ui, px, y, pw, "все виджеты");
+    y += crate::fonttab::row(ui, st, R::new(px, y, pw, 26), "font_widgets", "шрифт") + 8;
     ui.toggle(R::new(px, y, pw, 40), "в тон обоям", "на светлом месте — тёмный текст, у букв тень", s.widget_contrast, Act::SBool("widget_contrast"));
 }
 
@@ -195,7 +196,7 @@ pub(crate) fn tab_look(ui: &mut Ui, st: &State, b: R) {
     let s = &st.set;
     let half = (b.w - 20) / 2;
     let mut y = title(ui, b.x, b.y, b.w, "шрифт и значки");
-    y += crate::fonttab::row(ui, st, R::new(b.x, y, b.w, 26)) + 8;
+    y += crate::fonttab::row(ui, st, R::new(b.x, y, b.w, 26), "font_shell", "шрифт шелла") + 8;
     ui.toggle(R::new(b.x, y, half, 40), "пиксельные значки", "значки программ — 16×16 в тонах палитры", s.icon_pixel, Act::SBool("icon_pixel"));
     ui.toggle(R::new(b.x + half + 20, y, half, 40), "значки в цвет палитры", "", s.icon_tint, Act::SBool("icon_tint"));
     y += 50;

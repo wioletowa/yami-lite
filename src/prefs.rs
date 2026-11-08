@@ -15,6 +15,11 @@ impl App {
             self.res.font = s.font_shell.clone();
             self.res.fonts = Fonts::with(&self.res.font);
         }
+        let wf = if s.font_widgets.is_empty() { s.font_shell.clone() } else { s.font_widgets.clone() };
+        if wf != self.res.wfont {
+            self.res.wfonts = Fonts::with(&wf);
+            self.res.wfont = wf;
+        }
         self.st.t = Theme::new(s.accent_rgb(), s.tint, s.glass, s.lift, s.inner, s.light).apply();
         yami_px::gfx::set_reveal(yami_px::gfx::Reveal::from_id(&s.reveal), s.reveal_grain);
         // набор значков системы сменился — собрать заново

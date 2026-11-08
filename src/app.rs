@@ -167,6 +167,9 @@ pub struct Res {
     pub icons: Icons,
     /// семейство, из которого собраны fonts (fontShell)
     pub font: String,
+    /// шрифты виджетов стола (fontWidgets; "" — как у шелла) и их семейство
+    pub wfonts: Fonts,
+    pub wfont: String,
     /// набор значков системы, из которого собраны icons
     pub iset: String,
 }
@@ -264,7 +267,8 @@ pub struct State {
     /// своя команда лаунчера (настройки → бар)
     pub launcher_field: Field,
     /// список шрифтов во вкладке «вид»: открыт ли, поиск, первая видимая строка
-    pub font_open: bool,
+    /// какой список открыт: font_shell или font_widgets
+    pub font_open: Option<&'static str>,
     pub font_search: Field,
     pub font_scroll: usize,
     pub game_field: Field,
@@ -447,7 +451,7 @@ impl State {
             reply: Default::default(),
             geo_field: Field::default(),
             launcher_field: Field::default(),
-            font_open: false,
+            font_open: None,
             font_search: Field::default(),
             font_scroll: 0,
             game_field: Field::default(),
@@ -502,6 +506,7 @@ pub fn run() {
     icons.set_style(Theme::new(set.accent_rgb(), set.tint, set.glass, set.lift, set.inner, set.light).icon_ramp(), set.icon_pixel, set.icon_tint);
     let set_saved = set.to_json();
     let set_font = set.font_shell.clone();
+    let set_wfont = if set.font_widgets.is_empty() { set.font_shell.clone() } else { set.font_widgets.clone() };
 
     let niri = Niri::new();
 
@@ -542,7 +547,7 @@ pub fn run() {
         press: None,
         kb_surf: None,
         mods: Modifiers::default(),
-        res: Res { fonts: Fonts::with(&set_font), icons, font: set_font, iset },
+        res: Res { fonts: Fonts::with(&set_font), wfonts: Fonts::with(&set_wfont), wfont: set_wfont, icons, font: set_font, iset },
         st,
         set_saved,
         set_seen: Settings::default(),

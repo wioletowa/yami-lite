@@ -84,7 +84,8 @@ impl App {
         {
             let mut ui = Ui {
                 cv: Canvas::new(buf, bw, bh),
-                f: &mut self.res.fonts,
+                // виджеты стола — своим шрифтом (fontWidgets)
+                f: if matches!(s.kind, SKind::Widget(_)) { &mut self.res.wfonts } else { &mut self.res.fonts },
                 ic: &mut self.res.icons,
                 t: self.st.t,
                 zones: vec![],

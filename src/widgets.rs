@@ -675,7 +675,7 @@ impl App {
         let top = self.bar_bottom(&out);
         let mut auto_y = top + 40;
         for w in want {
-            let (ww, wh) = size_of(&w, &mut self.res.fonts);
+            let (ww, wh) = size_of(&w, &mut self.res.wfonts);
             let (mut x, mut y) = (w.x, w.y);
             if x < 0 || y < 0 {
                 // место по умолчанию
@@ -733,7 +733,7 @@ impl App {
     pub fn open_widget_menu(&mut self, id: u32) {
         let Some(w) = self.st.set.widgets.iter().find(|w| w.id == id).cloned() else { return };
         let (x, y) = self.surfs.values().find(|s| s.kind == SKind::Widget(id)).map(|s| s.margin).unwrap_or((100, 100));
-        let (ww, _) = size_of(&w, &mut self.res.fonts);
+        let (ww, _) = size_of(&w, &mut self.res.wfonts);
         let out = self.focus_out();
         let title = crate::tf!("виджет: {}", "widget: {}", crate::i18n::tr(name_of(KINDS, &w.kind)));
         self.open_menu(MenuState::new(&out, x + ww - 30, y + 30, &title, widget_menu(&w)));

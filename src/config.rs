@@ -237,6 +237,8 @@ pub struct Settings {
     // шрифты (вкладка «шрифты»): семейства fontconfig, "" — по умолчанию
     /// шелл: "" — Tiny5 (пиксельный)
     pub font_shell: String,
+    /// виджеты рабочего стола: "" — как у шелла, иначе семейство
+    pub font_widgets: String,
 
     // виджеты рабочего стола
     pub widgets: Vec<Widget>,
@@ -435,6 +437,7 @@ impl Default for Settings {
             control_tiles: ["wifi", "bt", "dnd", "night", "mic", "theme"].map(String::from).to_vec(),
             dock_trash: true,
             font_shell: String::new(),
+            font_widgets: String::new(),
             dock_pins: ["yami-files", "kitty", "librewolf", "firefox", "chromium", "org.telegram.desktop", "steam", "yami-view"].iter().map(|s| s.to_string()).collect(),
             widgets: vec![
                 Widget { id: 1, x: 48, y: 72, frame: false, ..Widget::new(1, "clock") },
@@ -488,6 +491,7 @@ impl Settings {
             }
         };
         name(&mut self.font_shell);
+        name(&mut self.font_widgets);
         self.lang = yami_px::i18n::normalize(&self.lang).into();
         if !self.accent.is_empty() && crate::theme::parse_hex(&self.accent).is_none() {
             self.accent.clear();

@@ -110,7 +110,7 @@ impl App {
                 }
                 self.settings_changed();
             }
-            Act::SCycle("font_open") => self.font_toggle(),
+            Act::SFontOpen(k) => self.font_toggle(k),
             Act::SFont(n) => self.font_pick(n.clone()),
             Act::SCycle(k) => match *k {
                 "cpu_style" => {
