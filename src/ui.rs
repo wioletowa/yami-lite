@@ -84,7 +84,6 @@ pub enum Act {
     WhExact,
     WhPage(i32),
     WhPick(String),
-    WhScroll,
     /// настройки → бар: плитка панели управления вкл/выкл
     SCtlTile(&'static str),
     /// индикатор приватности в баре: «mic», «screen», «cam» (наведение — кто)

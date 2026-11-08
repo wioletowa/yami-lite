@@ -13,9 +13,11 @@ use std::rc::Rc;
 
 pub const SIZE: (i32, i32) = (760, 700);
 const API: &str = "https://wallhaven.cc/api/v1/search";
-/// сетка 4 в ширину, 5 рядов на виду; страница API (24) листается колесом
+/// сетка 4×5: своя страница — 20 картинок; у API страница — 24, своя собирается из одной-двух его
 const COLS: i32 = 4;
 const ROWS: i32 = 5;
+const PER: usize = (COLS * ROWS) as usize;
+const API_PER: usize = 24;
 
 pub const SORTS: &[(&str, &str)] = &[("date_added", "дата добавления"), ("relevance", "по запросу"), ("random", "случайно"), ("views", "просмотры"), ("favorites", "в избранном"), ("toplist", "лучшие"), ("hot", "популярное")];
 pub const RATIOS: &[(&str, &str)] = &[("", "любое"), ("landscape", "широкие"), ("portrait", "вертикальные"), ("16x9", "16:9"), ("16x10", "16:10"), ("21x9", "21:9"), ("32x9", "32:9"), ("9x16", "9:16"), ("1x1", "1:1"), ("3x2", "3:2"), ("4x3", "4:3")];
@@ -53,13 +55,11 @@ pub struct Wh {
     pub applying: Option<String>,
     /// номер запроса: ответы прошлых — мимо
     pub gen: u64,
-    /// первый видимый ряд сетки
-    pub top: i32,
 }
 
 impl Default for Wh {
     fn default() -> Wh {
-        Wh { query: Field::default(), width: Field::default(), height: Field::default(), cats: [true, true, false], purity: [true, false, false], sort: 0, desc: true, ratio: 1, exact: false, page: 1, last: 1, items: vec![], thumbs: HashMap::new(), loading: false, err: String::new(), applying: None, gen: 0, top: 0 }
+        Wh { query: Field::default(), width: Field::default(), height: Field::default(), cats: [true, true, false], purity: [true, false, false], sort: 0, desc: true, ratio: 1, exact: false, page: 1, last: 1, items: vec![], thumbs: HashMap::new(), loading: false, err: String::new(), applying: None, gen: 0 }
     }
 }
 
@@ -82,8 +82,8 @@ fn download_dir(st: &State) -> PathBuf {
 }
 
 /// запрос страницы: (найденное, последняя страница) или ошибка
-fn search(params: Vec<(&'static str, String)>, key: String) -> Result<(Vec<Item>, u32), String> {
-    let mut c = crate::proc::curl_get(20, 4 << 20, API, &params);
+fn search(params: &[(&'static str, String)], key: &str) -> Result<(Vec<Item>, u32), String> {
+    let mut c = crate::proc::curl_get(20, 4 << 20, API, params);
     c.args(["-f", "-H", "Accept: application/json"]);
     if !key.is_empty() {
         c.arg("-H").arg(format!("X-API-Key: {key}"));
@@ -108,7 +108,8 @@ fn search(params: Vec<(&'static str, String)>, key: String) -> Result<(Vec<Item>
                 .collect()
         })
         .unwrap_or_default();
-    Ok((items, v["meta"]["last_page"].as_u64().unwrap_or(1).max(1) as u32))
+    // всего найдено — из него число своих страниц по 20
+    Ok((items, v["meta"]["total"].as_u64().unwrap_or(0) as u32))
 }
 
 /// миниатюра: из кеша или скачать, потом вырезать под клетку
@@ -202,9 +203,8 @@ pub fn draw(ui: &mut Ui, st: &State, b: R) {
         };
         ui.text_center(PX, R::new(g.x, g.y + g.h / 2 - 10, g.w, 20), &msg, if wh.err.is_empty() { t.text_faint } else { t.ember });
     }
-    ui.zone(g, Act::WhScroll, Cur::Default);
     for (i, it) in wh.items.iter().enumerate() {
-        let Some(r) = cell(g, i as i32, wh.top) else { continue };
+        let Some(r) = cell(g, i as i32, 0) else { continue };
         let hov = ui.hover(r);
         let busy = wh.applying.as_deref() == Some(it.id.as_str());
         // рамка по чистоте: сомнительные — жёлтая, NSFW — красная
@@ -231,13 +231,6 @@ pub fn draw(ui: &mut Ui, st: &State, b: R) {
             ui.cv.text_in(ui.f, PX, R::new(band.x + 6, band.y, band.w - 8, band.h), &label, t.text);
         }
         ui.zone(r, Act::WhPick(it.id.clone()), Cur::Pointer);
-    }
-    // полоса прокрутки, если рядов больше, чем видно
-    let rows = (wh.items.len() as i32 + COLS - 1) / COLS;
-    if rows > ROWS {
-        let th = g.h * ROWS / rows;
-        let ty = g.y + (g.h - th) * wh.top / (rows - ROWS);
-        ui.cv.fill(R::new(g.right() + 6, ty, 3, th), t.red);
     }
     // страницы
     let fy = b.bottom() - 28;
@@ -273,8 +266,8 @@ impl App {
         let sort = SORTS[wh.sort].0;
         let q = wh.query.text.trim().to_string();
         // без запроса «по запросу» отдаёт пустую первую страницу (как замечено в плагине Noctalia)
-        let api_page = if sort == "relevance" && q.is_empty() { wh.page + 1 } else { wh.page };
-        let mut p: Vec<(&'static str, String)> = vec![("categories", bits(&cats)), ("purity", bits(&purity)), ("sorting", sort.into()), ("order", if wh.desc { "desc" } else { "asc" }.into()), ("page", api_page.to_string())];
+        let skip = (sort == "relevance" && q.is_empty()) as usize;
+        let mut p: Vec<(&'static str, String)> = vec![("categories", bits(&cats)), ("purity", bits(&purity)), ("sorting", sort.into()), ("order", if wh.desc { "desc" } else { "asc" }.into())];
         if !q.is_empty() {
             p.push(("q", q));
         }
@@ -285,9 +278,36 @@ impl App {
         if let (Some(w), Some(h)) = (w.filter(|x| *x > 0), h.filter(|x| *x > 0)) {
             p.push((if wh.exact { "resolutions" } else { "atleast" }, format!("{w}x{h}")));
         }
+        // своя страница — картинки [from, from + 20) общего списка: одна-две страницы API
+        let from = (wh.page as usize - 1) * PER;
+        let (a1, a2) = (from / API_PER + 1, (from + PER - 1) / API_PER + 1);
         let (gen, tx) = (wh.gen, self.tx.clone());
         std::thread::spawn(move || {
-            let r = search(p, key);
+            let mut all: Vec<Item> = vec![];
+            let mut total = 0;
+            let mut err = None;
+            for a in a1..=a2 {
+                let mut q = p.clone();
+                q.push(("page", (a + skip).to_string()));
+                match search(&q, &key) {
+                    Ok((items, t)) => {
+                        all.extend(items);
+                        total = t;
+                    }
+                    Err(e) => {
+                        err = Some(e);
+                        break;
+                    }
+                }
+            }
+            let off = from - (a1 - 1) * API_PER;
+            let page: Vec<Item> = all.into_iter().skip(off).take(PER).collect();
+            let total = (total as usize).saturating_sub(skip * API_PER);
+            let last = total.div_ceil(PER).max(1) as u32;
+            let r = match err {
+                Some(e) if page.is_empty() => Err(e),
+                _ => Ok((page, last)),
+            };
             let items = r.as_ref().map(|x| x.0.clone()).unwrap_or_default();
             let _ = tx.send(Msg::WhResults(gen, r));
             // миниатюры по одной, ровно под окно клетки сетки
@@ -309,11 +329,9 @@ impl App {
         }
         wh.loading = false;
         wh.thumbs.clear();
-        wh.top = 0;
         match r {
             Ok((items, last)) => {
-                let rel = SORTS[wh.sort].0 == "relevance" && wh.query.text.trim().is_empty();
-                wh.last = if rel { last.saturating_sub(1).max(1) } else { last };
+                wh.last = last;
                 wh.items = items;
             }
             Err(e) => {
@@ -396,13 +414,6 @@ impl App {
         true
     }
 
-    /// колесо над сеткой: ряд за шаг
-    pub fn wh_scroll(&mut self, d: i32) {
-        let wh = &mut self.st.wh;
-        let rows = (wh.items.len() as i32 + COLS - 1) / COLS;
-        wh.top = (wh.top + d).clamp(0, (rows - ROWS).max(0));
-        self.dirty(&SKind::Popup);
-    }
 
     /// ввод в полях поиска: Enter — искать
     pub fn wh_key(&mut self, e: &smithay_client_toolkit::seat::keyboard::KeyEvent) -> bool {
