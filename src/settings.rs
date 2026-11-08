@@ -108,7 +108,11 @@ fn scrollbar(ui: &mut Ui, r: R, view: i32, full: i32, at: i32) {
 pub fn draw(ui: &mut Ui, st: &State, w: i32, h: i32) {
     let t = ui.t;
     let fr = R::new(0, 0, w, h);
-    // окно, а не панель: без тени, на всю поверхность
+    // окно, а не панель: без тени, на всю поверхность; размытие под всем окном (у панелей его
+    // просит тень pxbox, у окна тени нет)
+    if t.glass_bg().a() < 255 {
+        ui.cv.blur_rect(fr, 0);
+    }
     ui.cv.pxbox(fr, &BoxStyle::new(t.glass_bg(), t.border));
     ui.zone(fr, Act::Block, Cur::Default);
     let sub = crate::tf!("yami-lite {} · {:.0} МБ", "yami-lite {} · {:.0} MB", env!("CARGO_PKG_VERSION"), st.rss);
