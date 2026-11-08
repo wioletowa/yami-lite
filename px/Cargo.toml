@@ -1,0 +1,15 @@
+[package]
+name = "yami-px"
+version = "2.7.0"
+edition = "2021"
+description = "Pixel canvas, fonts, theme and immediate-mode UI shared by the yami shell and apps"
+license = "MIT"
+publish = false
+
+[dependencies]
+ab_glyph = "0.2"
+resvg = { version = "0.45", default-features = false }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+serde = "1"
+serde_json = "1"
+libc = "0.2"

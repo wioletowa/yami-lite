@@ -1,0 +1,331 @@
+// Настройки: группы вкладок слева, содержимое справа. Всё применяется сразу и пишется в
+// ~/.config/yami-shell.json (его можно править и руками — шелл подхватит).
+//
+// Вкладка — строка в GROUPS: ключ, имя, значок, слова для поиска и функция рисования (каждая в
+// своём модуле). Содержимое листается колесом: сколько его, узнаём по зонам, которые вкладка
+// нарисовала (Canvas::reach), так что новая строка настроек сама удлиняет прокрутку.
+
+use crate::app::{App, Modal, SKind, State};
+use crate::font::PX;
+use crate::gfx::{BoxStyle, R};
+use crate::ui::{Act, Cur, Tone, Ui};
+pub use crate::bartab::{BDrag, BarEd};
+use crate::settabs::{tab_about, tab_color, tab_dock, tab_look, tab_notif, tab_shots, tab_system, tab_widgets, tab_windows};
+use smithay_client_toolkit::seat::keyboard::{KeyEvent, Keysym};
+
+pub const SIZE: (i32, i32) = (800, 600);
+const SIDE_W: i32 = 168;
+const ROW_H: i32 = 26;
+const HEAD_H: i32 = 22;
+/// шаг колеса, пикселей
+const WHEEL: i32 = 48;
+
+pub struct Tab {
+    pub id: &'static str,
+    pub name: &'static str,
+    pub icon: &'static str,
+    /// слова для поиска из лаунчера («?vrr» → экраны), по-русски и по-английски
+    pub find: &'static str,
+    pub draw: fn(&mut Ui, &State, R),
+    /// у вкладки свой список с прокруткой (клавиши): общую не включать
+    pub own_scroll: bool,
+}
+
+const fn tab(id: &'static str, name: &'static str, icon: &'static str, find: &'static str, draw: fn(&mut Ui, &State, R)) -> Tab {
+    Tab { id, name, icon, find, draw, own_scroll: false }
+}
+
+/// группы по смыслу: как выглядит, рабочий стол, что делают руки, система
+pub const GROUPS: &[(&str, &[Tab])] = &[
+    (
+        "внешний вид",
+        &[
+            tab("color", "цвет", "drop", "палитра акцент цвет тема темы шаблон светлая тёмная стекло прозрачность плотность palette accent colour color theme themes template light dark glass opacity paleta destaque cor cores tema temas modelo claro escuro vidro transparência", tab_color), // i18n-ok
+            tab("wall", "обои", "image", "обои картинка фон папка миниатюры skwd skwd-wall видео wallpaper background image folder thumbnails picker video papel parede imagem fundo pasta miniaturas seletor vídeo", crate::wall::tab), // i18n-ok
+            tab("look", "вид", "eye", "пиксельность пиксели лёгкий режим слабый тормозит виртуалка анимации эффекты появление развёртка размытие значки иконки курсор pixel pixelation lite slow lag vm animation effects reveal scanlines blur icons cursor visual aparência pixels pixelização leve lento animação efeitos desfoque ícones cursor", tab_look), // i18n-ok
+            tab("fonts", "шрифты", "text", "шрифт размер терминал fastfetch браузер fonts size terminal browser fonte fontes tamanho terminal navegador", crate::fonttab::tab), // i18n-ok
+        ],
+    ),
+    (
+        "рабочий стол",
+        &[
+            tab("bar", "бар", "menu", "бар модули часы разделитель плавающий плашка ширина центр трей стрелка температура bar modules clock separator floating pill width center tray arrow temperature barra módulos relógio separador flutuante largura centro bandeja temperatura", crate::bartab::tab_bar), // i18n-ok
+            tab("widgets", "виджеты", "grid", "виджеты график часы заметка widgets graph clock note widgets gráfico relógio nota", tab_widgets), // i18n-ok
+            tab("dock", "док", "tile", "док закреплённые dock pinned dock fixados", tab_dock), // i18n-ok
+            tab("windows", "окна", "float", "окна отступы плавающие стол заголовки углы скругление рамка gaps floating stacking windows titlebars corners rounded radius border janelas espaço flutuantes títulos cantos arredondados borda mosaico", tab_windows), // i18n-ok
+            tab("screens", "экраны", "screen", "экраны монитор разрешение частота масштаб vrr hz герц поворот display monitor resolution refresh scale rotation telas tela monitor resolução frequência escala rotação", crate::displays::tab), // i18n-ok
+        ],
+    ),
+    (
+        "действия",
+        &[
+            Tab { own_scroll: true, ..tab("keys", "клавиши", "keys", "клавиши сочетания хоткеи раскладка keys shortcuts hotkeys layout keyboard teclas atalhos teclado layout disposição", crate::keys::tab) }, // i18n-ok
+            tab("shots", "скриншоты", "camera", "скриншоты снимок лупа screenshot loupe captura capturas tela imagem lupa", tab_shots), // i18n-ok
+            tab("games", "игры", "play", "игры steam proton разрывы gamemode ntsync tearing games shader jogos jogo cortes shader", crate::games::tab), // i18n-ok
+        ],
+    ),
+    (
+        "система",
+        &[
+            tab("system", "система", "gear", "система язык сон блокировка ожидание ночной свет system language idle sleep lock night light sistema idioma língua português brasileiro brasil suspender bloqueio inatividade luz noturna", tab_system), // i18n-ok
+            tab("login", "экран входа", "lock", "экран входа вход логин greetd пользователи пароль numlock вуаль менеджер входа login screen greeter display manager users password numlock veil tela de login entrada greetd usuários senha numlock véu gerenciador de login", crate::login::tab), // i18n-ok
+            tab("notif", "уведомления", "bell", "уведомления не беспокоить место история osd громкость яркость notifications do not disturb position history osd volume brightness notificações notificação perturbe posição histórico volume brilho", tab_notif), // i18n-ok
+            tab("agents", "службы", "bolt", "службы трей polkit порталы флешки телефоны автоподключение обложки тексты погода services tray portals automount drives phones covers lyrics weather serviços serviço bandeja portais discos telefones montagem capas letras clima", crate::agents::tab), // i18n-ok
+            tab("updates", "обновления", "down", "обновления версия откат updates version rollback atualizações atualizar versão reverter", crate::update::tab), // i18n-ok
+            tab("about", "о шелле", "about", "о шелле версия память about version memory sobre versão memória", tab_about), // i18n-ok
+        ],
+    ),
+];
+
+/// все вкладки подряд
+pub fn tabs() -> impl Iterator<Item = &'static Tab> {
+    GROUPS.iter().flat_map(|g| g.1.iter())
+}
+
+/// вкладка по ключу (из IPC, лаунчера, `shot settings:<id>`)
+pub fn find(id: &str) -> Option<&'static Tab> {
+    tabs().find(|t| t.id == id)
+}
+
+/// где рисовать содержимое (видимая часть) — общее для рисования и колеса
+fn body_rect(w: i32, h: i32) -> R {
+    let fr = R::new(0, 0, w - 6, h - 6);
+    R::new(1 + SIDE_W + 20, 48, fr.right() - SIDE_W - 1 - 48, fr.h - 64)
+}
+
+fn side_rect(h: i32) -> R {
+    R::new(1, 31, SIDE_W, h - 6 - 32)
+}
+
+/// прокрутка открытой вкладки (сдвиг запомнен для неё; другая вкладка начинается сверху)
+pub fn scroll_of(st: &State) -> i32 {
+    if st.sscroll.1 == st.stab {
+        st.sscroll.0
+    } else {
+        0
+    }
+}
+
+/// полоса прокрутки: клетки дорожки и бегунок
+fn scrollbar(ui: &mut Ui, r: R, view: i32, full: i32, at: i32) {
+    let t = ui.t;
+    if full <= view {
+        return;
+    }
+    ui.cv.fill(R::new(r.x + 1, r.y, 2, r.h), t.border.alpha(0.5));
+    let th = (r.h * view / full).max(18);
+    let ty = r.y + (r.h - th) * at / (full - view).max(1);
+    ui.cv.fill(R::new(r.x, ty, 4, th), t.red);
+}
+
+pub fn draw(ui: &mut Ui, st: &State, w: i32, h: i32) {
+    let t = ui.t;
+    let fr = R::new(0, 0, w - 6, h - 6);
+    ui.frame(fr, false);
+    let sub = crate::tf!("yami {} · {:.0} МБ", "yami {} · {:.0} MB", "yami {} · {:.0} MB", env!("CARGO_PKG_VERSION"), st.rss);
+    ui.header(R::new(1, 1, fr.w - 2, 30), "gear", "настройки", &sub);
+    // за заголовок окно двигается (крестик зарегистрирован позже — он сверху)
+    ui.zone(R::new(1, 1, fr.w - 2, 30), Act::MDrag, Cur::Default);
+    ui.ghost(R::new(fr.right() - 28, 5, 24, 22), "close", Act::CloseModal);
+    // вкладки группами; список длиннее окна — листается колесом
+    let side = side_rect(h);
+    ui.cv.fill(side, t.panel.alpha(0.5));
+    ui.cv.fill(R::new(side.right(), side.y, 1, side.h), t.border);
+    ui.zone(side, Act::SSideScroll, Cur::Default);
+    ui.cv.push_clip(side);
+    let mut y = side.y + 8 - st.stab_scroll;
+    for (gname, tabs) in GROUPS {
+        ui.cv.fill(R::new(side.x + 12, y + 8, 4, 4), t.red.alpha(0.7));
+        ui.text_in(PX, R::new(side.x + 22, y, side.w - 30, HEAD_H - 4), gname, t.text_faint);
+        y += HEAD_H;
+        for tb in tabs.iter() {
+            let r = R::new(side.x + 8, y, side.w - 16, ROW_H - 2);
+            ui.button(r, tb.name, tb.icon, Tone::Ghost, st.stab == tb.id, true, Act::STab(tb.id));
+            if st.stab == tb.id {
+                ui.cv.fill(R::new(r.x - 8, r.y, 3, r.h), t.red);
+            }
+            y += ROW_H;
+        }
+        y += 6;
+    }
+    let side_full = y + st.stab_scroll - side.y;
+    st.stab_h.set(side_full);
+    ui.cv.pop_clip();
+    scrollbar(ui, R::new(side.right() - 5, side.y + 2, 4, side.h - 4), side.h, side_full, st.stab_scroll);
+    // содержимое: фон-зона для колеса, вкладка со сдвигом, полоса прокрутки справа
+    let body = body_rect(w, h);
+    let tb = find(st.stab).unwrap_or(&GROUPS[0].1[0]);
+    let off = if tb.own_scroll { 0 } else { scroll_of(st) };
+    ui.zone(R::new(side.right() + 1, 31, fr.right() - side.right() - 2, fr.h - 32), Act::SScroll, Cur::Default);
+    ui.cv.push_clip(R::new(body.x - 4, body.y - 4, body.w + 8, body.h + 8));
+    ui.cv.reach = i32::MIN;
+    (tb.draw)(ui, st, R::new(body.x, body.y - off, body.w, body.h));
+    let full = if tb.own_scroll { body.h } else { (ui.cv.reach + off + 12 - body.y).max(body.h) };
+    st.sscroll_h.set(full);
+    ui.cv.pop_clip();
+    scrollbar(ui, R::new(body.right() + 18, body.y, 4, body.h), body.h, full, off);
+}
+
+impl App {
+    /// колесо над вкладкой: листать, если есть куда (true — пролистали)
+    pub fn settings_scroll(&mut self, d: i32) -> bool {
+        let (w, h) = SIZE;
+        let view = body_rect(w, h).h;
+        let max = (self.st.sscroll_h.get() - view).max(0);
+        if max == 0 || find(self.st.stab).is_some_and(|t| t.own_scroll) {
+            return false;
+        }
+        let at = (scroll_of(&self.st) + d * WHEEL).clamp(0, max);
+        self.st.sscroll = (at, self.st.stab);
+        self.dirty(&SKind::Modal);
+        true
+    }
+
+    /// колесо над списком вкладок
+    pub fn settings_side_scroll(&mut self, d: i32) {
+        let h = SIZE.1;
+        let max = (self.st.stab_h.get() - side_rect(h).h).max(0);
+        self.st.stab_scroll = (self.st.stab_scroll + d * WHEEL).clamp(0, max);
+        self.dirty(&SKind::Modal);
+    }
+}
+
+pub fn title(ui: &mut Ui, x: i32, y: i32, w: i32, s: &str) -> i32 {
+    let t = ui.t;
+    ui.cv.fill(R::new(x, y + 7, 6, 6), t.red);
+    ui.text_in(PX, R::new(x + 14, y, w - 14, 20), s, t.text);
+    ui.cv.fill(R::new(x, y + 24, w, 1), t.border);
+    y + 34
+}
+
+/// число в пикселях: ‹ значение › — щелчок по стрелке или колесо меняют на шаг
+pub fn num_btn(ui: &mut Ui, r: R, label: &str, v: i32, key: &'static str) {
+    let t = ui.t;
+    let hov = ui.hover(r);
+    ui.cv.pxbox(r, &BoxStyle::new(if hov { t.surface_hi } else { t.surface }, if hov { t.red } else { t.border }).bevel(true));
+    ui.text_in(PX, R::new(r.x + 8, r.y, r.w - 80, r.h), label, t.text_dim);
+    ui.zone(r, Act::SNum(key, 1), Cur::Pointer);
+    let (l, rr) = (R::new(r.right() - 72, r.y + 2, 16, r.h - 4), R::new(r.right() - 18, r.y + 2, 16, r.h - 4));
+    for (b, icon) in [(l, "left"), (rr, "right")] {
+        ui.cv.icon(icon, b.x + 1, b.cy() - 7, 2, if ui.hover(b) { t.ember } else { t.red });
+    }
+    ui.zone(l, Act::SNum(key, -1), Cur::Pointer);
+    ui.zone(rr, Act::SNum(key, 1), Cur::Pointer);
+    ui.cv.text_center(ui.f, PX, R::new(l.right(), r.y, rr.x - l.right(), r.h), &format!("{v}"), t.text);
+}
+
+/// кнопка выбора: подпись слева, значение справа; подписи — всё место, что значение не заняло
+pub fn opt_btn(ui: &mut Ui, r: R, label: &str, val: &str, act: Act) {
+    let t = ui.t;
+    let hov = ui.hover(r);
+    ui.cv.pxbox(r, &BoxStyle::new(if hov { t.surface_hi } else { t.surface }, if hov { t.red } else { t.border }).bevel(true));
+    // значение не наезжает на подпись: длинное — с многоточием, подписи — не меньше трети
+    let lw = ui.f.width(PX, (ui.tr)(label)).min(r.w / 3);
+    let room = r.w - 32 - lw - 12;
+    let tv = (ui.tr)(val).to_string();
+    let v = if ui.f.width(PX, &tv) > room { ui.f.elide(PX, &tv, room) } else { tv };
+    let vw = ui.f.width(PX, &v);
+    ui.text_in(PX, R::new(r.x + 8, r.y, r.w - 32 - vw - 12, r.h), label, t.text_dim);
+    ui.cv.text_right(ui.f, PX, R::new(r.x, r.y, r.w - 24, r.h), &v, t.text);
+    ui.cv.icon("right", r.right() - 18, r.cy() - 7, 2, t.red);
+    ui.zone(r, act, Cur::Pointer);
+}
+
+/// следующее значение из ряда (после последнего — первое)
+pub fn step_in(list: &[i32], cur: i32) -> i32 {
+    list.iter().copied().find(|v| *v > cur).unwrap_or(list[0])
+}
+
+pub(crate) fn cycle<'a>(list: &[(&'a str, &'a str)], cur: &str) -> &'a str {
+    let i = list.iter().position(|x| x.0 == cur).map(|i| (i + 1) % list.len()).unwrap_or(0);
+    list[i].0
+}
+
+impl App {
+    /// что есть в системе для открытой вкладки: игры (gamemode, ntsync…), skwd-wall для обоев.
+    /// При открытии вкладки и настроек — не в каждом кадре
+    pub fn tab_probe(&mut self) {
+        match self.st.stab {
+            "games" => self.st.game_probe = crate::gameboost::probe(),
+            "wall" => self.st.skwd_here = crate::skwd::installed(),
+            "login" => self.st.login_probe = crate::login::probe(),
+            "look" if self.st.sets.is_none() => self.sets_load(),
+            _ => {}
+        }
+    }
+
+    pub fn settings_key(&mut self, e: &KeyEvent) {
+        if self.keys_key(e) {
+            return;
+        }
+        if let Some(f) = self.st.field_focus {
+            match e.keysym {
+                Keysym::Escape => self.st.field_focus = None,
+                Keysym::Return | Keysym::KP_Enter => {
+                    if f == "hex" {
+                        self.apply_hex();
+                    } else if f == "float_apps" {
+                        self.settings_click(&Act::SCycle("float_apply"));
+                    } else if f == "shot_dir" {
+                        self.settings_click(&Act::SCycle("shot_dir_apply"));
+                    } else if f == "game_apps" {
+                        self.settings_click(&Act::SCycle("game_apply"));
+                    } else if f == "night_geo" {
+                        self.settings_click(&Act::SCycle("geo_apply"));
+                    } else if f == "weather_city" {
+                        self.settings_click(&Act::SCycle("weather_apply"));
+                    } else if f == "kb_layout" {
+                        self.settings_click(&Act::SCycle("kb_apply"));
+                    } else if f == "key_cmd" {
+                        self.settings_click(&Act::KeyAdd);
+                    } else {
+                        self.settings_click(&Act::SCycle("wall_apply"));
+                    }
+                }
+                _ => {
+                    let mods = self.mods;
+                    let field = match f {
+                        "hex" => &mut self.st.hex,
+                        "shot_dir" => &mut self.st.shot_field,
+                        "float_apps" => &mut self.st.float_field,
+                        "key_cmd" => &mut self.st.keys.cmd,
+                        "game_apps" => &mut self.st.game_field,
+                        "night_geo" => &mut self.st.geo_field,
+                        "weather_city" => &mut self.st.weather_field,
+                        "kb_layout" => &mut self.st.keys.lay,
+                        _ => &mut self.st.wall_field,
+                    };
+                    App::edit_field(field, e, &mods);
+                }
+            }
+            self.dirty(&SKind::Modal);
+            return;
+        }
+        match e.keysym {
+            Keysym::Escape => self.close_modal(),
+            Keysym::Tab | Keysym::ISO_Left_Tab | Keysym::Down | Keysym::Up => {
+                let back = e.keysym == Keysym::ISO_Left_Tab || e.keysym == Keysym::Up || self.mods.shift;
+                let ids: Vec<&'static str> = tabs().map(|t| t.id).collect();
+                let n = ids.len();
+                let i = ids.iter().position(|x| *x == self.st.stab).unwrap_or(0);
+                self.st.stab = ids[if back { (i + n - 1) % n } else { (i + 1) % n }];
+                self.tab_probe();
+            }
+            // листать вкладку: страница, начало, конец
+            Keysym::Page_Down | Keysym::Page_Up => {
+                let page = (body_rect(SIZE.0, SIZE.1).h - 40) / WHEEL;
+                self.settings_scroll(if e.keysym == Keysym::Page_Down { page } else { -page });
+            }
+            Keysym::Home => {
+                self.settings_scroll(-1000);
+            }
+            Keysym::End => {
+                self.settings_scroll(1000);
+            }
+            _ => {}
+        }
+        if self.st.modal == Some(Modal::Settings) {
+            self.dirty(&SKind::Modal);
+        }
+    }
+}

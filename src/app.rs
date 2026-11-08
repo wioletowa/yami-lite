@@ -1,0 +1,931 @@
+// Ядро: Wayland (layer-shell, ввод, кадры), поверхности шелла, цикл событий, маршрутизация
+// кликов в действия. Состояние, которое рисуется, — в State; ресурсы (шрифты, иконки) — в Res.
+
+use crate::config::{self, Settings};
+use crate::gfx::R;
+use crate::icons::{self, Icons};
+use crate::niri::{self, Niri};
+use crate::sys::Sys;
+use crate::theme::Theme;
+use crate::ui::{Act, Field, Zone};
+use crate::{audio, dbus, font::Fonts, launcher, media, menu, net, notif};
+
+use calloop::{
+    channel::{self, Sender},
+    timer::{TimeoutAction, Timer},
+    EventLoop, LoopHandle,
+};
+use calloop_wayland_source::WaylandSource;
+use smithay_client_toolkit::{
+    compositor::{CompositorState, Region},
+    output::OutputState,
+    registry::RegistryState,
+    seat::{
+        keyboard::Modifiers,
+        pointer::cursor_shape::CursorShapeManager, SeatState,
+    },
+    session_lock::{SessionLock, SessionLockState, SessionLockSurface},
+    shell::{
+        wlr_layer::{Anchor, KeyboardInteractivity, Layer, LayerShell, LayerSurface},
+        WaylandSurface,
+    },
+    shm::{slot::SlotPool, Shm},
+};
+use std::collections::HashMap;
+use std::time::{Duration, Instant};
+use wayland_client::{
+    globals::registry_queue_init,
+    protocol::{wl_keyboard, wl_output, wl_pointer},
+    Connection, QueueHandle,
+};
+use wayland_protocols::ext::background_effect::v1::client::{ext_background_effect_manager_v1, ext_background_effect_surface_v1};
+use wayland_protocols::ext::idle_notify::v1::client::{ext_idle_notification_v1, ext_idle_notifier_v1};
+use wayland_protocols::wp::cursor_shape::v1::client::wp_cursor_shape_device_v1::{Shape, WpCursorShapeDeviceV1};
+use wayland_protocols::wp::fractional_scale::v1::client::{wp_fractional_scale_manager_v1 as frac_mgr, wp_fractional_scale_v1 as frac};
+use wayland_protocols::wp::keyboard_shortcuts_inhibit::zv1::client::{zwp_keyboard_shortcuts_inhibit_manager_v1 as ksi_mgr, zwp_keyboard_shortcuts_inhibitor_v1 as ksi};
+use wayland_protocols::wp::viewporter::client::{wp_viewport, wp_viewporter};
+
+pub const BAR_H: i32 = 32;
+pub const TITLE_H: i32 = 26;
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Modal {
+    Launcher,
+    Power,
+    Settings,
+    /// пароль для polkit (auth.rs)
+    Auth,
+    /// что показать при показе экрана (screen.rs)
+    Screen,
+    /// ответ из уведомления (reply.rs)
+    Reply,
+    /// выбор обоев (walls.rs)
+    Walls,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum SKind {
+    Wall,
+    Bar,
+    Dim,
+    Catcher,
+    Modal,
+    Popup,
+    Menu,
+    Notifs,
+    Osd,
+    Widget(u32),
+    Title(u64),
+    /// ручка размера в правом нижнем углу плавающего окна (titles.rs)
+    Grip(u64),
+    EditBar,
+    Snap,
+    /// шторка для трансляций и значок «скрыто» (curtain.rs)
+    Curtain,
+    CurtainBadge,
+    Dock,
+    DockEdge,
+}
+
+pub struct Surf {
+    pub kind: SKind,
+    pub layer: LayerSurface,
+    pub output: String,
+    pub w: i32,
+    pub h: i32,
+    pub configured: bool,
+    pub pool: Option<SlotPool>,
+    pub dirty: bool,
+    pub frame_pending: bool,
+    pub anim: bool,
+    pub zones: Vec<Zone>,
+    pub closing: bool,
+    pub born: Instant,
+    pub viewport: Option<wp_viewport::WpViewport>,
+    pub margin: (i32, i32),
+    /// где поверхность сейчас у композитора (подтверждено wl_display.sync): события
+    /// курсора приходят относительно именно этого места, а не только что запрошенного
+    pub applied: (i32, i32),
+    pub input: Option<Vec<R>>,
+    pub input_set: Option<Vec<R>>,
+    /// обои: буфер отдан и больше не нужен
+    pub release_pool: bool,
+    /// ещё ни разу не рисовалась: анимация появления считается от первого кадра
+    pub fresh: bool,
+    /// размытие фона через ext-background-effect: объект и отданный композитору регион
+    pub fx: Option<ext_background_effect_surface_v1::ExtBackgroundEffectSurfaceV1>,
+    pub blur_set: Vec<R>,
+    /// док: у какого края стоит
+    pub anchor_side: String,
+    /// физических пикселей на логический (wp_fractional_scale): буфер рисуется в нём,
+    /// логический холст увеличивается ближайшим соседом — на HiDPI пиксели чёткие
+    pub scale: f64,
+    pub frac: Option<frac::WpFractionalScaleV1>,
+    /// отпечаток последнего отданного кадра (0 — не было): тот же кадр второй раз не отдаётся —
+    /// бар перерисовывается раз в секунду, а меняется обычно раз в минуту
+    pub drawn: u64,
+}
+
+pub struct LockSurf {
+    pub s: SessionLockSurface,
+    /// монитор: по нему видно, у какого вывода экрана блокировки ещё нет
+    pub wl: wl_output::WlOutput,
+    pub output: String,
+    pub w: i32,
+    pub h: i32,
+    pub pool: Option<SlotPool>,
+    pub zones: Vec<Zone>,
+    pub dirty: bool,
+    pub scale: f64,
+    pub frac: Option<frac::WpFractionalScaleV1>,
+    pub vp: Option<wp_viewport::WpViewport>,
+}
+
+pub enum Msg {
+    Niri(serde_json::Value),
+    Ipc(String),
+    Audio(audio::AudioState),
+    Viz(Vec<f32>),
+    Media(media::MediaState),
+    /// живые плееры MPRIS (имена без «org.mpris.MediaPlayer2.»)
+    Players(Vec<String>),
+    Notif(notif::Incoming),
+    NotifClose(u32),
+    Tray(dbus::TrayEv),
+    TrayMenu(String, Vec<menu::MItem>),
+    Net(net::NetState),
+    Bt(net::BtState),
+    Pam(bool),
+    Auth(crate::auth::Ev),
+    Prof(crate::profile::Prof),
+    /// портал спрашивает, что показать: типы источников и сокет для ответа
+    ScreenPick(u32, std::os::unix::net::UnixStream),
+    Clip(Vec<String>),
+    /// миниатюра картинки из буфера (launcher.rs thumbs_start)
+    ClipThumb(String, Option<crate::gfx::Img>),
+    /// строка модуля-скрипта бара (plugins.rs)
+    Plugin(String, crate::plugins::Plug),
+    /// файлы для «/» в лаунчере: запрос и найденное
+    LFiles(String, Vec<std::path::PathBuf>),
+    Art(String, Option<crate::gfx::Img>),
+    /// текст песни нашёлся (или нет) для трека Lyrics.key
+    Lyrics(crate::lyrics::Lyrics),
+    /// ответ Open-Meteo (weather.rs)
+    Weather(crate::weather::Weather),
+    /// свои темы (themetab.rs): список, что сделано, применена ли тема (перечитать настройки)
+    Themes(Vec<crate::bundle::Card>, String, bool),
+    Theme,
+    /// theme.py --templates закончил: итог в restyle.json (restyle.rs)
+    Restyled,
+    /// превью наборов значков и курсоров (iconsets.rs)
+    Sets(Box<crate::iconsets::Sets>),
+    /// свой набор поставлен (имена) или нет; None — выбор отменён
+    SetAdded(Option<Result<Vec<String>, String>>),
+    /// кадры шторки готовы: номер включения, картинки по мониторам
+    Curtain(u64, HashMap<String, crate::gfx::Img>),
+    /// обои готовы (wall.rs): номер задания, картинка, акцент из неё
+    Wall(u64, Option<crate::gfx::Img>, Option<u32>),
+    /// папка выбора обоев прочитана (walls.rs): номер открытия, папка, картинки, сколько сверх MAX
+    WallsListed(u64, std::path::PathBuf, Vec<std::path::PathBuf>, usize),
+    /// миниатюра для выбора обоев (walls.rs): номер открытия, клетка, картинка
+    WallThumb(u64, usize, Option<crate::gfx::Img>),
+    /// ответ окна выбора yami-files из выбора обоев: папка ли, что выбрано, вернуться ли в настройки
+    WallsAsked(bool, Option<String>, bool),
+    /// мониторы, где обои рисует skwd-paper (skwd.rs, слои niri)
+    SkwdLayers(Vec<String>),
+    Snap(HashMap<String, crate::gfx::Img>, Vec<(String, R, String)>, crate::snap::Mode),
+    /// распознанное со снимка: QR или текст, None — ничего не нашлось
+    SnapText(bool, Option<String>),
+    /// проверка обновлений (update.rs)
+    Update(crate::update::Info),
+    SnapDone { path: Option<std::path::PathBuf>, copied: bool, err: Option<String>, thumb: Option<crate::gfx::Img> },
+    /// тома gio после события udev (automount.rs)
+    Volumes(Vec<crate::automount::Vol>),
+    /// том подключён сам: его локальная папка или ошибка
+    AutoMounted(crate::automount::Vol, Result<Option<String>, String>),
+}
+
+pub struct Res {
+    pub fonts: Fonts,
+    pub icons: Icons,
+    /// семейство, из которого собраны fonts (fontShell)
+    pub font: String,
+    /// набор, из которого собраны icons (iconTheme, «авто» — уже разрешённый в системный)
+    pub iset: String,
+}
+
+pub struct Popup {
+    pub kind: &'static str,
+}
+
+pub struct State {
+    pub set: Settings,
+    pub t: Theme,
+    pub niri: Niri,
+    pub sys: Sys,
+    pub apps: Vec<icons::App>,
+    pub modal: Option<Modal>,
+    pub popup: Option<Popup>,
+    pub menu: Option<menu::MenuState>,
+    pub bar_hidden: bool,
+    pub launcher: launcher::LState,
+    pub power_cur: usize,
+    pub stab: &'static str,
+    /// прокрутка содержимого настроек: сдвиг и вкладка, к которой он относится
+    pub sscroll: (i32, &'static str),
+    /// высота содержимого открытой вкладки и списка вкладок с прошлого кадра
+    pub sscroll_h: std::cell::Cell<i32>,
+    pub stab_scroll: i32,
+    pub stab_h: std::cell::Cell<i32>,
+    pub hex: Field,
+    pub field_focus: Option<&'static str>,
+    /// запросы polkit: первый — в окне, остальные ждут
+    pub auth: Vec<crate::auth::Req>,
+    pub prof: crate::profile::Prof,
+    pub disp: crate::displays::Disp,
+    pub bar_ed: crate::settings::BarEd,
+    pub screen_pick: Option<crate::screen::Pick>,
+    pub sel_widget: u32,
+    pub editing: bool,
+    pub notifs: notif::Notifs,
+    pub osd: Option<(&'static str, Instant)>,
+    /// шторка для трансляций опущена
+    pub curtain: Option<crate::curtain::Curtain>,
+    pub audio: audio::AudioState,
+    /// показанный плеер (media_pick_sync), все живые и выбранный в шапке всплывашки (#24)
+    pub media: media::MediaState,
+    pub players: Vec<media::MediaState>,
+    pub media_pick: String,
+    pub art: HashMap<String, Option<std::rc::Rc<crate::gfx::Img>>>,
+    /// текст песни текущего трека (#13): ищется, только когда всплывашка его показывает
+    pub lyrics: crate::lyrics::Lyrics,
+    /// погода (weather.rs): последний ответ, идёт ли запрос, когда спрашивали, поле города
+    pub weather: crate::weather::Weather,
+    pub weather_busy: bool,
+    pub weather_try: Option<Instant>,
+    pub weather_field: Field,
+    /// вкладка «цвет»: страница «темы», свои темы и последнее действие с ними (themetab.rs)
+    /// раздел вкладки «цвет»: 0 — палитра, 1 — свои темы, 2 — программы (#17)
+    pub color_page: u8,
+    /// итог перекраски программ и своих шаблонов (restyle.rs) и слепок папки шаблонов
+    pub restyle: crate::restyle::Status,
+    pub tpl_stamp: Option<u64>,
+    /// наборы значков и курсоров для настроек → вид (None — не собраны), сборка идёт, итог установки своего
+    pub sets: Option<crate::iconsets::Sets>,
+    pub sets_busy: bool,
+    pub sets_note: String,
+    pub themes: Vec<crate::bundle::Card>,
+    pub theme_note: String,
+    pub viz: Vec<f32>,
+    /// куда тянут полосу позиции (доля трека); перемотка — когда отпустят
+    pub seek: Option<f32>,
+    pub net: net::NetState,
+    pub bt: net::BtState,
+    pub wifi_pass: Field,
+    pub wifi_target: String,
+    /// о низком заряде уже сказали: 1 — на 10%, 2 — на 5%; сбрасывается на зарядке
+    pub bat_warn: u8,
+    pub tray: Vec<dbus::TrayItem>,
+    pub locked: bool,
+    pub lock_field: Field,
+    pub lock_status: String,
+    pub lock_fails: u32,
+    pub lock_shake: Option<Instant>,
+    pub cal_month: i32,
+    pub blink: bool,
+    pub wall: Option<std::rc::Rc<crate::gfx::Img>>,
+    /// в wall лежит уменьшенная копия (wall_park): полная уже у niri
+    pub wall_parked: bool,
+    pub wall_stamp: u64,
+    pub started: Instant,
+    pub rss: f32,
+    pub titles: HashMap<u64, crate::titles::TitleGeo>,
+    pub wall_field: Field,
+    pub keys: crate::keys::KeysUi,
+    pub game: crate::games::GameMode,
+    /// что есть для игр (проверяется при открытии вкладки «игры»)
+    pub game_probe: crate::gameboost::Probe,
+    pub night: crate::night::Night,
+    /// модули бара из скриптов (~/.config/yami/modules)
+    pub plugins: crate::plugins::Plugins,
+    pub session: crate::session::Session,
+    /// skwd-wall: что выбрано, его палитра, где рисует сам (skwd.rs)
+    pub skwd: crate::skwd::Skwd,
+    /// skwd-wall стоит на машине (проверяется при открытии настроек)
+    pub skwd_here: bool,
+    /// экран входа: стоит ли, включён ли greetd, как прошёл последний запуск (вкладка «экран входа»)
+    pub login_probe: crate::login::Probe,
+    /// виджет без подложки стоит на светлых обоях (widgets.rs, widget_contrast)
+    pub widget_bg: HashMap<u32, bool>,
+    pub game_field: Field,
+    /// окно ответа из уведомления
+    pub reply: crate::reply::Reply,
+    /// координаты для ночного света
+    pub geo_field: Field,
+    pub snap: Option<crate::snap::Snap>,
+    pub snap_countdown: Option<(Instant, u32)>,
+    pub shot_files: HashMap<u32, std::path::PathBuf>,
+    pub shot_field: Field,
+    pub float_field: Field,
+    pub dock_hover: bool,
+    pub dock_leave: Option<Instant>,
+    pub dock_bounce: Vec<(String, Instant)>,
+    /// наведение в доке для анимации: (сейчас, до этого, когда сменилось)
+    pub dock_hov: std::cell::Cell<(Option<usize>, Option<usize>, Instant)>,
+    pub trash_full: bool,
+    pub upd: crate::update::Upd,
+    /// выбор обоев: папка, клетки, миниатюры видимых строк
+    pub walls: crate::walls::Walls,
+    /// автоподключение флешек и телефонов (automount.rs)
+    pub am: crate::automount::Am,
+}
+
+pub struct Press {
+    pub sid: u32,
+    pub act: Act,
+    pub button: u32,
+    pub x: f64,
+    pub y: f64,
+    pub zone: R,
+    /// абсолютная позиция на экране в момент нажатия (для перетаскивания)
+    pub ax: f64,
+    pub ay: f64,
+    pub moved: bool,
+    pub start: (i32, i32),
+    /// где стояла поверхность при нажатии: пока кнопка зажата, композитор (smithay
+    /// ClickGrab) считает координаты курсора от этого места, даже если поверхность уехала
+    pub origin: (i32, i32),
+}
+
+pub struct App {
+    pub conn: Connection,
+    pub qh: QueueHandle<App>,
+    pub handle: LoopHandle<'static, App>,
+    pub tx: Sender<Msg>,
+    pub(crate) registry: RegistryState,
+    pub(crate) seat: SeatState,
+    pub outputs: OutputState,
+    pub(crate) compositor: CompositorState,
+    pub(crate) layer_shell: LayerShell,
+    pub(crate) shm: Shm,
+    pub(crate) cursor_mgr: Option<CursorShapeManager>,
+    pub(crate) cursor_dev: Option<WpCursorShapeDeviceV1>,
+    pub(crate) cursor_now: Option<Shape>,
+    pub(crate) viewporter: Option<wp_viewporter::WpViewporter>,
+    pub(crate) fx_mgr: Option<ext_background_effect_manager_v1::ExtBackgroundEffectManagerV1>,
+    /// запись сочетаний во вкладке «клавиши»: niri отдаёт шеллу все клавиши
+    pub(crate) ksi_mgr: Option<ksi_mgr::ZwpKeyboardShortcutsInhibitManagerV1>,
+    pub(crate) ksi: Option<ksi::ZwpKeyboardShortcutsInhibitorV1>,
+    pub(crate) frac_mgr: Option<frac_mgr::WpFractionalScaleManagerV1>,
+    /// логический холст перед увеличением (HiDPI); большой — освобождается сразу
+    pub(crate) scratch: Vec<u32>,
+    /// когда отдать ядру код, который больше не исполняется (yami_px::shed_code): через 30 с после
+    /// старта и после закрытия настроек или выбора обоев (их код велик, а нужен изредка)
+    pub(crate) shed_at: Option<Instant>,
+    pub(crate) lock_state: SessionLockState,
+    pub lock: Option<SessionLock>,
+    pub lock_surfs: Vec<LockSurf>,
+    pub(crate) idle: Option<ext_idle_notifier_v1::ExtIdleNotifierV1>,
+    pub(crate) idle_notes: Vec<ext_idle_notification_v1::ExtIdleNotificationV1>,
+    pub(crate) idle_cfg: (u32, u32),
+    pub(crate) pointer: Option<wl_pointer::WlPointer>,
+    pub(crate) keyboard: Option<wl_keyboard::WlKeyboard>,
+    pub(crate) enter_serial: u32,
+    pub surfs: HashMap<u32, Surf>,
+    pub(crate) next_id: u32,
+    /// курсор: (поверхность, x, y); для экрана блокировки sid = u32::MAX - n
+    pub ptr: Option<(u32, f64, f64)>,
+    pub press: Option<Press>,
+    pub(crate) last_click: Option<(Act, Instant)>,
+    pub kb_surf: Option<u32>,
+    pub mods: Modifiers,
+    pub res: Res,
+    pub st: State,
+    pub set_saved: String,
+    /// настройки на момент последней сверки с файлом: пока они те же, JSON не собирается
+    /// (flush идёт на каждом проходе цикла — при эквалайзере 30 раз в секунду)
+    pub(crate) set_seen: Settings,
+    pub(crate) set_mtime: Option<std::time::SystemTime>,
+    pub(crate) last_sample: Instant,
+    pub(crate) last_min: u32,
+    pub(crate) palette_written: String,
+    /// обои: ключ того, из чего собрана текущая картинка, и номер последнего задания
+    pub wall_key: String,
+    pub wall_job: u64,
+    /// когда пришла последняя картинка обоев; идёт пересчёт отложенной (wall_need)
+    pub wall_at: Instant,
+    pub wall_reload: bool,
+    /// иероглиф рисуется поверх готовой картинки: его переключение — только перерисовка
+    pub wall_kanji: bool,
+    /// номер последнего включения шторки (поздний кадр от прошлого — мимо)
+    pub curtain_wanted: u64,
+    pub quit: bool,
+    /// выйти и запустить себя заново (тот же путь: после обновления — новый бинарь)
+    pub restart: bool,
+    /// где открыть меню программы трея: монитор, x, y
+    pub tray_anchor: Option<(String, i32, i32)>,
+    /// окно, которое тянут за заголовок или угол, и сколько сдвига (размера) niri уже отправлено
+    pub tdrag: Option<(u64, (f64, f64))>,
+    /// окно настроек сдвинуто за заголовок: его поверхность и левый верхний угол; mdrag —
+    /// угол в начале текущего перетаскивания
+    pub modal_at: Option<(u32, (i32, i32))>,
+    pub mdrag: Option<(i32, i32)>,
+    /// ползунок пиксельности сменил шрифт программ / курсор, theme.py ещё не звали
+    pub look_pending: (bool, bool),
+}
+
+pub(crate) const LOCK_BASE: u32 = u32::MAX - 64;
+
+impl State {
+    pub fn new(set: Settings, niri: Niri) -> State {
+        yami_px::gfx::set_reveal(yami_px::gfx::Reveal::from_id(&set.reveal), set.reveal_grain);
+        State {
+            t: Theme::new(set.accent_rgb(), set.tint, set.glass, set.lift, set.inner, set.light).apply(),
+            niri,
+            sys: Sys::new(),
+            apps: icons::load_apps(),
+            modal: None,
+            popup: None,
+            menu: None,
+            bar_hidden: false,
+            launcher: launcher::LState::default(),
+            power_cur: 0,
+            stab: "color",
+            sscroll: (0, ""),
+            sscroll_h: Default::default(),
+            stab_scroll: 0,
+            stab_h: Default::default(),
+            hex: Field::default(),
+            field_focus: None,
+            auth: Vec::new(),
+            prof: Default::default(),
+            disp: Default::default(),
+            bar_ed: Default::default(),
+            screen_pick: None,
+            sel_widget: 0,
+            editing: false,
+            notifs: notif::Notifs::default(),
+            osd: None,
+            curtain: None,
+            audio: audio::AudioState::default(),
+            media: media::MediaState::default(),
+            players: Vec::new(),
+            media_pick: String::new(),
+            art: HashMap::new(),
+            lyrics: Default::default(),
+            weather: crate::weather::cached(),
+            weather_busy: false,
+            weather_try: None,
+            weather_field: Field::default(),
+            color_page: 0,
+            restyle: crate::restyle::load(),
+            tpl_stamp: None,
+            sets: None,
+            sets_busy: false,
+            sets_note: String::new(),
+            themes: vec![],
+            theme_note: String::new(),
+            viz: vec![],
+            seek: None,
+            net: net::NetState::default(),
+            bt: net::BtState::default(),
+            wifi_pass: Field::default(),
+            wifi_target: String::new(),
+            bat_warn: 0,
+            tray: vec![],
+            locked: false,
+            lock_field: Field::default(),
+            lock_status: String::new(),
+            lock_fails: 0,
+            lock_shake: None,
+            cal_month: 0,
+            blink: true,
+            wall: None,
+            wall_parked: false,
+            wall_stamp: 0,
+            started: Instant::now(),
+            rss: 0.0,
+            titles: HashMap::new(),
+            wall_field: Field::default(),
+            keys: Default::default(),
+            game: Default::default(),
+            game_probe: Default::default(),
+            night: Default::default(),
+            plugins: Default::default(),
+            session: Default::default(),
+            skwd: Default::default(),
+            skwd_here: false,
+            login_probe: Default::default(),
+            widget_bg: HashMap::new(),
+            game_field: Field::default(),
+            reply: Default::default(),
+            geo_field: Field::default(),
+            snap: None,
+            snap_countdown: None,
+            shot_files: HashMap::new(),
+            shot_field: Field::default(),
+            float_field: Field::default(),
+            dock_hover: false,
+            dock_leave: None,
+            dock_bounce: vec![],
+            dock_hov: std::cell::Cell::new((None, None, Instant::now())),
+            trash_full: false,
+            upd: crate::update::Upd::load(),
+            walls: Default::default(),
+            am: Default::default(),
+            set,
+        }
+    }
+}
+
+/// набор значков шелла: выбранный (iconTheme) или, при «авто», тот, что сейчас у системы
+pub fn icon_set(theme: &str) -> String {
+    if theme.is_empty() {
+        crate::icons::system_theme()
+    } else {
+        theme.to_string()
+    }
+}
+
+pub fn run() {
+    crate::proc::note_inherited();
+    // из TTY или по ssh: понятная строка вместо паники
+    let Ok(conn) = Connection::connect_to_env() else {
+        eprintln!("yami-shell: no Wayland display (start it inside niri, or set WAYLAND_DISPLAY)");
+        std::process::exit(1);
+    };
+    let (globals, mut queue) = registry_queue_init::<App>(&conn).expect("wayland registry");
+    let qh = queue.handle();
+    let mut ev: EventLoop<'static, App> = EventLoop::try_new().expect("event loop");
+    let handle = ev.handle();
+
+    let (tx, rx) = channel::channel::<Msg>();
+    handle
+        .insert_source(rx, |e, _, app: &mut App| {
+            if let channel::Event::Msg(m) = e {
+                app.on_msg(m);
+            }
+        })
+        .expect("message channel");
+
+    let compositor = CompositorState::bind(&globals, &qh).expect("wl_compositor");
+    let layer_shell = LayerShell::bind(&globals, &qh).expect("layer-shell");
+    let shm = Shm::bind(&globals, &qh).expect("wl_shm");
+    let cursor_mgr = CursorShapeManager::bind(&globals, &qh).ok();
+    let viewporter: Option<wp_viewporter::WpViewporter> = globals.bind(&qh, 1..=1, ()).ok();
+    let fx_mgr: Option<ext_background_effect_manager_v1::ExtBackgroundEffectManagerV1> = globals.bind(&qh, 1..=1, ()).ok();
+    let idle: Option<ext_idle_notifier_v1::ExtIdleNotifierV1> = globals.bind(&qh, 1..=1, ()).ok();
+    let ksi_mgr: Option<ksi_mgr::ZwpKeyboardShortcutsInhibitManagerV1> = globals.bind(&qh, 1..=1, ()).ok();
+    let frac_mgr: Option<frac_mgr::WpFractionalScaleManagerV1> = globals.bind(&qh, 1..=1, ()).ok();
+
+    let set = Settings::load();
+    crate::i18n::set(&set.lang);
+    let iset = icon_set(&set.icon_theme);
+    let mut icons = Icons::new(&iset);
+    icons.set_style(Theme::new(set.accent_rgb(), set.tint, set.glass, set.lift, set.inner, set.light).icon_ramp(), set.icon_pixel, set.icon_tint);
+    let set_saved = set.to_json();
+    let set_font = set.font_shell.clone();
+
+    let mut niri = Niri::new();
+    niri.stacking = niri.stacking || set.stacking;
+
+    let st = State::new(set, niri);
+
+    let mut app = App {
+        conn: conn.clone(),
+        qh: qh.clone(),
+        handle: handle.clone(),
+        tx: tx.clone(),
+        registry: RegistryState::new(&globals),
+        seat: SeatState::new(&globals, &qh),
+        outputs: OutputState::new(&globals, &qh),
+        compositor,
+        layer_shell,
+        shm,
+        cursor_mgr,
+        cursor_dev: None,
+        cursor_now: None,
+        viewporter,
+        fx_mgr,
+        ksi_mgr,
+        ksi: None,
+        frac_mgr,
+        scratch: vec![],
+        shed_at: Some(Instant::now() + Duration::from_secs(30)),
+        lock_state: SessionLockState::new(&globals, &qh),
+        lock: None,
+        lock_surfs: vec![],
+        idle,
+        idle_notes: vec![],
+        idle_cfg: (0, 0),
+        pointer: None,
+        keyboard: None,
+        enter_serial: 0,
+        surfs: HashMap::new(),
+        next_id: 1,
+        ptr: None,
+        press: None,
+        last_click: None,
+        kb_surf: None,
+        mods: Modifiers::default(),
+        res: Res { fonts: Fonts::with(&set_font), icons, font: set_font, iset },
+        st,
+        set_saved,
+        set_seen: Settings::default(),
+        set_mtime: std::fs::metadata(config::settings_path()).and_then(|m| m.modified()).ok(),
+        last_sample: Instant::now(),
+        last_min: 99,
+        palette_written: String::new(),
+        wall_key: String::new(),
+        wall_job: 0,
+        wall_at: Instant::now(),
+        wall_reload: false,
+        wall_kanji: true,
+        curtain_wanted: 0,
+        quit: false,
+        restart: false,
+        tray_anchor: None,
+        tdrag: None,
+        look_pending: (false, false),
+        modal_at: None,
+        mdrag: None,
+    };
+
+    // нити: niri, IPC, D-Bus (уведомления, трей), звук, музыка
+    {
+        let tx = tx.clone();
+        niri::spawn_stream(move |v| {
+            let _ = tx.send(Msg::Niri(v));
+        });
+    }
+    crate::ipc::serve(tx.clone());
+    dbus::spawn(tx.clone(), app.st.set.agent_notif, app.st.set.agent_tray);
+    crate::auth::spawn(tx.clone(), app.st.set.agent_polkit);
+    crate::agents::write_portals(&app.st.set);
+    crate::profile::refresh(None, tx.clone());
+    // копия theme.py рядом с состоянием — сразу свежая, а не после следующей смены палитры
+    let _ = crate::proc::theme_script();
+    audio::spawn(tx.clone());
+    media::spawn(tx.clone());
+    net::spawn_bt(tx.clone());
+    app.write_palette();
+    // обои: при старте палитра обычно та же, theme.py не запускается — готовим картинку сами
+    app.sync_wall();
+    app.write_fx();
+    crate::keys::write(&app.st.set);
+    app.setup_idle();
+    app.side_sync();
+    app.automount_sync();
+    // «стол» при входе включится, когда придёт список окон (см. on_msg)
+
+    handle
+        .insert_source(Timer::from_duration(Duration::from_millis(300)), |_, _, app: &mut App| {
+            app.tick();
+            TimeoutAction::ToDuration(app.tick_interval())
+        })
+        .expect("timer");
+
+    // мониторы, сиденье: первые события — сразу, до цикла
+    let _ = queue.roundtrip(&mut app);
+    let _ = queue.roundtrip(&mut app);
+    WaylandSource::new(conn.clone(), queue).insert(handle.clone()).expect("wayland source");
+    app.flush();
+    loop {
+        if ev.dispatch(Some(Duration::from_secs(5)), &mut app).is_err() {
+            break;
+        }
+        app.flush();
+        if app.quit || app.restart {
+            break;
+        }
+    }
+    if app.restart {
+        app.save_now();
+        // exec вместо выхода: петля автозапуска niri после чистого выхода не перезапускает
+        use std::os::unix::process::CommandExt;
+        let args: Vec<String> = std::env::args().skip(1).collect();
+        drop(app);
+        let e = std::process::Command::new(yami_px::paths::self_exe()).args(args).env("YAMI_RESTARTED", "1").exec();
+        eprintln!("restart: {e}");
+        std::process::exit(1);
+    }
+}
+
+impl App {
+    // ── поверхности ─────────────────────────────────────────────────────────
+    pub fn output_obj(&self, name: &str) -> Option<wl_output::WlOutput> {
+        self.outputs.outputs().find(|o| self.outputs.info(o).and_then(|i| i.name.clone()).as_deref() == Some(name))
+    }
+    pub fn output_names(&self) -> Vec<String> {
+        self.outputs.outputs().filter_map(|o| self.outputs.info(&o).and_then(|i| i.name.clone())).collect()
+    }
+    pub fn output_size(&self, name: &str) -> (i32, i32) {
+        self.outputs
+            .outputs()
+            .filter_map(|o| self.outputs.info(&o))
+            .find(|i| i.name.as_deref() == Some(name))
+            .and_then(|i| i.logical_size)
+            .unwrap_or((1920, 1080))
+    }
+    /// монитор, на котором сейчас работает человек
+    pub fn focus_out(&self) -> String {
+        let f = self.st.niri.focused_output();
+        if !f.is_empty() && self.output_names().contains(&f) {
+            return f;
+        }
+        self.output_names().into_iter().next().unwrap_or_default()
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn mk(&mut self, kind: SKind, output: &str, layer: Layer, ns: &str, anchor: Anchor, size: (i32, i32), margin: (i32, i32, i32, i32), excl: i32, kb: KeyboardInteractivity) -> u32 {
+        // панель поверх опущенной шторки: шторку — выше неё (см. curtain_raise)
+        let over_curtain = layer == Layer::Overlay && !matches!(kind, SKind::Curtain | SKind::CurtainBadge) && self.st.curtain.is_some();
+        let surface = self.compositor.create_surface(&self.qh);
+        let out = self.output_obj(output);
+        let ls = self.layer_shell.create_layer_surface(&self.qh, surface, layer, Some(ns), out.as_ref());
+        ls.set_anchor(anchor);
+        ls.set_size(size.0.max(0) as u32, size.1.max(0) as u32);
+        ls.set_margin(margin.0, margin.1, margin.2, margin.3);
+        ls.set_exclusive_zone(excl);
+        ls.set_keyboard_interactivity(kb);
+        // viewport у всех: Dim/Catcher растягивают буфер 1×1, остальные — буфер в физических пикселях
+        let viewport = self.viewporter.as_ref().map(|v| v.get_viewport(ls.wl_surface(), &self.qh, ()));
+        let id = self.next_id;
+        self.next_id += 1;
+        let frac = self.frac_mgr.as_ref().map(|m| m.get_fractional_scale(ls.wl_surface(), &self.qh, id));
+        ls.commit();
+        self.surfs.insert(
+            id,
+            Surf {
+                kind,
+                layer: ls,
+                output: output.to_string(),
+                w: size.0,
+                h: size.1,
+                configured: false,
+                pool: None,
+                dirty: true,
+                frame_pending: false,
+                anim: false,
+                zones: vec![],
+                closing: false,
+                born: Instant::now(),
+                viewport,
+                margin: (margin.3, margin.0),
+                applied: (margin.3, margin.0),
+                input: None,
+                input_set: None,
+                release_pool: false,
+                fresh: true,
+                fx: None,
+                blur_set: vec![],
+                anchor_side: String::new(),
+                scale: 1.0,
+                frac,
+                drawn: 0,
+            },
+        );
+        if over_curtain {
+            self.curtain_raise();
+        }
+        id
+    }
+
+    pub fn find(&self, k: &SKind) -> Vec<u32> {
+        self.surfs.iter().filter(|(_, s)| &s.kind == k && !s.closing).map(|(i, _)| *i).collect()
+    }
+    pub fn find_on(&self, k: &SKind, out: &str) -> Option<u32> {
+        self.surfs.iter().find(|(_, s)| &s.kind == k && s.output == out && !s.closing).map(|(i, _)| *i)
+    }
+    pub fn dirty(&mut self, k: &SKind) {
+        for s in self.surfs.values_mut() {
+            if &s.kind == k {
+                s.dirty = true;
+            }
+        }
+    }
+    pub fn dirty_where(&mut self, f: impl Fn(&SKind) -> bool) {
+        for s in self.surfs.values_mut() {
+            if f(&s.kind) {
+                s.dirty = true;
+            }
+        }
+    }
+    /// всё, что рисует состояние (кроме обоев)
+    pub fn dirty_all(&mut self) {
+        self.dirty_where(|k| *k != SKind::Wall);
+        for l in self.lock_surfs.iter_mut() {
+            l.dirty = true;
+        }
+    }
+    pub fn destroy(&mut self, id: u32) {
+        if let Some(s) = self.surfs.remove(&id) {
+            if let Some(fx) = s.fx {
+                fx.destroy();
+            }
+            if let Some(f) = s.frac {
+                f.destroy();
+            }
+            if let Some(v) = s.viewport {
+                v.destroy();
+            }
+            if self.ptr.map(|p| p.0) == Some(id) {
+                self.ptr = None;
+            }
+            if self.kb_surf == Some(id) {
+                self.kb_surf = None;
+            }
+            self.drop_press(id);
+        }
+    }
+
+    /// поверхность ушла: нажатие на ней больше ни к чему, и перемотка, которую там тянули, не залипнет
+    fn drop_press(&mut self, id: u32) {
+        if self.press.as_ref().is_some_and(|p| p.sid == id) {
+            self.press = None;
+            self.st.seek = None;
+        }
+    }
+    /// закрыть с анимацией (или сразу, если анимации выключены)
+    pub fn close(&mut self, id: u32) {
+        let anim = self.st.set.anim() && self.st.set.anim_close;
+        if let Some(s) = self.surfs.get_mut(&id) {
+            if !anim || !s.configured {
+                self.destroy(id);
+                return;
+            }
+            if !s.closing {
+                s.closing = true;
+                s.born = Instant::now();
+                s.dirty = true;
+                s.layer.set_keyboard_interactivity(KeyboardInteractivity::None);
+                // клики сквозь закрывающееся
+                let r = Region::new(&self.compositor).ok();
+                if let Some(r) = r {
+                    s.layer.wl_surface().set_input_region(Some(r.wl_region()));
+                }
+                s.layer.commit();
+            }
+        }
+        // закрывается посреди перемотки (Esc): бегунок — назад к игре; само нажатие живёт до
+        // отпускания (тянуть заголовок окна можно и через пересоздание его поверхности)
+        if self.press.as_ref().is_some_and(|p| p.sid == id) {
+            self.st.seek = None;
+        }
+    }
+    pub fn close_kind(&mut self, k: &SKind) {
+        for id in self.find(k) {
+            self.close(id);
+        }
+    }
+
+    pub fn ensure_output_surfaces(&mut self) {
+        let names = self.output_names();
+        // мониторы, которых больше нет
+        let gone: Vec<u32> = self.surfs.iter().filter(|(_, s)| !names.contains(&s.output)).map(|(i, _)| *i).collect();
+        for id in gone {
+            self.destroy(id);
+        }
+        // обои на этом мониторе рисует skwd-paper — свои убрать
+        let skwd: Vec<u32> = self.surfs.iter().filter(|(_, s)| s.kind == SKind::Wall && self.skwd_draws(&s.output)).map(|(i, _)| *i).collect();
+        for id in skwd {
+            self.destroy(id);
+        }
+        for n in names {
+            if self.find_on(&SKind::Wall, &n).is_none() && !self.skwd_draws(&n) {
+                let id = self.mk(SKind::Wall, &n, Layer::Background, "yami-wall", Anchor::all(), (0, 0), (0, 0, 0, 0), -1, KeyboardInteractivity::None);
+                // мышь сквозь обои: щёлкать на них нечего, а вход и выход курсора перерисовывали
+                // бы всю картинку
+                if let Some(s) = self.surfs.get_mut(&id) {
+                    s.input = Some(vec![]);
+                }
+                // монитор появился: теперь известен его размер (обои режутся под него)
+                self.sync_wall();
+                // и шторку на него, если она опущена
+                self.curtain_show();
+            }
+        }
+        self.sync_bar_outputs();
+        // монитор сменил размер: ширина бара в процентах — от новой
+        self.sync_bar();
+        self.sync_widgets();
+        self.sync_dock();
+        self.sync_lock_surfs();
+    }
+
+    pub fn toggle_bar(&mut self) {
+        self.st.bar_hidden = !self.st.bar_hidden;
+        if self.st.bar_hidden {
+            for id in self.find(&SKind::Bar) {
+                self.destroy(id);
+            }
+        }
+        self.ensure_output_surfaces();
+    }
+
+    pub fn close_all(&mut self) {
+        self.close_modal();
+        self.close_popup();
+        self.close_menu();
+    }
+}
