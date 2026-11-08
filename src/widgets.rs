@@ -12,7 +12,6 @@ use crate::theme::{Theme, WHITE};
 use crate::ui::{Act, Cur, Tone, Ui};
 use smithay_client_toolkit::seat::keyboard::{KeyEvent, Keysym};
 use smithay_client_toolkit::shell::wlr_layer::{Anchor, KeyboardInteractivity, Layer};
-use smithay_client_toolkit::shell::WaylandSurface;
 
 pub const KINDS: &[(&str, &str)] = &[("clock", "часы"), ("graph", "график"), ("net", "сеть"), ("media", "музыка"), ("cal", "календарь")];
 pub const SOURCES: &[(&str, &str)] = &[("cpu", "процессор"), ("ram", "память"), ("temp", "температура"), ("gpu", "видеокарта")];

@@ -7,7 +7,7 @@ use crate::app::*;
 use smithay_client_toolkit::{
     compositor::CompositorHandler,
     delegate_compositor, delegate_keyboard, delegate_layer, delegate_output, delegate_pointer, delegate_registry, delegate_seat,
-    delegate_session_lock, delegate_shm,
+    delegate_session_lock, delegate_shm, delegate_xdg_shell, delegate_xdg_window,
     output::{OutputHandler, OutputState},
     registry::{ProvidesRegistryState, RegistryState},
     registry_handlers,
@@ -18,6 +18,7 @@ use smithay_client_toolkit::{
     },
     session_lock::{SessionLock, SessionLockHandler, SessionLockSurface, SessionLockSurfaceConfigure},
     shell::wlr_layer::{LayerShellHandler, LayerSurface, LayerSurfaceConfigure},
+    shell::xdg::window::{Window, WindowConfigure, WindowHandler},
     shm::{Shm, ShmHandler},
 };
 use wayland_client::{
@@ -74,13 +75,13 @@ impl OutputHandler for App {
 
 impl LayerShellHandler for App {
     fn closed(&mut self, _: &Connection, _: &QueueHandle<Self>, layer: &LayerSurface) {
-        let id = self.surfs.iter().find(|(_, s)| &s.layer == layer).map(|(i, _)| *i);
+        let id = self.surfs.iter().find(|(_, s)| s.layer.is_layer(layer)).map(|(i, _)| *i);
         if let Some(id) = id {
             self.destroy(id);
         }
     }
     fn configure(&mut self, _: &Connection, _: &QueueHandle<Self>, layer: &LayerSurface, c: LayerSurfaceConfigure, _: u32) {
-        if let Some(s) = self.surfs.values_mut().find(|s| &s.layer == layer) {
+        if let Some(s) = self.surfs.values_mut().find(|s| s.layer.is_layer(layer)) {
             let (w, h) = c.new_size;
             if w > 0 {
                 s.w = w as i32;
@@ -92,6 +93,29 @@ impl LayerShellHandler for App {
             s.dirty = true;
             s.frame_pending = false;
             // после configure нужен коммит, даже если картинка та же
+            s.drawn = 0;
+        }
+    }
+}
+
+impl WindowHandler for App {
+    fn request_close(&mut self, _: &Connection, _: &QueueHandle<Self>, window: &Window) {
+        if self.surfs.values().any(|s| s.layer.is_window(window) && s.kind == SKind::Settings) {
+            self.close_settings();
+        }
+    }
+    fn configure(&mut self, _: &Connection, _: &QueueHandle<Self>, window: &Window, c: WindowConfigure, _: u32) {
+        if let Some(s) = self.surfs.values_mut().find(|s| s.layer.is_window(window)) {
+            // размер решает niri; не сказал — какой был (сначала — минимальный)
+            if let Some(w) = c.new_size.0 {
+                s.w = w.get() as i32;
+            }
+            if let Some(h) = c.new_size.1 {
+                s.h = h.get() as i32;
+            }
+            s.configured = true;
+            s.dirty = true;
+            s.frame_pending = false;
             s.drawn = 0;
         }
     }
@@ -279,5 +303,7 @@ delegate_seat!(App);
 delegate_keyboard!(App);
 delegate_pointer!(App);
 delegate_layer!(App);
+delegate_xdg_shell!(App);
+delegate_xdg_window!(App);
 delegate_session_lock!(App);
 delegate_registry!(App);

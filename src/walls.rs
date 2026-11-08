@@ -6,7 +6,7 @@
 // строки, потом по две соседних, в памяти — не больше нескольких десятков. Щелчок ставит обои и
 // возвращает в настройки, если выбор открыли оттуда; закрылся — миниатюры отпущены.
 
-use crate::app::{App, Modal, Msg, SKind, State};
+use crate::app::{App, Modal, Msg, State};
 use crate::config;
 use crate::font::PX;
 use crate::gfx::{BoxStyle, Img, R};
@@ -310,7 +310,7 @@ impl App {
             // кеш миниатюр: убрать старое (раз в сутки), уже после списка
             crate::icons::thumbs_tidy();
         });
-        self.dirty(&SKind::Modal);
+        self.dirty_panels();
     }
 
     /// папка прочитана: клетки, текущие обои под клавиатурой и видны, нить миниатюр — с их строк
@@ -339,7 +339,7 @@ impl App {
         let mut thumbs = HashMap::new();
         thumbs.insert(0, Some(Rc::new(crate::icons::from_rgba(&small))));
         self.st.walls = Walls { gen, dir, tiles, dirs: nd, dir_mode, cur, top, back, more, thumbs, worker: Some(Worker(q)) };
-        self.dirty(&SKind::Modal);
+        self.dirty_panels();
     }
 
     /// закрыть; открыт из настроек — вернуться на вкладку «обои»
@@ -367,7 +367,7 @@ impl App {
             wl.thumbs.insert(i, img.map(Rc::new));
             // запасные строки не видны: перерисовывать нечего
             if tile_rect(i, wl.top).is_some() {
-                self.dirty(&SKind::Modal);
+                self.dirty_panels();
             }
         } else if let Some(w) = &wl.worker {
             // пока делалась, её прокрутили из виду: понадобится — сделается снова
@@ -406,7 +406,7 @@ impl App {
             }
             w.0 .1.notify_all();
         }
-        self.dirty(&SKind::Modal);
+        self.dirty_panels();
     }
 
     pub fn walls_scroll(&mut self, d: i32) {

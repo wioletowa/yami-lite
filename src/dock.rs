@@ -13,7 +13,6 @@ use crate::menu::{MAct, MItem, MenuState};
 use crate::niri::Win;
 use crate::ui::{Act, Cur, Ui};
 use smithay_client_toolkit::shell::wlr_layer::{Anchor, KeyboardInteractivity, Layer};
-use smithay_client_toolkit::shell::WaylandSurface;
 use std::time::Instant;
 
 pub const MARGIN: i32 = 6;

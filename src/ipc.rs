@@ -3,7 +3,7 @@
 // Безопасность: сокет 0600, говорим только с процессами своего пользователя (SO_PEERCRED),
 // строка не длиннее 4 КБ и ждём её не дольше 2 с — зависший клиент не заткнёт шелл.
 
-use crate::app::{Modal, Msg, SKind};
+use crate::app::{Modal, Msg};
 use crate::config::Settings;
 use calloop::channel::Sender;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -84,7 +84,7 @@ impl crate::app::App {
         match cmd.trim() {
             "night" => self.night_toggle(),
             "power" => self.toggle_modal(Modal::Power),
-            "settings" => self.toggle_modal(Modal::Settings),
+            "settings" => self.toggle_settings(),
             "walls" => self.walls_open(false, false),
             "lock" => self.lock_now(),
             "bar" => self.toggle_bar(),
@@ -126,11 +126,11 @@ impl crate::app::App {
     pub fn open_settings_tab(&mut self, tab: &str) {
         let Some(t) = crate::settings::find(tab).map(|x| x.id) else { return };
         self.st.stab = t;
-        if self.st.modal != Some(Modal::Settings) {
-            self.toggle_modal(Modal::Settings);
+        if !self.st.settings_shown {
+            self.open_settings();
         } else {
             self.tab_probe();
         }
-        self.dirty(&SKind::Modal);
+        self.dirty_panels();
     }
 }

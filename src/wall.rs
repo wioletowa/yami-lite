@@ -455,7 +455,7 @@ impl App {
         for l in self.lock_surfs.iter_mut() {
             l.dirty = true;
         }
-        self.dirty(&SKind::Modal);
+        self.dirty_panels();
         // новые обои: виджеты на них — в тон
         self.widget_contrast();
         let s = &mut self.st.set;

@@ -26,7 +26,7 @@ use smithay_client_toolkit::{
     },
     session_lock::{SessionLock, SessionLockState, SessionLockSurface},
     shell::{
-        wlr_layer::{Anchor, KeyboardInteractivity, Layer, LayerShell, LayerSurface},
+        wlr_layer::{Anchor, KeyboardInteractivity, Layer, LayerShell},
         WaylandSurface,
     },
     shm::{slot::SlotPool, Shm},
@@ -49,7 +49,6 @@ pub const BAR_H: i32 = 32;
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Modal {
     Power,
-    Settings,
     /// ответ из уведомления (reply.rs)
     Reply,
     /// выбор обоев (walls.rs)
@@ -68,6 +67,8 @@ pub enum SKind {
     Notifs,
     Osd,
     Widget(u32),
+    /// окно настроек (xdg-shell, не слой)
+    Settings,
     EditBar,
     Dock,
     DockEdge,
@@ -75,7 +76,7 @@ pub enum SKind {
 
 pub struct Surf {
     pub kind: SKind,
-    pub layer: LayerSurface,
+    pub layer: crate::shellsurf::Shell,
     pub output: String,
     pub w: i32,
     pub h: i32,
@@ -193,6 +194,8 @@ pub struct State {
     pub bar_ed: crate::settings::BarEd,
     pub sel_widget: u32,
     pub editing: bool,
+    /// окно настроек открыто (бар подсвечивает шестерёнку)
+    pub settings_shown: bool,
     pub notifs: notif::Notifs,
     pub osd: Option<(&'static str, Instant)>,
     pub leds: crate::leds::Leds,
@@ -283,6 +286,8 @@ pub struct App {
     pub outputs: OutputState,
     pub(crate) compositor: CompositorState,
     pub(crate) layer_shell: LayerShell,
+    /// обычные окна (настройки); нет xdg-shell — настройки не открываются
+    pub(crate) xdg: Option<smithay_client_toolkit::shell::xdg::XdgShell>,
     pub(crate) shm: Shm,
     pub(crate) cursor_mgr: Option<CursorShapeManager>,
     pub(crate) cursor_dev: Option<WpCursorShapeDeviceV1>,
@@ -373,6 +378,7 @@ impl State {
             bar_ed: Default::default(),
             sel_widget: 0,
             editing: false,
+            settings_shown: false,
             notifs: notif::Notifs::default(),
             osd: None,
             leds: Default::default(),
@@ -449,6 +455,7 @@ pub fn run() {
 
     let compositor = CompositorState::bind(&globals, &qh).expect("wl_compositor");
     let layer_shell = LayerShell::bind(&globals, &qh).expect("layer-shell");
+    let xdg = smithay_client_toolkit::shell::xdg::XdgShell::bind(&globals, &qh).ok();
     let shm = Shm::bind(&globals, &qh).expect("wl_shm");
     let cursor_mgr = CursorShapeManager::bind(&globals, &qh).ok();
     let viewporter: Option<wp_viewporter::WpViewporter> = globals.bind(&qh, 1..=1, ()).ok();
@@ -478,6 +485,7 @@ pub fn run() {
         outputs: OutputState::new(&globals, &qh),
         compositor,
         layer_shell,
+        xdg,
         shm,
         cursor_mgr,
         cursor_dev: None,
@@ -615,11 +623,35 @@ impl App {
         self.next_id += 1;
         let frac = self.frac_mgr.as_ref().map(|m| m.get_fractional_scale(ls.wl_surface(), &self.qh, id));
         ls.commit();
+        self.add_surf(id, kind, crate::shellsurf::Shell::Layer(ls), output, size, margin, viewport, frac);
+        id
+    }
+
+    /// окно xdg-shell (настройки): ставит его niri, размер приходит в configure. Без xdg-shell — None
+    pub fn mk_window(&mut self, kind: SKind, app_id: &str, title: &str, min: (i32, i32)) -> Option<u32> {
+        let xdg = self.xdg.as_ref()?;
+        let surface = self.compositor.create_surface(&self.qh);
+        let win = xdg.create_window(surface, smithay_client_toolkit::shell::xdg::window::WindowDecorations::RequestServer, &self.qh);
+        win.set_app_id(app_id);
+        win.set_title(crate::i18n::tr(title));
+        win.set_min_size(Some((min.0 as u32, min.1 as u32)));
+        let viewport = self.viewporter.as_ref().map(|v| v.get_viewport(win.wl_surface(), &self.qh, ()));
+        let id = self.next_id;
+        self.next_id += 1;
+        let frac = self.frac_mgr.as_ref().map(|m| m.get_fractional_scale(win.wl_surface(), &self.qh, id));
+        win.commit();
+        let out = self.focus_out();
+        self.add_surf(id, kind, crate::shellsurf::Shell::Window(win), &out, min, (0, 0, 0, 0), viewport, frac);
+        Some(id)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn add_surf(&mut self, id: u32, kind: SKind, layer: crate::shellsurf::Shell, output: &str, size: (i32, i32), margin: (i32, i32, i32, i32), viewport: Option<wp_viewport::WpViewport>, frac: Option<frac::WpFractionalScaleV1>) {
         self.surfs.insert(
             id,
             Surf {
                 kind,
-                layer: ls,
+                layer,
                 output: output.to_string(),
                 w: size.0,
                 h: size.1,
@@ -646,7 +678,6 @@ impl App {
                 drawn: 0,
             },
         );
-        id
     }
 
     pub fn find(&self, k: &SKind) -> Vec<u32> {
@@ -661,6 +692,10 @@ impl App {
                 s.dirty = true;
             }
         }
+    }
+    /// содержимое панелей сменилось: модальное окно и окно настроек
+    pub fn dirty_panels(&mut self) {
+        self.dirty_where(|k| matches!(k, SKind::Modal | SKind::Settings));
     }
     pub fn dirty_where(&mut self, f: impl Fn(&SKind) -> bool) {
         for s in self.surfs.values_mut() {
@@ -708,7 +743,7 @@ impl App {
     pub fn close(&mut self, id: u32) {
         let anim = self.st.set.anim() && self.st.set.anim_close;
         if let Some(s) = self.surfs.get_mut(&id) {
-            if !anim || !s.configured {
+            if !anim || !s.configured || s.layer.window().is_some() {
                 self.destroy(id);
                 return;
             }
@@ -740,7 +775,7 @@ impl App {
     pub fn ensure_output_surfaces(&mut self) {
         let names = self.output_names();
         // мониторы, которых больше нет
-        let gone: Vec<u32> = self.surfs.iter().filter(|(_, s)| !names.contains(&s.output)).map(|(i, _)| *i).collect();
+        let gone: Vec<u32> = self.surfs.iter().filter(|(_, s)| s.layer.window().is_none() && !names.contains(&s.output)).map(|(i, _)| *i).collect();
         for id in gone {
             self.destroy(id);
         }

@@ -1,11 +1,12 @@
-// Настройки: группы вкладок слева, содержимое справа. Всё применяется сразу и пишется в
-// ~/.config/yami-lite/settings.json (его можно править и руками — шелл подхватит).
+// Настройки: обычное окно niri (app-id yami-lite-settings) — группы вкладок слева, содержимое
+// справа. Всё применяется сразу и пишется в ~/.config/yami-lite/settings.json (его можно править
+// и руками — шелл подхватит).
 //
 // Вкладка — строка в GROUPS: ключ, имя, значок, слова для поиска и функция рисования (каждая в
 // своём модуле). Содержимое листается колесом: сколько его, узнаём по зонам, которые вкладка
 // нарисовала (Canvas::reach), так что новая строка настроек сама удлиняет прокрутку.
 
-use crate::app::{App, Modal, SKind, State};
+use crate::app::{App, SKind, State};
 use crate::font::PX;
 use crate::gfx::{BoxStyle, R};
 use crate::ui::{Act, Cur, Tone, Ui};
@@ -13,6 +14,7 @@ pub use crate::bartab::BarEd;
 use crate::settabs::{tab_about, tab_color, tab_dock, tab_look, tab_notif, tab_system, tab_widgets};
 use smithay_client_toolkit::seat::keyboard::{KeyEvent, Keysym};
 
+/// наименьший размер окна: под него свёрстаны вкладки
 pub const SIZE: (i32, i32) = (800, 600);
 const SIDE_W: i32 = 168;
 const ROW_H: i32 = 26;
@@ -74,12 +76,12 @@ pub fn find(id: &str) -> Option<&'static Tab> {
 
 /// где рисовать содержимое (видимая часть) — общее для рисования и колеса
 fn body_rect(w: i32, h: i32) -> R {
-    let fr = R::new(0, 0, w - 6, h - 6);
+    let fr = R::new(0, 0, w, h);
     R::new(1 + SIDE_W + 20, 48, fr.right() - SIDE_W - 1 - 48, fr.h - 64)
 }
 
 fn side_rect(h: i32) -> R {
-    R::new(1, 31, SIDE_W, h - 6 - 32)
+    R::new(1, 31, SIDE_W, h - 32)
 }
 
 /// прокрутка открытой вкладки (сдвиг запомнен для неё; другая вкладка начинается сверху)
@@ -105,13 +107,15 @@ fn scrollbar(ui: &mut Ui, r: R, view: i32, full: i32, at: i32) {
 
 pub fn draw(ui: &mut Ui, st: &State, w: i32, h: i32) {
     let t = ui.t;
-    let fr = R::new(0, 0, w - 6, h - 6);
-    ui.frame(fr, false);
+    let fr = R::new(0, 0, w, h);
+    // окно, а не панель: без тени, на всю поверхность
+    ui.cv.pxbox(fr, &BoxStyle::new(t.glass_bg(), t.border));
+    ui.zone(fr, Act::Block, Cur::Default);
     let sub = crate::tf!("yami-lite {} · {:.0} МБ", "yami-lite {} · {:.0} MB", env!("CARGO_PKG_VERSION"), st.rss);
     ui.header(R::new(1, 1, fr.w - 2, 30), "gear", "настройки", &sub);
-    // за заголовок окно двигается (крестик зарегистрирован позже — он сверху)
+    // за заголовок окно двигает niri (крестик зарегистрирован позже — он сверху)
     ui.zone(R::new(1, 1, fr.w - 2, 30), Act::MDrag, Cur::Default);
-    ui.ghost(R::new(fr.right() - 28, 5, 24, 22), "close", Act::CloseModal);
+    ui.ghost(R::new(fr.right() - 28, 5, 24, 22), "close", Act::Settings);
     // вкладки группами; список длиннее окна — листается колесом
     let side = side_rect(h);
     ui.cv.fill(side, t.panel.alpha(0.5));
@@ -152,9 +156,49 @@ pub fn draw(ui: &mut Ui, st: &State, w: i32, h: i32) {
 }
 
 impl App {
+    /// окно настроек сейчас: размер от niri (не открыто — наименьший)
+    fn settings_size(&self) -> (i32, i32) {
+        self.surfs.values().find(|s| s.kind == SKind::Settings).map_or(SIZE, |s| (s.w, s.h))
+    }
+
+    /// открыть окно настроек (открыто — закрыть)
+    pub fn toggle_settings(&mut self) {
+        if self.st.settings_shown {
+            self.close_settings();
+        } else {
+            self.open_settings();
+        }
+    }
+
+    pub fn open_settings(&mut self) {
+        if self.st.locked || self.st.settings_shown {
+            return;
+        }
+        self.close_popup();
+        self.close_menu();
+        self.tab_probe();
+        self.st.hex.set(&self.st.set.accent.clone());
+        if self.st.sel_widget == 0 {
+            self.st.sel_widget = self.st.set.widgets.first().map(|w| w.id).unwrap_or(0);
+        }
+        self.st.settings_shown = self.mk_window(SKind::Settings, "yami-lite-settings", "настройки", SIZE).is_some();
+        self.dirty(&SKind::Bar);
+    }
+
+    pub fn close_settings(&mut self) {
+        for id in self.find(&SKind::Settings) {
+            self.destroy(id);
+        }
+        self.st.settings_shown = false;
+        self.st.field_focus = None;
+        // код настроек велик, а нужен изредка: через полминуты — из памяти
+        self.shed_at = Some(std::time::Instant::now() + std::time::Duration::from_secs(30));
+        self.dirty(&SKind::Bar);
+    }
+
     /// колесо над вкладкой: листать, если есть куда (true — пролистали)
     pub fn settings_scroll(&mut self, d: i32) -> bool {
-        let (w, h) = SIZE;
+        let (w, h) = self.settings_size();
         let view = body_rect(w, h).h;
         let max = (self.st.sscroll_h.get() - view).max(0);
         if max == 0 || find(self.st.stab).is_some_and(|t| t.own_scroll) {
@@ -162,16 +206,16 @@ impl App {
         }
         let at = (scroll_of(&self.st) + d * WHEEL).clamp(0, max);
         self.st.sscroll = (at, self.st.stab);
-        self.dirty(&SKind::Modal);
+        self.dirty_panels();
         true
     }
 
     /// колесо над списком вкладок
     pub fn settings_side_scroll(&mut self, d: i32) {
-        let h = SIZE.1;
+        let h = self.settings_size().1;
         let max = (self.st.stab_h.get() - side_rect(h).h).max(0);
         self.st.stab_scroll = (self.st.stab_scroll + d * WHEEL).clamp(0, max);
-        self.dirty(&SKind::Modal);
+        self.dirty_panels();
     }
 }
 
@@ -259,11 +303,11 @@ impl App {
                     App::edit_field(field, e, &mods);
                 }
             }
-            self.dirty(&SKind::Modal);
+            self.dirty_panels();
             return;
         }
         match e.keysym {
-            Keysym::Escape => self.close_modal(),
+            Keysym::Escape => self.close_settings(),
             Keysym::Tab | Keysym::ISO_Left_Tab | Keysym::Down | Keysym::Up => {
                 let back = e.keysym == Keysym::ISO_Left_Tab || e.keysym == Keysym::Up || self.mods.shift;
                 let ids: Vec<&'static str> = tabs().map(|t| t.id).collect();
@@ -274,7 +318,8 @@ impl App {
             }
             // листать вкладку: страница, начало, конец
             Keysym::Page_Down | Keysym::Page_Up => {
-                let page = (body_rect(SIZE.0, SIZE.1).h - 40) / WHEEL;
+                let (w, h) = self.settings_size();
+                let page = (body_rect(w, h).h - 40) / WHEEL;
                 self.settings_scroll(if e.keysym == Keysym::Page_Down { page } else { -page });
             }
             Keysym::Home => {
@@ -285,8 +330,8 @@ impl App {
             }
             _ => {}
         }
-        if self.st.modal == Some(Modal::Settings) {
-            self.dirty(&SKind::Modal);
+        if self.st.settings_shown {
+            self.dirty_panels();
         }
     }
 }

@@ -47,6 +47,7 @@ mod popups;
 mod power;
 mod setclick;
 mod settabs;
+mod shellsurf;
 mod settings;
 mod sys;
 mod tick;

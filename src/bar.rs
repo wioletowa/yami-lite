@@ -586,7 +586,7 @@ fn module(ui: &mut Ui, st: &State, out: &str, m: &str, x: i32, measure: bool) ->
         }
         "settings" => {
             if !measure {
-                ui.button(R::new(x, cy - 11, 26, 22), "", "gear", Tone::Ghost, st.modal == Some(crate::app::Modal::Settings), true, Act::Settings);
+                ui.button(R::new(x, cy - 11, 26, 22), "", "gear", Tone::Ghost, st.settings_shown, true, Act::Settings);
             }
             26
         }
@@ -697,7 +697,6 @@ impl App {
     /// форма бара сменилась (настройки, размер монитора): поверхность меняется на месте, не
     /// пересоздаётся — у niri бар остаётся первым и не уступает место доку сбоку
     pub fn sync_bar(&mut self) {
-        use smithay_client_toolkit::shell::WaylandSurface;
         let mut moved = false;
         for id in self.find(&SKind::Bar) {
             let out = self.surfs.get(&id).map(|s| s.output.clone()).unwrap_or_default();

@@ -48,7 +48,7 @@ impl App {
             Act::NightToggle => self.night_toggle(),
             Act::ReplySend => self.reply_send(),
             Act::Power => self.toggle_modal(Modal::Power),
-            Act::Settings => self.toggle_modal(Modal::Settings),
+            Act::Settings => self.toggle_settings(),
             Act::Ws(id) => {
                 if let Some(ws) = self.st.niri.ws.iter().find(|w| w.id == id).cloned() {
                     self.st.niri.focus_ws(&ws);

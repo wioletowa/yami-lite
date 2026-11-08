@@ -59,7 +59,7 @@ impl App {
         if blink != self.st.blink {
             self.st.blink = blink;
             if self.st.field_focus.is_some() || self.st.locked {
-                self.dirty(&SKind::Modal);
+                self.dirty_panels();
                 self.dirty_where(|k| matches!(k, SKind::Widget(_) | SKind::Popup));
                 for l in self.lock_surfs.iter_mut() {
                     l.dirty = true;
@@ -77,7 +77,7 @@ impl App {
             self.wall_park();
             self.bat_check();
             // память видна только в настройках: не читать её каждую секунду зря
-            if self.st.modal == Some(Modal::Settings) || self.st.rss == 0.0 {
+            if self.st.settings_shown || self.st.rss == 0.0 {
                 self.st.rss = crate::sys::self_mem_mb();
             }
             // плеер во всплывашке: время и полоса позиции идут (с эквалайзером их двигают его кадры)

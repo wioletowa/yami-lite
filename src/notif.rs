@@ -8,7 +8,6 @@ use crate::font::{self, PX};
 use crate::gfx::{BoxStyle, Img, R};
 use crate::ui::{Act, Cur, Tone, Ui};
 use smithay_client_toolkit::shell::wlr_layer::{Anchor, KeyboardInteractivity, Layer};
-use smithay_client_toolkit::shell::WaylandSurface;
 use std::rc::Rc;
 use std::time::Instant;
 

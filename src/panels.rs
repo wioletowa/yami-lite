@@ -5,13 +5,10 @@ use crate::app::*;
 use crate::gfx::R;
 use crate::{menu, net, popups};
 
-use smithay_client_toolkit::shell::{
-    wlr_layer::{Anchor, KeyboardInteractivity, Layer},
-    WaylandSurface,
-};
+use smithay_client_toolkit::shell::wlr_layer::{Anchor, KeyboardInteractivity, Layer};
 
 impl App {
-    // ── модальные панели: питание, настройки, ответ, выбор обоев ────────────
+    // ── модальные панели: питание, ответ, выбор обоев ───────────────────────
     pub fn toggle_modal(&mut self, m: Modal) {
         if self.st.locked {
             return;
@@ -24,7 +21,6 @@ impl App {
         let out = self.focus_out();
         let (w, h) = match m {
             Modal::Power => crate::power::SIZE,
-            Modal::Settings => crate::settings::SIZE,
             Modal::Reply => crate::reply::SIZE,
             Modal::Walls => crate::walls::SIZE,
         };
@@ -32,18 +28,10 @@ impl App {
         match m {
             Modal::Power => self.st.power_cur = 0,
             Modal::Reply | Modal::Walls => {}
-            Modal::Settings => {
-                self.tab_probe();
-                self.st.hex.set(&self.st.set.accent.clone());
-                if self.st.sel_widget == 0 {
-                    self.st.sel_widget = self.st.set.widgets.first().map(|w| w.id).unwrap_or(0);
-                }
-            }
         }
         self.mk(SKind::Dim, &out, Layer::Overlay, "yami-dim", Anchor::all(), (0, 0), (0, 0, 0, 0), -1, KeyboardInteractivity::None);
         self.mk(SKind::Modal, &out, Layer::Overlay, match m {
             Modal::Power => "yami-power",
-            Modal::Settings => "yami-settings",
             Modal::Reply => "yami-reply",
             Modal::Walls => "yami-walls",
         }, Anchor::empty(), (w, h + 12), (0, 0, 0, 0), -1, KeyboardInteractivity::Exclusive);
@@ -76,10 +64,10 @@ impl App {
         if self.st.modal == Some(Modal::Walls) {
             self.walls_free();
         }
-        // код настроек и выбора обоев велик, а нужен изредка: через полминуты — из памяти. После
+        // код выбора обоев велик, а нужен изредка: через полминуты — из памяти. После
         // частых окон — нет: выгрузка задевает и горячий код (бар, тик), а он
         // тут же читается с диска обратно
-        if matches!(self.st.modal, Some(Modal::Settings | Modal::Walls)) {
+        if self.st.modal == Some(Modal::Walls) {
             self.shed_at = Some(std::time::Instant::now() + std::time::Duration::from_secs(30));
         }
         self.st.modal = None;

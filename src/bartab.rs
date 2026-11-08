@@ -1,7 +1,7 @@
 // Настройки → бар: модули фишками в три ряда (слева, по центру, справа), перетаскивание между
 // рядами и из списка «добавить» (встроенные модули и скрипты бара), отступы и вид разделителей.
 
-use crate::app::{App, SKind, State};
+use crate::app::{App, State};
 use crate::config::ALL_MODULES;
 use crate::font::PX;
 use crate::gfx::{BoxStyle, R};
@@ -342,7 +342,7 @@ impl App {
             d.target = target;
             d.at = std::time::Instant::now();
         }
-        self.dirty(&SKind::Modal);
+        self.dirty_panels();
     }
 
     /// отпустили: переставить (мимо рядов — фишка возвращается на место)
@@ -361,6 +361,6 @@ impl App {
             l.insert(ti, d.name);
             self.settings_changed();
         }
-        self.dirty(&SKind::Modal);
+        self.dirty_panels();
     }
 }

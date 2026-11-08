@@ -2,7 +2,7 @@
 // щелчок применяет, × удаляет, кнопка сохраняет текущий вид. Файлы тем бывают по десятку МБ
 // (картинка обоев внутри): читаются и пишутся в нити, ответ — Msg::Themes.
 
-use crate::app::{App, Msg, SKind, State};
+use crate::app::{App, Msg, State};
 use crate::gfx::{BoxStyle, C, R};
 use crate::ui::{Act, Cur, Tone, Ui};
 use yami_px::font::PX;
@@ -82,6 +82,6 @@ impl App {
         if applied {
             self.check_settings_file();
         }
-        self.dirty(&SKind::Modal);
+        self.dirty_panels();
     }
 }

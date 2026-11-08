@@ -39,6 +39,18 @@ binds {
 
 Все команды: `yami-lite help msg`.
 
+Настройки — обычное окно niri (app-id `yami-lite-settings`), в ленте, как любая программа.
+Хочешь плавающим — правило в своём config.kdl:
+
+```kdl
+window-rule {
+    match app-id="^yami-lite-settings$"
+    open-floating true
+    default-column-width { fixed 900; }
+    default-window-height { fixed 640; }
+}
+```
+
 ## Перекраска программ
 
 Настройки → цвет → программы. Каждая выключена, пока не включишь: GTK 3/4, Qt (qt6ct/qt5ct),

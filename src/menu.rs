@@ -6,7 +6,6 @@ use crate::font::{Fonts, PX};
 use crate::gfx::{BoxStyle, R};
 use crate::ui::{Act, Cur, Ui};
 use smithay_client_toolkit::seat::keyboard::{KeyEvent, Keysym};
-use smithay_client_toolkit::shell::WaylandSurface;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum MAct {

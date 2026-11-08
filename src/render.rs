@@ -6,7 +6,7 @@ use crate::app::*;
 use crate::gfx::{Canvas, R};
 use crate::theme::CLEAR;
 use crate::ui::Ui;
-use smithay_client_toolkit::{compositor::Region, shell::WaylandSurface, shm::slot::SlotPool};
+use smithay_client_toolkit::{compositor::Region, shm::slot::SlotPool};
 use std::time::Instant;
 use wayland_client::protocol::wl_shm;
 
@@ -132,7 +132,7 @@ impl App {
                 SKind::Bar => crate::bar::draw(&mut ui, st, &s.output, w),
                 SKind::Dim => {
                     // затемнение цветом фона темы, а не чёрным: стол остаётся виден
-                    let a = if matches!(st.modal, Some(crate::app::Modal::Settings | crate::app::Modal::Walls)) { st.set.dim * 0.7 } else { st.set.dim };
+                    let a = if st.modal == Some(crate::app::Modal::Walls) { st.set.dim * 0.7 } else { st.set.dim };
                     ui.cv.opacity = 1.0;
                     ui.cv.oy = 0;
                     ui.cv.clear(st.t.bg.alpha(a * k));
@@ -140,11 +140,11 @@ impl App {
                 SKind::Catcher => {}
                 SKind::Modal => match st.modal {
                     Some(Modal::Power) => crate::power::draw(&mut ui, st, w, h),
-                    Some(Modal::Settings) => crate::settings::draw(&mut ui, st, w, h),
                     Some(Modal::Reply) => crate::reply::draw(&mut ui, st, w, h),
                     Some(Modal::Walls) => crate::walls::draw(&mut ui, st, w, h),
                     None => {}
                 },
+                SKind::Settings => crate::settings::draw(&mut ui, st, w, h),
                 SKind::Popup => crate::popups::draw(&mut ui, st, w, h),
                 SKind::Menu => crate::menu::draw(&mut ui, st, w, h),
                 SKind::Notifs => crate::notif::draw(&mut ui, st, w, h),

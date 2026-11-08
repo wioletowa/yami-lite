@@ -4,7 +4,7 @@
 // NotificationReplied. Текст не попадает ни на диск, ни в буфер обмена.
 // i18n: inline pairs
 
-use crate::app::{App, Modal, SKind, State};
+use crate::app::{App, Modal, State};
 use crate::font::PX;
 use crate::gfx::R;
 use crate::ui::{Act, Field, Tone, Ui};
@@ -67,6 +67,6 @@ impl App {
                 App::edit_field(&mut self.st.reply.field, e, &mods);
             }
         }
-        self.dirty(&SKind::Modal);
+        self.dirty_panels();
     }
 }

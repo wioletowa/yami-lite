@@ -1,7 +1,7 @@
 // Питание: столбик кнопок.
 // Стрелки/Tab — выбор, Enter — выполнить, буква — сразу, Esc — закрыть.
 
-use crate::app::{App, SKind, State};
+use crate::app::{App, State};
 use crate::font::PX;
 use crate::gfx::R;
 use crate::ui::{Act, Tone, Ui};
@@ -76,6 +76,6 @@ impl App {
                 }
             }
         }
-        self.dirty(&SKind::Modal);
+        self.dirty_panels();
     }
 }

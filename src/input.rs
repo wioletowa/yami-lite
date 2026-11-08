@@ -10,7 +10,6 @@ use smithay_client_toolkit::{
         keyboard::{KeyEvent, Keysym, Modifiers},
         pointer::{PointerEvent, PointerEventKind},
     },
-    shell::WaylandSurface,
 };
 use std::time::Instant;
 use wayland_client::protocol::wl_surface;
@@ -113,9 +112,16 @@ impl App {
                     }
                 }
             }
-            PointerEventKind::Press { button, .. } => {
+            PointerEventKind::Press { button, serial, .. } => {
                 self.ptr = Some((sid, x, y));
                 let z = self.zone_at(sid, x, y);
+                // заголовок окна настроек: окно двигает niri, как за его рамку
+                if let (Some(Act::MDrag), Some(win), Some(seat)) = (z.as_ref().map(|z| &z.act), self.surfs.get(&sid).and_then(|s| s.layer.window()), self.seat.seats().next()) {
+                    if button == 0x110 {
+                        win.move_(&seat, serial);
+                        return;
+                    }
+                }
                 let (sx, sy) = self.surfs.get(&sid).map(|s| s.applied).unwrap_or((0, 0));
                 if let Some(z) = z {
                     // тащим от того места, где поверхность реально стоит
@@ -166,7 +172,7 @@ impl App {
                     let d = if d > 0.0 { 1 } else { -1 };
                     // окно настроек: колесо листает вкладку, если есть куда (ползунки и числа под
                     // курсором не меняются сами, пока листаешь); листать нечего — как раньше
-                    let settings = self.st.modal == Some(crate::app::Modal::Settings) && self.surfs.get(&sid).is_some_and(|s| s.kind == SKind::Modal);
+                    let settings = self.surfs.get(&sid).is_some_and(|s| s.kind == SKind::Settings);
                     if settings && matches!(z.act, Act::SSideScroll | Act::STab(_)) {
                         self.settings_side_scroll(d);
                     } else if !(settings && self.settings_scroll(d)) {
@@ -305,11 +311,11 @@ impl App {
         match self.surf_kind(sid) {
             Some(SKind::Modal) => match self.st.modal {
                 Some(Modal::Power) => self.power_key(e),
-                Some(Modal::Settings) => self.settings_key(e),
                 Some(Modal::Reply) => self.reply_key(e),
                 Some(Modal::Walls) => self.walls_key(e),
                 None => {}
             },
+            Some(SKind::Settings) => self.settings_key(e),
             Some(SKind::Popup) => self.popup_key(e),
             Some(SKind::Menu) => self.menu_key(e),
             Some(SKind::Widget(_)) => self.widget_key(e),

@@ -143,12 +143,12 @@ impl App {
                     if self.st.color_page == 1 {
                         self.theme_do("list", 0);
                     }
-                    self.dirty(&SKind::Modal);
+                    self.dirty_panels();
                 }
                 "theme_save" => self.theme_do("save", 0),
                 "bar_page_mods" | "bar_page_look" => {
                     self.st.bar_ed.look = *k == "bar_page_look";
-                    self.dirty(&SKind::Modal);
+                    self.dirty_panels();
                 }
                 "bar_center_align" => {
                     s.bar_center_align = if s.bar_center_align == "after-left" { "center" } else { "after-left" }.into();
@@ -349,7 +349,7 @@ impl App {
             }
             _ => return self.wall_click(a),
         }
-        self.dirty(&SKind::Modal);
+        self.dirty_panels();
         true
     }
 
