@@ -4,6 +4,7 @@
 use crate::app::*;
 use crate::clock::local_now;
 use crate::proc::reap_inherited;
+use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 impl App {
@@ -24,17 +25,11 @@ impl App {
             return;
         }
         let now = Instant::now();
-        // подключённые — из памяти попыток: отключатся — пробовать сразу
-        let waiting: Vec<&String> = b.devices.iter().filter(|d| !d.connected).map(|d| &d.path).collect();
-        self.st.bt_auto_try.retain(|p, _| waiting.contains(&p));
-        let b = &self.st.bt;
-        let due: Vec<String> = b
-            .devices
-            .iter()
-            .filter(|d| d.paired && !d.connected && self.st.set.bt_auto.iter().any(|k| k == crate::net::bt_key(&d.path)))
-            .filter(|d| self.st.bt_auto_try.get(&d.path).is_none_or(|t| now.duration_since(*t).as_secs() >= 30))
-            .map(|d| d.path.clone())
-            .collect();
+        // подключённые — из памяти попыток (отключатся — пробовать сразу) и из отключённых руками
+        let on: Vec<&String> = b.devices.iter().filter(|d| d.connected).map(|d| &d.path).collect();
+        self.st.bt_auto_try.retain(|p, _| !on.contains(&p));
+        self.st.bt_auto_hold.retain(|p| !on.contains(&p));
+        let due = bt_due(&self.st.bt.devices, &self.st.set.bt_auto, &self.st.bt_auto_try, &self.st.bt_auto_hold, now);
         for p in due {
             self.st.bt_auto_try.insert(p.clone(), now);
             crate::net::bt_connect_quiet(p, self.tx.clone());
@@ -185,5 +180,44 @@ impl App {
         if cfg.1 > 0 {
             self.idle_notes.push(idle.get_idle_notification(cfg.1 * 60_000, &seat, &self.qh, 1));
         }
+    }
+}
+
+/// кого автоподключать сейчас: отмеченные сопряжённые, не подключённые и не отключённые руками; то
+/// же устройство уже подключено через другой адаптер — не трогать; попытка не чаще раза в 30 с
+fn bt_due(devs: &[crate::net::BtDev], auto: &[String], tried: &HashMap<String, Instant>, hold: &HashSet<String>, now: Instant) -> Vec<String> {
+    use crate::net::bt_key;
+    devs.iter()
+        .filter(|d| d.paired && !d.connected && !hold.contains(&d.path) && auto.iter().any(|k| k == bt_key(&d.path)))
+        .filter(|d| !devs.iter().any(|o| o.connected && bt_key(&o.path) == bt_key(&d.path)))
+        .filter(|d| tried.get(&d.path).is_none_or(|t| now.duration_since(*t).as_secs() >= 30))
+        .map(|d| d.path.clone())
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::net::BtDev;
+
+    fn dev(path: &str, connected: bool) -> BtDev {
+        BtDev { path: path.into(), connected, paired: true, ..Default::default() }
+    }
+
+    #[test]
+    fn auto_connect_skips_held_and_the_same_device_on_another_adapter() {
+        let now = Instant::now();
+        let auto = vec!["dev_AA".to_string()];
+        let (tried, mut hold) = (HashMap::new(), HashSet::new());
+        let one = [dev("/org/bluez/hci0/dev_AA", false)];
+        assert_eq!(bt_due(&one, &auto, &tried, &hold, now), vec!["/org/bluez/hci0/dev_AA".to_string()]);
+        hold.insert("/org/bluez/hci0/dev_AA".to_string());
+        assert!(bt_due(&one, &auto, &tried, &hold, now).is_empty(), "disconnected by hand");
+        hold.clear();
+        let two = [dev("/org/bluez/hci0/dev_AA", false), dev("/org/bluez/hci1/dev_AA", true)];
+        assert!(bt_due(&two, &auto, &tried, &hold, now).is_empty(), "already connected via hci1");
+        let tried = HashMap::from([("/org/bluez/hci0/dev_AA".to_string(), now)]);
+        assert!(bt_due(&one, &auto, &tried, &hold, now + Duration::from_secs(10)).is_empty());
+        assert_eq!(bt_due(&one, &auto, &tried, &hold, now + Duration::from_secs(30)).len(), 1);
     }
 }

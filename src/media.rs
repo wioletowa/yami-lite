@@ -6,6 +6,7 @@
 
 use crate::app::{App, Msg, SKind};
 use calloop::channel::Sender;
+use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
 use std::time::Instant;
@@ -126,48 +127,74 @@ pub fn spawn(tx: Sender<Msg>) {
     std::thread::Builder::new().name("mpris".into()).spawn(move || watch_players(t)).ok();
     std::thread::Builder::new()
         .name("media".into())
-        .spawn(move || loop {
-            let fmt = "{{playerInstance}}\t{{playerName}}\t{{status}}\t{{artist}}\t{{title}}\t{{mpris:artUrl}}\t{{mpris:length}}\t{{position}}\t{{album}}\t{{loop}}\t{{shuffle}}";
-            // -a: строки всех плееров, не только «главного» по мнению playerctl; пустая — плееров не осталось
-            let Ok(mut c) = crate::proc::owned(Command::new("playerctl").args(["-a", "-F", "metadata", "--format", fmt]).stdout(Stdio::piped()).stderr(Stdio::null())).spawn() else {
-                std::thread::sleep(std::time::Duration::from_secs(30));
-                continue;
-            };
-            let Some(out) = c.stdout.take() else {
-                let _ = c.kill();
-                let _ = c.wait();
-                continue;
-            };
-            for l in BufReader::new(out).lines() {
-                let Ok(l) = l else { break };
-                let f: Vec<&str> = l.split('\t').collect();
-                let g = |i: usize| f.get(i).copied().unwrap_or("").to_string();
-                let m = MediaState {
-                    inst: g(0),
-                    player: g(1),
-                    status: g(2),
-                    artist: g(3),
-                    title: g(4),
-                    album: g(8),
-                    art: g(5),
-                    length: g(6).parse::<f64>().unwrap_or(0.0) / 1e6,
-                    pos: g(7).parse::<f64>().unwrap_or(0.0) / 1e6,
-                    at: Instant::now(),
-                    played: None,
-                    repeat: g(9),
-                    shuffle: match g(10).as_str() {
-                        "true" => Some(true),
-                        "false" => Some(false),
-                        _ => None,
-                    },
+        .spawn(move || {
+            // кто что умеет (повтор, перемешивание) — по одному вопросу шине на плеер
+            let bus = zbus::blocking::Connection::session().ok();
+            let mut caps: HashMap<String, (bool, bool)> = HashMap::new();
+            loop {
+                let fmt = "{{playerInstance}}\t{{playerName}}\t{{status}}\t{{artist}}\t{{title}}\t{{mpris:artUrl}}\t{{mpris:length}}\t{{position}}\t{{album}}\t{{loop}}\t{{shuffle}}";
+                // -a: строки всех плееров, не только «главного» по мнению playerctl; пустая — плееров не осталось
+                let Ok(mut c) = crate::proc::owned(Command::new("playerctl").args(["-a", "-F", "metadata", "--format", fmt]).stdout(Stdio::piped()).stderr(Stdio::null())).spawn() else {
+                    std::thread::sleep(std::time::Duration::from_secs(30));
+                    continue;
                 };
-                let _ = tx.send(Msg::Media(m));
+                let Some(out) = c.stdout.take() else {
+                    let _ = c.kill();
+                    let _ = c.wait();
+                    continue;
+                };
+                for l in BufReader::new(out).lines() {
+                    let Ok(l) = l else { break };
+                    let inst = l.split('\t').next().unwrap_or("");
+                    // плееров не осталось — память о том, кто что умеет, тоже не нужна
+                    let cap = if inst.is_empty() {
+                        caps.clear();
+                        (true, true)
+                    } else {
+                        *caps.entry(inst.to_string()).or_insert_with(|| player_caps(bus.as_ref(), inst))
+                    };
+                    let _ = tx.send(Msg::Media(parse_line(&l, cap)));
+                }
+                let _ = c.wait();
+                let _ = tx.send(Msg::Media(MediaState::default()));
+                std::thread::sleep(std::time::Duration::from_secs(3));
             }
-            let _ = c.wait();
-            let _ = tx.send(Msg::Media(MediaState::default()));
-            std::thread::sleep(std::time::Duration::from_secs(3));
         })
         .ok();
+}
+
+/// умеет ли плеер повтор и перемешивание: playerctl без этих свойств печатает `None` и `false`, как
+/// будто они есть (Firefox), поэтому спрашиваем сам плеер. Шины нет — считаем, что умеет
+fn player_caps(bus: Option<&zbus::blocking::Connection>, inst: &str) -> (bool, bool) {
+    let Some(c) = bus.filter(|_| !inst.is_empty()) else { return (true, true) };
+    let dest = format!("{MPRIS}{inst}");
+    let has = |prop: &str| c.call_method(Some(dest.as_str()), "/org/mpris/MediaPlayer2", Some("org.freedesktop.DBus.Properties"), "Get", &("org.mpris.MediaPlayer2.Player", prop)).is_ok();
+    (has("LoopStatus"), has("Shuffle"))
+}
+
+/// строка `playerctl metadata --format` → состояние; cap — (умеет повтор, умеет перемешивание)
+fn parse_line(l: &str, cap: (bool, bool)) -> MediaState {
+    let f: Vec<&str> = l.split('\t').collect();
+    let g = |i: usize| f.get(i).copied().unwrap_or("").to_string();
+    MediaState {
+        inst: g(0),
+        player: g(1),
+        status: g(2),
+        artist: g(3),
+        title: g(4),
+        album: g(8),
+        art: g(5),
+        length: g(6).parse::<f64>().unwrap_or(0.0) / 1e6,
+        pos: g(7).parse::<f64>().unwrap_or(0.0) / 1e6,
+        at: Instant::now(),
+        played: None,
+        repeat: if cap.0 { g(9) } else { String::new() },
+        shuffle: match g(10).as_str() {
+            "true" if cap.1 => Some(true),
+            "false" if cap.1 => Some(false),
+            _ => None,
+        },
+    }
 }
 
 /// обложка: файл или ссылка → 64×64 клетками по 2 px
@@ -357,5 +384,17 @@ mod tests {
         assert_eq!(shown(&ps, &picked), "firefox", "started again: shown");
         assert!(picked.is_empty());
         assert_eq!(shown(&[], ""), "");
+    }
+
+    #[test]
+    fn repeat_and_shuffle_only_when_the_player_has_them() {
+        // Firefox: свойств LoopStatus и Shuffle нет, а playerctl всё равно печатает None и false
+        let l = "firefox.instance_1_61\tfirefox\tPlaying\ta\tt\t\t1000000\t0\t\tNone\tfalse";
+        let m = parse_line(l, (false, false));
+        assert_eq!((m.repeat.as_str(), m.shuffle), ("", None));
+        let m = parse_line(l, (true, true));
+        assert_eq!((m.repeat.as_str(), m.shuffle), ("None", Some(false)));
+        assert_eq!((m.inst.as_str(), m.length), ("firefox.instance_1_61", 1.0));
+        assert_eq!(parse_line("", (true, true)).inst, "");
     }
 }

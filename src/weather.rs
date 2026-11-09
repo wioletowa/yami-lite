@@ -292,37 +292,43 @@ fn hourly(ui: &mut Ui, w: &Weather, r: R) {
     let lo = w.hours.iter().map(|h| h.1).fold(f32::MAX, f32::min);
     let hi = w.hours.iter().map(|h| h.1).fold(f32::MIN, f32::max);
     let span = (hi - lo).max(4.0);
-    // температура — общим графиком (widgets::graph, линия): он кладёт точки столбцами по 3 px
-    // справа налево, поэтому сутки растягиваются на всю ширину — по точке на столбец
+    // температура — общим графиком (widgets::graph, линия): он кладёт точки столбцами по 3 px от
+    // правого края, самую свежую — на сам край, под клип. Ширина — ровно cols столбцов, точек на одну
+    // больше (повтор последней): столбец j стоит на g.x + 3j, сутки — на всю ширину
     const COL: i32 = 3;
-    let cols = (inr.w / COL) as usize + 2;
+    let cols = (inr.w / COL).max(2) as usize;
+    let g = R::new(inr.x, inr.y, cols as i32 * COL, inr.h);
     let last = w.hours.len() - 1;
     let temp_at = |f: f32| {
         let i = (f.floor() as usize).min(last);
         let (a, b) = (w.hours[i].1, w.hours[(i + 1).min(last)].1);
         a + (b - a) * (f - i as f32)
     };
-    let data: Vec<f32> = (0..cols).map(|j| (temp_at(j as f32 / (cols - 1) as f32 * last as f32) - lo) / span).collect();
-    let at = |i: usize| {
-        let j = (i as f32 / last as f32 * (cols - 1) as f32).round() as i32;
-        inr.right() - (cols as i32 - j) * COL + COL
-    };
-    let yof = |v: f32| inr.bottom() - (((v - lo) / span).clamp(0.0, 1.0) * inr.h as f32).round().max(1.0) as i32;
-    // осадки — столбики у дна
+    let mut data: Vec<f32> = (0..cols).map(|j| (temp_at(j as f32 / (cols - 1) as f32 * last as f32) - lo) / span).collect();
+    data.push(data[cols - 1]);
+    // час → середина его столбца; высота точки — та же, что у линии в этом столбце
+    let at = |i: usize| g.x + hour_col(i, last, cols) as i32 * COL + COL / 2;
+    let yof = |i: usize| g.bottom() - (data[hour_col(i, last, cols)].clamp(0.0, 1.0) * g.h as f32).round().max(1.0) as i32;
+    crate::widgets::graph(ui, g, &data, "line", "none", 0.0, t.red, None);
+    // осадки — столбики у дна, поверх сетки и заливки графика
     for (i, h) in w.hours.iter().enumerate() {
         if h.2 >= 10.0 {
             let ph = ((h.2 / 100.0) * 18.0).round() as i32;
             ui.cv.fill(R::new(at(i) - 2, r.bottom() - 22 - ph, 4, ph), t.accent2.alpha(0.6));
         }
     }
-    crate::widgets::graph(ui, inr, &data, "line", "none", 0.0, t.red, None);
     // подписи: градусы над точкой и час под ней, через 3 часа
     for (i, h) in w.hours.iter().enumerate().step_by(3) {
         let x = at(i);
-        ui.cv.fill(R::new(x - 2, yof(h.1) - 2, 4, 4), t.ember);
-        ui.text_center(PX, R::new(x - 20, yof(h.1) - 20, 40, 16), &deg(h.1), t.text);
+        ui.cv.fill(R::new(x - 2, yof(i) - 2, 4, 4), t.ember);
+        ui.text_center(PX, R::new(x - 20, yof(i) - 20, 40, 16), &deg(h.1), t.text);
         ui.text_center(PX, R::new(x - 20, r.bottom() - 20, 40, 16), &format!("{:02}", h.0), t.text_faint);
     }
+}
+
+/// столбец графика для часа i из 0..=last, когда сутки растянуты на cols столбцов
+fn hour_col(i: usize, last: usize, cols: usize) -> usize {
+    (i as f32 / last as f32 * (cols - 1) as f32).round() as usize
 }
 
 impl App {
@@ -400,6 +406,13 @@ mod tests {
         assert_eq!(icon(63, true), "rain");
         assert_eq!(icon(95, true), "storm");
         assert_eq!(text(75), "снег");
+    }
+
+    #[test]
+    fn hours_span_every_visible_column() {
+        // 24 часа на 100 столбцов: первый — в нулевом, последний — в последнем видимом
+        assert_eq!((hour_col(0, 23, 100), hour_col(23, 23, 100)), (0, 99));
+        assert_eq!(hour_col(1, 1, 2), 1);
     }
 
     /// живой запрос: `cargo test weather -- --ignored`

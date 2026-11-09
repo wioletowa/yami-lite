@@ -73,9 +73,14 @@ impl App {
             Act::CtlTile(k) => self.control_tile(&k),
             Act::CtlTab(k) => self.switch_tab(k),
             Act::CtlViz => {
+                // стили по кругу, после последнего — «выкл» (захват звука не нужен), затем снова первый
                 let st = crate::widgets::STYLES;
-                let i = st.iter().position(|(k, _)| *k == self.st.set.ctl_viz).map_or(0, |i| (i + 1) % st.len());
-                self.st.set.ctl_viz = st[i].0.into();
+                self.st.set.ctl_viz = match st.iter().position(|(k, _)| *k == self.st.set.ctl_viz) {
+                    Some(i) if i + 1 < st.len() => st[i + 1].0.into(),
+                    Some(_) => "off".into(),
+                    None => st[0].0.into(),
+                };
+                self.media_sync();
                 self.settings_changed();
             }
             Act::CtlWeatherSet => {
@@ -197,6 +202,14 @@ impl App {
             Act::BtPower(on) => net::bt_power(&self.st.bt.adapter.clone(), on, self.tx.clone()),
             Act::BtDev(path) => {
                 let Some(d) = self.st.bt.devices.iter().find(|d| d.path == path).cloned() else { return };
+                // отключил руками — автоподключение не возвращает, пока не подключат снова; занято
+                // сразу, чтобы тик не увидел его ещё подключённым и не снял запрет
+                if d.connected {
+                    self.st.bt_auto_hold.insert(path.clone());
+                } else {
+                    self.st.bt_auto_hold.remove(&path);
+                }
+                self.st.bt.busy = path;
                 net::bt_toggle_dev(d, self.tx.clone(), self.st.bt.clone());
             }
             Act::BtOpen(path) => {
@@ -209,6 +222,7 @@ impl App {
             }
             Act::BtAuto(path) => {
                 let key = net::bt_key(&path).to_string();
+                self.st.bt_auto_hold.remove(&path);
                 let list = &mut self.st.set.bt_auto;
                 match list.iter().position(|k| *k == key) {
                     Some(i) => {
@@ -224,6 +238,7 @@ impl App {
             Act::BtForget(path) => {
                 let Some(d) = self.st.bt.devices.iter().find(|d| d.path == path).cloned() else { return };
                 self.st.bt_open.clear();
+                self.st.bt_auto_hold.remove(&path);
                 // забытое не подключать
                 if let Some(i) = self.st.set.bt_auto.iter().position(|k| k == net::bt_key(&path)) {
                     self.st.set.bt_auto.remove(i);

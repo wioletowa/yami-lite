@@ -268,7 +268,7 @@ pub struct Settings {
     pub weather_city: String,
     /// bluetooth: устройства с автоподключением («dev_AA_BB_…», без адаптера) — шелл подключает их сам
     pub bt_auto: Vec<String>,
-    /// стиль большого эквалайзера во вкладке музыки панели (ЛКМ по нему — следующий)
+    /// стиль большого эквалайзера во вкладке музыки панели (ЛКМ по нему — следующий; off — выключен)
     pub ctl_viz: String,
     pub weather_units: String,
     pub night_on_h: i32,
@@ -510,7 +510,7 @@ impl Settings {
     /// строки из файла (правка руками, чужая тема): имена — без управляющих символов, кавычек и
     /// разделителей, акцент — только #rrggbb
     pub fn sanitize(&mut self) {
-        if !crate::widgets::STYLES.iter().any(|(k, _)| *k == self.ctl_viz) {
+        if self.ctl_viz != "off" && !crate::widgets::STYLES.iter().any(|(k, _)| *k == self.ctl_viz) {
             self.ctl_viz = "bars".into();
         }
         // старые записи — полные пути BlueZ: только устройство

@@ -25,9 +25,10 @@ pub fn shows_player(st: &State) -> bool {
     st.popup_is("media") || (st.popup_is("sound") && sound_media(st))
 }
 
-/// открытая всплывашка рисует эквалайзер (ему нужен захват звука)
+/// открытая всплывашка рисует эквалайзер (ему нужен захват звука): у вкладки музыки свой (ctl_viz),
+/// у плеера во всплывашке звука — тот же, что в баре (media_viz)
 pub fn shows_viz(st: &State) -> bool {
-    st.set.media_viz != "off" && (st.popup_is("media") || (st.popup_is("sound") && sound_media(st)))
+    (st.popup_is("media") && st.set.ctl_viz != "off") || (st.popup_is("sound") && sound_media(st) && st.set.media_viz != "off")
 }
 
 /// размер всплывашки; вкладки панели управления — все одного размера, со столбиком вкладок
@@ -337,8 +338,8 @@ fn vviz(ui: &mut Ui, st: &State, r: R) {
     let hov = ui.hover(r);
     ui.cv.pxbox(r, &BoxStyle::new(t.code_bg, if hov { t.red } else { t.border }));
     let inr = r.inset(12);
-    // эквалайзер выключен (настройки бара) — звук не захватывается, только пунктир
-    let idle = st.set.media_viz == "off" || st.viz.is_empty() || !st.media.playing();
+    // выключен щелчком по нему — звук не захватывается, только пунктир
+    let idle = st.set.ctl_viz == "off" || st.viz.is_empty() || !st.media.playing();
     let n = if st.viz.is_empty() { 24 } else { st.viz.len() } as i32;
     let bh = (inr.h / n).max(2);
     let top = inr.y + (inr.h - bh * n) / 2;
@@ -390,7 +391,7 @@ fn vviz(ui: &mut Ui, st: &State, r: R) {
         prev = Some((cx - half, cx + half));
     }
     if hov {
-        let name = crate::widgets::name_of(widgets::STYLES, &st.set.ctl_viz);
+        let name = if st.set.ctl_viz == "off" { "выкл" } else { crate::widgets::name_of(widgets::STYLES, &st.set.ctl_viz) };
         ui.text_center(PX, R::new(r.x, r.bottom() - 26, r.w, 18), name, t.text_faint);
     }
     ui.zone(r, Act::CtlViz, Cur::Pointer);

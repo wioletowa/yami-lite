@@ -31,7 +31,7 @@ use smithay_client_toolkit::{
     },
     shm::{slot::SlotPool, Shm},
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 use wayland_client::{
     globals::registry_queue_init,
@@ -262,6 +262,8 @@ pub struct State {
     pub bt_open: String,
     /// автоподключение: когда пробовали подключить устройство последний раз
     pub bt_auto_try: HashMap<String, Instant>,
+    /// автоподключение: отключённые руками — сами не подключаются, пока их не подключат снова
+    pub bt_auto_hold: HashSet<String>,
     /// вкладка «система»: топ процессов (опрашивается, пока она открыта)
     pub procs: crate::sys::Procs,
     /// о низком заряде уже сказали: 1 — на 10%, 2 — на 5%; сбрасывается на зарядке
@@ -478,6 +480,7 @@ impl State {
             wifi_target: String::new(),
             bt_open: String::new(),
             bt_auto_try: HashMap::new(),
+            bt_auto_hold: HashSet::new(),
             procs: Default::default(),
             bat_warn: 0,
             tray: vec![],

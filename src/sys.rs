@@ -448,12 +448,19 @@ impl Procs {
         // одинаковые имена (вкладки браузера, воркеры) — одной строкой
         let mut by_name: std::collections::HashMap<String, Proc> = std::collections::HashMap::new();
         for p in list {
-            let m = by_name.entry(p.name.clone()).or_insert_with(|| Proc { name: p.name.clone(), ..Default::default() });
-            m.cpu += p.cpu;
-            m.mem += p.mem;
+            match by_name.get_mut(&p.name) {
+                Some(m) => {
+                    m.cpu += p.cpu;
+                    m.mem += p.mem;
+                }
+                None => {
+                    by_name.insert(p.name.clone(), p);
+                }
+            }
         }
         let mut merged: Vec<Proc> = by_name.into_values().collect();
-        merged.sort_by(|a, b| b.cpu.total_cmp(&a.cpu).then(b.mem.total_cmp(&a.mem)));
+        // равные — по имени: порядок обхода HashMap от опроса к опросу разный, строки бы прыгали
+        merged.sort_by(|a, b| b.cpu.total_cmp(&a.cpu).then(b.mem.total_cmp(&a.mem)).then_with(|| a.name.cmp(&b.name)));
         merged.truncate(12);
         self.top = merged;
         self.prev = seen;
