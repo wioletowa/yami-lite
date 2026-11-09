@@ -16,6 +16,27 @@ impl App {
         Duration::from_millis(ms)
     }
 
+    /// автоподключение: отмеченные сопряжённые устройства, пока не подключены, — попытка раз
+    /// в 30 с, пока Bluetooth включён и не идёт сопряжение
+    fn bt_auto_tick(&mut self) {
+        let b = &self.st.bt;
+        if !b.powered || !b.busy.is_empty() || self.st.set.bt_auto.is_empty() {
+            return;
+        }
+        let now = Instant::now();
+        let due: Vec<String> = b
+            .devices
+            .iter()
+            .filter(|d| d.paired && !d.connected && self.st.set.bt_auto.contains(&d.path))
+            .filter(|d| self.st.bt_auto_try.get(&d.path).is_none_or(|t| now.duration_since(*t).as_secs() >= 30))
+            .map(|d| d.path.clone())
+            .collect();
+        for p in due {
+            self.st.bt_auto_try.insert(p.clone(), now);
+            crate::net::bt_connect_quiet(p, self.tx.clone());
+        }
+    }
+
     /// батарея садится: одно уведомление на 10% и одно на 5%, пока не поставят на зарядку
     pub(crate) fn bat_check(&mut self) {
         let Some(b) = self.st.sys.bat else { return };
@@ -55,6 +76,7 @@ impl App {
         if now.duration_since(self.last_sample) >= Duration::from_millis(990) {
             self.last_sample = now;
             self.weather_tick();
+            self.bt_auto_tick();
             // игра на весь экран закрывает все бары: датчики видеокарты не нужны, а nvidia-smi раз в
             // 3 с под игрой — лишняя работа драйвера (рывки кадров)
             let fo = self.focus_out();

@@ -647,10 +647,14 @@ fn bt_row(ui: &mut Ui, st: &State, d: &crate::net::BtDev, r: R, open: bool) {
     let y = r.bottom() + 4;
     let busy = st.bt.busy == d.path;
     if d.paired {
-        let bw = (r.w - 12) / 3;
-        ui.button(R::new(r.x, y, bw, 26), if d.connected { "отключить" } else { "подключить" }, if d.connected { "close" } else { "check" }, Tone::Plain, false, !busy, Act::BtDev(d.path.clone()));
-        ui.button(R::new(r.x + bw + 6, y, bw, 26), "доверие", if d.trusted { "check" } else { "close" }, Tone::Plain, d.trusted, !busy, Act::BtTrust(d.path.clone()));
-        ui.button(R::new(r.x + 2 * (bw + 6), y, bw, 26), "забыть", "trash", Tone::Plain, false, !busy, Act::BtForget(d.path.clone()));
+        // подключить, доверие, автоподключение (горят, когда включены) и мусорка — забыть
+        let auto = st.set.bt_auto.contains(&d.path);
+        let tw = 30;
+        let bw = (r.w - tw - 18) / 3;
+        ui.button(R::new(r.x, y, bw + 20, 26), if d.connected { "отключить" } else { "подключить" }, "", Tone::Plain, false, !busy, Act::BtDev(d.path.clone()));
+        ui.button(R::new(r.x + bw + 26, y, bw - 10, 26), "доверие", "", Tone::Plain, d.trusted, !busy, Act::BtTrust(d.path.clone()));
+        ui.button(R::new(r.x + 2 * bw + 22, y, bw - 10, 26), "авто", "", Tone::Plain, auto, true, Act::BtAuto(d.path.clone()));
+        ui.button(R::new(r.right() - tw, y, tw, 26), "", "trash", Tone::Plain, false, !busy, Act::BtForget(d.path.clone()));
     } else {
         ui.button(R::new(r.x, y, r.w, 26), if busy { "сопрягаю…" } else { "сопрячь и подключить" }, "bt", Tone::Primary, false, !busy, Act::BtDev(d.path.clone()));
     }

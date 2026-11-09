@@ -145,6 +145,8 @@ pub enum Act {
     /// строка устройства: раскрыть кнопки (подключить, доверие, забыть)
     BtOpen(String),
     BtTrust(String),
+    /// автоподключение устройства (шелл сам подключает его, когда оно рядом)
+    BtAuto(String),
     BtForget(String),
     BtScan,
     /// полный менеджер bluetooth (blueman или bluetoothctl в терминале)

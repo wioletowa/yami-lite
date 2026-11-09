@@ -646,7 +646,8 @@ pub fn keep_visible(x: i32, y: i32, w: i32, h: i32, ow: i32, oh: i32) -> (i32, i
 /// одна ось: начало pos у отрезка длиной size. guides — линии (координата, это крест); к линии
 /// прилипает начало или конец отрезка, к кресту — ещё и середина. Нет линии рядом — сетка
 /// (начало или конец на её линии). Возвращает начало и прилип ли к кресту
-fn snap_axis(pos: i32, size: i32, guides: &[(i32, bool)]) -> (i32, bool) {
+/// линии сетки идут от середины монитора (origin) — от креста, а не от края
+fn snap_axis(pos: i32, size: i32, origin: i32, guides: &[(i32, bool)]) -> (i32, bool) {
     let mut best: Option<(i32, i32, bool)> = None;
     for &(g, cross) in guides {
         let mut cands = vec![g, g - size];
@@ -663,7 +664,7 @@ fn snap_axis(pos: i32, size: i32, guides: &[(i32, bool)]) -> (i32, bool) {
     if let Some((_, c, cross)) = best {
         return (c, cross);
     }
-    let round = |v: i32| (v as f32 / GRID as f32).round() as i32 * GRID;
+    let round = |v: i32| origin + ((v - origin) as f32 / GRID as f32).round() as i32 * GRID;
     let (a, b) = (round(pos), round(pos + size) - size);
     let c = if (a - pos).abs() <= (b - pos).abs() { a } else { b };
     if (c - pos).abs() <= GRID_MAGNET {
@@ -684,24 +685,25 @@ pub fn snap(x: i32, y: i32, w: i32, h: i32, ow: i32, oh: i32, bars: &[i32], othe
         gx.extend([(o.x, false), (o.right(), false)]);
         gy.extend([(o.y, false), (o.bottom(), false)]);
     }
-    let (nx, cx) = snap_axis(x, w, &gx);
-    let (ny, cy) = snap_axis(y, h, &gy);
+    let (nx, cx) = snap_axis(x, w, ow / 2, &gx);
+    let (ny, cy) = snap_axis(y, h, oh / 2, &gy);
     let (nx, ny) = keep_visible(nx, ny, w, h, ow, oh);
     (nx, ny, (cx, cy))
 }
 
-/// сетка расстановки поверх обоев: вуаль для контраста, линии через GRID точками, крест посередине
+/// сетка расстановки поверх обоев: вуаль для контраста, линии через GRID точками от креста посередине
 /// (горит, когда к нему прилип виджет)
 pub fn draw_grid(ui: &mut Ui, st: &State, w: i32, h: i32) {
     let t = ui.t;
     ui.cv.fill(R::new(0, 0, w, h), t.bg.alpha(0.3));
     let dot = t.text.fade(0.22);
-    for x in (GRID..w).step_by(GRID as usize) {
+    // клетки расходятся от креста: первая линия — середина минус целые клетки
+    for x in ((w / 2) % GRID..w).step_by(GRID as usize) {
         for y in (0..h).step_by(4) {
             ui.cv.fill(R::new(x, y, 1, 1), dot);
         }
     }
-    for y in (GRID..h).step_by(GRID as usize) {
+    for y in ((h / 2) % GRID..h).step_by(GRID as usize) {
         for x in (0..w).step_by(4) {
             ui.cv.fill(R::new(x, y, 1, 1), dot);
         }
@@ -799,7 +801,8 @@ impl App {
             match sid {
                 None => {
                     // и при расстановке — под окнами: стол виден, когда окна убраны
-                    let s = self.mk(SKind::Widget(w.id), &out, Layer::Bottom, "yami-widget", Anchor::TOP | Anchor::LEFT, (ww, wh), (y, 0, 0, x), -1, KeyboardInteractivity::None);
+                    let kb = if self.st.editing { KeyboardInteractivity::OnDemand } else { KeyboardInteractivity::None };
+                    let s = self.mk(SKind::Widget(w.id), &out, Layer::Bottom, "yami-widget", Anchor::TOP | Anchor::LEFT, (ww, wh), (y, 0, 0, x), -1, kb);
                     if let Some(s) = self.surfs.get_mut(&s) {
                         s.margin = (x, y);
                         s.applied = (x, y);
@@ -856,6 +859,12 @@ impl App {
             }
         }
         self.sync_widgets();
+        // при расстановке щелчок по виджету даёт шеллу клавиатуру: Shift (без магнитов) виден
+        let kb = if on { KeyboardInteractivity::OnDemand } else { KeyboardInteractivity::None };
+        for s in self.surfs.values_mut().filter(|s| matches!(s.kind, SKind::Widget(_)) && !s.closing) {
+            s.layer.set_keyboard_interactivity(kb);
+            s.layer.commit();
+        }
         self.dirty_where(|k| matches!(k, SKind::Widget(_)));
     }
 
@@ -898,6 +907,8 @@ mod tests {
         // в стороне от всего — линия сетки, далеко от неё — как есть
         assert_eq!(snap(990, 701, 100, 100, ow, oh, &[], &[]).0, 992);
         assert_eq!(snap(1010, 701, 100, 100, ow, oh, &[], &[]).0, 1010);
+        // строки сетки — от середины по высоте: 540 + 5 клеток
+        assert_eq!(snap(300, 703, 100, 100, ow, oh, &[], &[]).1, 700);
         // за край монитора можно, но кусок остаётся
         assert_eq!(snap(-500, 300, 200, 100, ow, oh, &[], &[]).0, GRID - 200);
     }

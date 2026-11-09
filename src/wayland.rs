@@ -185,6 +185,9 @@ impl KeyboardHandler for App {
         let sid = self.surf_of(surface);
         if self.kb_surf == sid {
             self.kb_surf = None;
+            // клавиатура ушла от шелла: отпускания Shift и прочих он уже не увидит — не держать
+            // их «нажатыми» (иначе виджеты тянутся без магнитов)
+            self.mods = Modifiers::default();
         }
         if let Some(sid) = sid {
             if let Some(SKind::Widget(_)) = self.surf_kind(sid) {

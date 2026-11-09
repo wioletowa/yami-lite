@@ -266,6 +266,8 @@ pub struct Settings {
     pub night_geo: String,
     /// погода во вкладке панели: город или «широта, долгота»; единицы c или f
     pub weather_city: String,
+    /// bluetooth: устройства (пути BlueZ) с автоподключением — шелл подключает их сам
+    pub bt_auto: Vec<String>,
     /// стиль большого эквалайзера во вкладке музыки панели (ЛКМ по нему — следующий)
     pub ctl_viz: String,
     pub weather_units: String,
@@ -470,6 +472,7 @@ impl Default for Settings {
             night_temp: 4000,
             night_geo: String::new(),
             weather_city: String::new(),
+            bt_auto: vec![],
             ctl_viz: "bars".into(),
             weather_units: "c".into(),
             night_on_h: 20,

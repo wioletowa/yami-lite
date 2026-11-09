@@ -203,9 +203,27 @@ impl App {
                 let on = !d.trusted;
                 net::bt_trust(d, on, self.tx.clone());
             }
+            Act::BtAuto(path) => {
+                let list = &mut self.st.set.bt_auto;
+                match list.iter().position(|p| *p == path) {
+                    Some(i) => {
+                        list.remove(i);
+                    }
+                    None => {
+                        list.push(path.clone());
+                        self.st.bt_auto_try.remove(&path);
+                    }
+                }
+                self.settings_changed();
+            }
             Act::BtForget(path) => {
                 let Some(d) = self.st.bt.devices.iter().find(|d| d.path == path).cloned() else { return };
                 self.st.bt_open.clear();
+                // забытое не подключать
+                if let Some(i) = self.st.set.bt_auto.iter().position(|p| *p == path) {
+                    self.st.set.bt_auto.remove(i);
+                    self.settings_changed();
+                }
                 net::bt_remove(&self.st.bt.adapter.clone(), d, self.tx.clone());
             }
             Act::BtScan => net::bt_scan(&self.st.bt.adapter.clone(), self.tx.clone()),

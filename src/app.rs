@@ -260,6 +260,8 @@ pub struct State {
     pub wifi_target: String,
     /// вкладка bluetooth: раскрытое устройство (путь BlueZ)
     pub bt_open: String,
+    /// автоподключение: когда пробовали подключить устройство последний раз
+    pub bt_auto_try: HashMap<String, Instant>,
     /// вкладка «система»: топ процессов (опрашивается, пока она открыта)
     pub procs: crate::sys::Procs,
     /// о низком заряде уже сказали: 1 — на 10%, 2 — на 5%; сбрасывается на зарядке
@@ -475,6 +477,7 @@ impl State {
             wifi_pass: Field::default(),
             wifi_target: String::new(),
             bt_open: String::new(),
+            bt_auto_try: HashMap::new(),
             procs: Default::default(),
             bat_warn: 0,
             tray: vec![],

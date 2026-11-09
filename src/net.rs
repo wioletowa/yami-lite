@@ -487,6 +487,19 @@ pub fn bt_trust(d: BtDev, on: bool, tx: Sender<Msg>) {
     });
 }
 
+/// автоподключение: тихо — без «подождите» и без ошибки в шапке (устройство могло быть далеко)
+pub fn bt_connect_quiet(path: String, tx: Sender<Msg>) {
+    std::thread::spawn(move || {
+        if let Some(c) = SYS.get() {
+            if let Ok(dev) = Proxy::new(c, "org.bluez", path.as_str(), "org.bluez.Device1") {
+                if dev.call_method("Connect", &()).is_ok() {
+                    let _ = tx.send(Msg::Bt(query_bt()));
+                }
+            }
+        }
+    });
+}
+
 /// забыть устройство: сопряжение снимается, из списка уходит (Adapter1.RemoveDevice)
 pub fn bt_remove(adapter: &str, d: BtDev, tx: Sender<Msg>) {
     let a = adapter.to_string();
