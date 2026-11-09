@@ -402,3 +402,82 @@ pub fn self_mem_mb() -> f32 {
     let get = |f: &str, k: &str| fs::read_to_string(f).ok().and_then(|t| kv_num(&t, k));
     get("/proc/self/smaps_rollup", "Pss:").or_else(|| get("/proc/self/status", "VmRSS:")).map(|kb| kb as f32 / 1024.0).unwrap_or(0.0)
 }
+
+// ── процессы (вкладка «система» панели) ─────────────────────────────────────
+/// процесс для мини-btop: имя, загрузка CPU (доля всего процессора) и память
+#[derive(Clone, Debug, Default)]
+pub struct Proc {
+    pub name: String,
+    pub cpu: f32,
+    pub mem: f64,
+}
+
+/// топ процессов по CPU: /proc/*/stat (utime + stime) и statm, без процессов наружу. Опрашивается,
+/// только пока открыта вкладка
+#[derive(Default)]
+pub struct Procs {
+    prev: std::collections::HashMap<u32, u64>,
+    at: Option<std::time::Instant>,
+    pub top: Vec<Proc>,
+}
+
+impl Procs {
+    pub fn sample(&mut self) {
+        let now = std::time::Instant::now();
+        let dt = self.at.map(|t| now.duration_since(t).as_secs_f32()).unwrap_or(0.0);
+        // тактов в секунду у ядра — 100 почти везде; ядер — для доли всего процессора
+        let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1) as f32;
+        let page = 4096.0;
+        let mut seen = std::collections::HashMap::new();
+        let mut list = vec![];
+        let Ok(dir) = fs::read_dir("/proc") else { return };
+        for e in dir.flatten() {
+            let Some(pid) = e.file_name().to_str().and_then(|n| n.parse::<u32>().ok()) else { continue };
+            let Ok(stat) = fs::read_to_string(format!("/proc/{pid}/stat")) else { continue };
+            let Some((name, ticks)) = parse_stat(&stat) else { continue };
+            seen.insert(pid, ticks);
+            let cpu = match self.prev.get(&pid) {
+                Some(p) if dt > 0.0 => ticks.saturating_sub(*p) as f32 / 100.0 / dt / cores,
+                _ => 0.0,
+            };
+            let mem = fs::read_to_string(format!("/proc/{pid}/statm")).ok().and_then(|m| m.split_whitespace().nth(1)?.parse::<f64>().ok()).unwrap_or(0.0) * page;
+            if mem > 0.0 {
+                list.push(Proc { name, cpu, mem });
+            }
+        }
+        // одинаковые имена (вкладки браузера, воркеры) — одной строкой
+        let mut merged: Vec<Proc> = vec![];
+        for p in list {
+            match merged.iter_mut().find(|m| m.name == p.name) {
+                Some(m) => {
+                    m.cpu += p.cpu;
+                    m.mem += p.mem;
+                }
+                None => merged.push(p),
+            }
+        }
+        merged.sort_by(|a, b| b.cpu.total_cmp(&a.cpu).then(b.mem.total_cmp(&a.mem)));
+        merged.truncate(12);
+        self.top = merged;
+        self.prev = seen;
+        self.at = Some(now);
+    }
+}
+
+/// из /proc/PID/stat: имя (в скобках, может содержать пробелы) и utime + stime в тактах
+fn parse_stat(s: &str) -> Option<(String, u64)> {
+    let (a, b) = (s.find('(')?, s.rfind(')')?);
+    let name = s.get(a + 1..b)?.to_string();
+    let f: Vec<&str> = s.get(b + 2..)?.split_whitespace().collect();
+    // после «) »: state — 0-е, utime — 11-е, stime — 12-е
+    Some((name, f.get(11)?.parse::<u64>().ok()? + f.get(12)?.parse::<u64>().ok()?))
+}
+
+#[cfg(test)]
+mod proc_tests {
+    #[test]
+    fn stat_line() {
+        let s = "1234 (Web Content) S 1 2 3 4 5 6 7 8 9 10 250 50 0 0 20 0";
+        assert_eq!(super::parse_stat(s), Some(("Web Content".into(), 300)));
+    }
+}

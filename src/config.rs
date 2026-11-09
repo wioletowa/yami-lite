@@ -123,7 +123,6 @@ pub struct Settings {
     pub wall_fade_cell: i32,
     /// пикселизация своих обоев: 1 — как есть, дальше клетки крупнее (wall::cell)
     pub wall_pixel: i32,
-    pub wall_kanji: bool,
     /// "fill" — заполнить экран (лишнее обрезать), "fit" — вписать целиком, поля цвета фона
     pub wall_fit: String,
     /// окраска своих обоев: "" — как есть, "tint" — оттенок акцента, "palette" — тона палитры с дизерингом
@@ -265,6 +264,11 @@ pub struct Settings {
     pub night: bool,
     pub night_temp: i32,
     pub night_geo: String,
+    /// погода во вкладке панели: город или «широта, долгота»; единицы c или f
+    pub weather_city: String,
+    /// стиль большого эквалайзера во вкладке музыки панели (ЛКМ по нему — следующий)
+    pub ctl_viz: String,
+    pub weather_units: String,
     pub night_on_h: i32,
     pub night_off_h: i32,
     /// свои app-id игр: через запятую, `name*` — по началу
@@ -282,12 +286,8 @@ pub struct Settings {
     pub notif_images: bool,
     /// обложки музыки по ссылкам из сети (иначе — только локальные файлы)
     pub media_art_net: bool,
-    /// тексты песен с lrclib.net (иначе — только от плеера и файлы .lrc рядом с треком)
-    pub lyrics_net: bool,
     /// эквалайзер всплывашки музыки и модуля `media`: стиль виджета (bars, line…) или "off" (#13)
     pub media_viz: String,
-    /// что показывает всплывашка музыки: cover | lyrics | both | minimal (#13)
-    pub media_view: String,
     /// свои имена звуковых устройств: имя PipeWire (`pactl list sinks`) → как показывать
     pub audio_names: std::collections::BTreeMap<String, String>,
 
@@ -340,7 +340,6 @@ pub const ALL_MODULES: &[(&str, &str)] = &[
 /// ключи прошлых версий: `config check` не зовёт их незнакомыми
 const RETIRED: &[&str] = &[];
 
-pub const MEDIA_VIEWS: &[(&str, &str)] = &[("cover", "обложка"), ("both", "обложка и текст"), ("lyrics", "текст"), ("minimal", "коротко")];
 
 /// числа в пикселях, что меняются стрелками в настройках: ключ, от, до, шаг
 pub const NUMS: &[(&str, i32, i32, i32)] = &[
@@ -395,7 +394,6 @@ impl Default for Settings {
             wall_fade_time: 1.2,
             wall_fade_cell: 8,
             wall_pixel: 1,
-            wall_kanji: true,
             wall_fit: "fill".into(),
             wall_tone: String::new(),
             wall_dim: 0.0,
@@ -458,7 +456,7 @@ impl Default for Settings {
             dock_running: true,
             dock_launcher: true,
             launcher_cmd: String::new(),
-            control_tiles: ["wifi", "bt", "dnd", "night", "mic", "theme"].map(String::from).to_vec(),
+            control_tiles: ["wifi", "bt", "dnd", "night", "theme"].map(String::from).to_vec(),
             dock_trash: true,
             font_shell: String::new(),
             font_widgets: String::new(),
@@ -471,6 +469,9 @@ impl Default for Settings {
             night: false,
             night_temp: 4000,
             night_geo: String::new(),
+            weather_city: String::new(),
+            ctl_viz: "bars".into(),
+            weather_units: "c".into(),
             night_on_h: 20,
             night_off_h: 7,
             game_apps: String::new(),
@@ -480,9 +481,7 @@ impl Default for Settings {
             notif_history: 50,
             notif_images: true,
             media_art_net: true,
-            lyrics_net: true,
             media_viz: "bars".into(),
-            media_view: "cover".into(),
             audio_names: Default::default(),
         }
     }
@@ -508,6 +507,12 @@ impl Settings {
     /// строки из файла (правка руками, чужая тема): имена — без управляющих символов, кавычек и
     /// разделителей, акцент — только #rrggbb
     pub fn sanitize(&mut self) {
+        if !crate::widgets::STYLES.iter().any(|(k, _)| *k == self.ctl_viz) {
+            self.ctl_viz = "bars".into();
+        }
+        if self.weather_units != "f" {
+            self.weather_units = "c".into();
+        }
         let name = |s: &mut String| {
             s.retain(|c| !c.is_control() && !"\"\\'`$;,{}<>|&#=".contains(c));
             if s.chars().count() > 64 {
@@ -546,7 +551,7 @@ impl Settings {
         }
         self.control_tiles.retain(|k| crate::control::TILES.iter().any(|t| t.0 == k));
         self.control_tiles.dedup();
-        self.control_tiles.truncate(6);
+        self.control_tiles.truncate(crate::control::MAX_TILES);
         if self.control_tiles.is_empty() {
             self.control_tiles.push("dnd".into());
         }
@@ -575,9 +580,6 @@ impl Settings {
         }
         if self.media_viz != "off" && !crate::widgets::STYLES.iter().any(|(k, _)| *k == self.media_viz) {
             self.media_viz = "bars".into();
-        }
-        if !MEDIA_VIEWS.iter().any(|(k, _)| *k == self.media_view) {
-            self.media_view = "cover".into();
         }
         if !crate::notif::POS.iter().any(|(k, _)| *k == self.notif_pos) {
             self.notif_pos = "top-right".into();

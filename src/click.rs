@@ -71,6 +71,18 @@ impl App {
             Act::NightToggle => self.night_toggle(),
             Act::BarWalls => self.walls_at(&out, ax),
             Act::CtlTile(k) => self.control_tile(&k),
+            Act::CtlTab(k) => self.switch_tab(k),
+            Act::CtlViz => {
+                let st = crate::widgets::STYLES;
+                let i = st.iter().position(|(k, _)| *k == self.st.set.ctl_viz).map_or(0, |i| (i + 1) % st.len());
+                self.st.set.ctl_viz = st[i].0.into();
+                self.settings_changed();
+            }
+            Act::CtlWeatherSet => {
+                self.close_popup();
+                self.open_settings_tab("system");
+                self.st.field_focus = Some("weather_city");
+            }
             Act::CtlWall => {
                 self.close_popup();
                 self.walls_open(false, false);
@@ -152,11 +164,16 @@ impl App {
             Act::Sink(name) => audio::set_sink(&name),
             Act::Source(name) => audio::set_source(&name),
             Act::MediaPlay => self.media_ctl("play-pause"),
+            // сразу на экране, плеер подтвердит своей строкой
+            Act::MediaRepeat => self.st.media.repeat = crate::media::repeat_next(&self.st.media.inst, &self.st.media.repeat).into(),
+            Act::MediaShuffle => {
+                crate::media::shuffle_toggle(&self.st.media.inst);
+                self.st.media.shuffle = !self.st.media.shuffle;
+            }
             Act::MediaNext => self.media_ctl("next"),
             Act::MediaPrev => self.media_ctl("previous"),
             // шапка всплывашки музыки: ЛКМ — следующий плеер, ПКМ — прошлый
             Act::MediaPlayer => self.media_step(if button == RMB { -1 } else { 1 }),
-            Act::MediaView => self.media_view_next(),
             Act::Wifi(on) => net::wifi_cmd(vec!["radio".into(), "wifi".into(), if on { "on" } else { "off" }.into()], self.tx.clone(), self.st.net.clone()),
             Act::WifiNet(ssid) => self.wifi_connect(&ssid),
             Act::WifiRescan => {
@@ -177,6 +194,19 @@ impl App {
             Act::BtDev(path) => {
                 let Some(d) = self.st.bt.devices.iter().find(|d| d.path == path).cloned() else { return };
                 net::bt_toggle_dev(d, self.tx.clone(), self.st.bt.clone());
+            }
+            Act::BtOpen(path) => {
+                self.st.bt_open = if self.st.bt_open == path { String::new() } else { path };
+            }
+            Act::BtTrust(path) => {
+                let Some(d) = self.st.bt.devices.iter().find(|d| d.path == path).cloned() else { return };
+                let on = !d.trusted;
+                net::bt_trust(d, on, self.tx.clone());
+            }
+            Act::BtForget(path) => {
+                let Some(d) = self.st.bt.devices.iter().find(|d| d.path == path).cloned() else { return };
+                self.st.bt_open.clear();
+                net::bt_remove(&self.st.bt.adapter.clone(), d, self.tx.clone());
             }
             Act::BtScan => net::bt_scan(&self.st.bt.adapter.clone(), self.tx.clone()),
             Act::Dnd => {
@@ -266,6 +296,11 @@ impl App {
                 self.st.niri.act(if up { serde_json::json!({"FocusWorkspaceUp": {}}) } else { serde_json::json!({"FocusWorkspaceDown": {}}) });
             }
             Act::DockItem(i) => self.dock_wheel(i, up),
+            Act::CtlTab(_) => {
+                if let Some(k) = self.st.popup.as_ref().map(|p| crate::control::tab_step(p.kind, up)) {
+                    self.switch_tab(k);
+                }
+            }
             Act::Kb => self.st.niri.act(serde_json::json!({"SwitchLayout": {"layout": if up { "Prev" } else { "Next" }}})),
             Act::CalMonth(_) | Act::Popup("cal") => {
                 self.st.cal_month += if up { -1 } else { 1 };

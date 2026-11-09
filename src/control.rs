@@ -1,6 +1,9 @@
 // Панель управления: ПКМ по пустому месту бара (всплывашка «control»). Сверху — часы на обоях под
 // лёгкой вуалью и аптайм системы; снизу — два вертикальных пиксельных ползунка (громкость и яркость,
-// как в OSD: клетки, значок, процент) и плитки на выбор (controlTiles, от 1 до 6).
+// как в OSD: клетки, значок, процент) и плитки на выбор (controlTiles, от 1 до 5).
+// Слева у панели — столбик вкладок: сеть, bluetooth, музыка, система, погода, календарь. Каждая
+// вкладка — свой вид всплывашки, окно у всех одного размера; модули бара открывают панель сразу на
+// своей.
 
 use crate::app::{App, State};
 use crate::clock::local_now;
@@ -8,7 +11,53 @@ use crate::font::{self, PX};
 use crate::gfx::{BoxStyle, R};
 use crate::ui::{Act, Cur, Ui};
 
-pub const SIZE: (i32, i32) = (420, 336);
+
+/// вкладки панели: вид всплывашки, значок, подпись
+pub const TABS: &[(&str, &str, &str)] = &[
+    ("control", "grid", "панель"),
+    ("net", "wifi", "сеть"),
+    ("bt", "bt", "Bluetooth"),
+    ("media", "music", "музыка"),
+    ("sys", "cpu", "система"),
+    ("weather", "cloud", "погода"),
+    ("cal", "cal", "календарь"),
+];
+/// содержимое любой вкладки — один размер окна на всю панель
+pub const TAB_SIZE: (i32, i32) = (660, 372);
+/// ширина столбика вкладок с отступом до содержимого
+pub const RAIL: i32 = 44;
+
+pub fn is_tab(kind: &str) -> bool {
+    TABS.iter().any(|t| t.0 == kind)
+}
+
+/// соседняя вкладка (колесо над столбиком)
+pub fn tab_step(kind: &str, up: bool) -> &'static str {
+    let i = TABS.iter().position(|t| t.0 == kind).unwrap_or(0);
+    let n = TABS.len();
+    TABS[if up { (i + n - 1) % n } else { (i + 1) % n }].0
+}
+
+/// столбик вкладок: значки сверху вниз, открытая — на плашке акцента
+pub fn rail(ui: &mut Ui, kind: &str, r: R) {
+    let t = ui.t;
+    let n = TABS.len() as i32;
+    let cell = ((r.h - (n - 1) * 4) / n).min(36);
+    for (i, (k, icon, _)) in TABS.iter().enumerate() {
+        let c = R::new(r.x, r.y + i as i32 * (cell + 4), r.w, cell);
+        let on = *k == kind;
+        let hov = ui.hover(c);
+        if on {
+            ui.cv.pxbox(c, &BoxStyle::new(t.red, t.ember).bevel(true));
+        } else if hov {
+            ui.cv.pxbox(c, &BoxStyle::new(t.surface_hi, t.border));
+        }
+        let fg = if on { t.on_accent } else if hov { t.text_hi } else { t.text_dim };
+        ui.cv.icon(icon, c.x + (c.w - 14) / 2, c.y + (c.h - 14) / 2, 2, fg);
+        ui.zone(c, Act::CtlTab(k), Cur::Pointer);
+    }
+    ui.cv.fill(R::new(r.right() + 3, r.y, 1, r.h), t.border);
+}
 
 /// плитки: ключ, подпись, значок
 pub const TILES: &[(&str, &str, &str)] = &[
@@ -43,9 +92,9 @@ fn uptime() -> String {
     let s = std::fs::read_to_string("/proc/uptime").ok().and_then(|t| t.split_whitespace().next()?.parse::<f64>().ok()).unwrap_or(0.0) as u64;
     let (d, h, m) = (s / 86400, s / 3600 % 24, s / 60 % 60);
     if d > 0 {
-        crate::tf!("работает {} д {} ч {} мин", "up {} d {} h {} min", d, h, m)
+        crate::tf!("uptime {} д {} ч {} мин", "uptime {} d {} h {} min", d, h, m)
     } else {
-        crate::tf!("работает {} ч {} мин", "up {} h {} min", h, m)
+        crate::tf!("uptime {} ч {} мин", "uptime {} h {} min", h, m)
     }
 }
 
@@ -80,29 +129,17 @@ fn face_of(st: &State, k: &str, name: &'static str, icon: &'static str) -> (&'st
 }
 
 /// сетка плиток: одна — на всё место, две — рядом, больше — в два ряда; неполный ряд растягивается
-fn tile_rects(area: R, n: usize) -> Vec<R> {
-    const GAP: i32 = 10;
-    let rows = if n <= 2 { 1 } else { 2 };
-    let per = n.div_ceil(rows);
-    let th = (area.h - (rows as i32 - 1) * GAP) / rows as i32;
-    let mut out = vec![];
-    for r in 0..rows {
-        let cnt = per.min(n - r * per);
-        if cnt == 0 {
-            break;
-        }
-        let tw = (area.w - (cnt as i32 - 1) * GAP) / cnt as i32;
-        for c in 0..cnt {
-            out.push(R::new(area.x + c as i32 * (tw + GAP), area.y + r as i32 * (th + GAP), tw, th));
-        }
-    }
-    out
-}
+/// плиток в полосе внизу: столько квадратов влезает по ширине вкладки
+pub const MAX_TILES: usize = 5;
 
 pub fn draw(ui: &mut Ui, st: &State, b: R) {
     let t = ui.t;
-    // часы на обоях: картинка «как обложка» в карточке, поверх — вуаль; текст — от левого края
-    let card = R::new(b.x, b.y, b.w, 120);
+    // снизу полоса квадратных плиток, над ней слева часы на обоях, справа два ползунка
+    const GAP: i32 = 10;
+    let side = (b.w - (MAX_TILES as i32 - 1) * GAP) / MAX_TILES as i32;
+    let top_h = b.h - side - 12;
+    let sw = 64;
+    let card = R::new(b.x, b.y, b.w - 2 * sw - GAP - 12, top_h);
     ui.cv.pxbox(card, &BoxStyle::new(t.code_bg, t.border));
     let inner = card.inset(2);
     ui.cv.push_clip(inner);
@@ -120,45 +157,36 @@ pub fn draw(ui: &mut Ui, st: &State, b: R) {
     }
     ui.zone(card, Act::CtlWall, Cur::Pointer);
     let tm = local_now();
-    let face = font::px(48);
+    let face = font::px(64);
     // формат — как у часов бара (настройки → бар → вид: часы с секундами)
     let time = if st.set.clock_seconds { format!("{:02}:{:02}:{:02}", tm.hour, tm.min, tm.sec) } else { format!("{:02}:{:02}", tm.hour, tm.min) };
-    let (lx, ty) = (card.x + 16, card.y + 14);
+    let (lx, ty) = (card.x + 18, card.y + 16);
     ui.text(face, lx, ty, &time, t.text_hi);
     let date = crate::tf!("{}, {} {}", "{}, {} {}", crate::i18n::tr(crate::clock::RU_DAY_FULL[tm.wday as usize]), tm.day, crate::i18n::tr(crate::clock::RU_MON[(tm.mon - 1) as usize]));
-    let ly = ty + ui.f.line(face) + 2;
-    ui.text_in(PX, R::new(lx, ly, card.w - 32, 18), &date, t.text);
-    ui.text_in(PX, R::new(lx, ly + 20, card.w - 32, 18), &uptime(), t.text_dim);
-    // низ: два ползунка и плитки
-    let y = card.bottom() + 12;
-    let h = b.bottom() - y;
-    let sw = 64;
+    let ly = ty + ui.f.line(face) + 4;
+    ui.text_in(PX, R::new(lx, ly, card.w - 36, 18), &date, t.text);
+    // заметнее тусклого, но не как основной текст
+    ui.text_in(PX, R::new(lx, card.bottom() - 34, card.w - 36, 18), &uptime(), t.text_dim.lerp(t.text, 0.5));
+    // ползунки во всю высоту часов
+    let sx = card.right() + 12;
     let a = &st.audio;
-    vslider(ui, R::new(b.x, y, sw, h), if a.muted { "mute" } else { "speaker" }, a.volume as f32, a.muted, Act::CtlVol);
+    vslider(ui, R::new(sx, b.y, sw, top_h), if a.muted { "mute" } else { "speaker" }, a.volume as f32, a.muted, Act::CtlVol);
     match st.leds.bright {
-        Some(v) => vslider(ui, R::new(b.x + sw + 10, y, sw, h), "sun", v, false, Act::CtlBright),
-        None => vslider(ui, R::new(b.x + sw + 10, y, sw, h), "sun", 0.0, true, Act::Block),
+        Some(v) => vslider(ui, R::new(sx + sw + GAP, b.y, sw, top_h), "sun", v, false, Act::CtlBright),
+        None => vslider(ui, R::new(sx + sw + GAP, b.y, sw, top_h), "sun", 0.0, true, Act::Block),
     }
-    let gx = b.x + 2 * (sw + 10);
+    // плитки — квадраты по центру полосы, одни значки
     let tiles: Vec<(&String, &str, &str)> = st.set.control_tiles.iter().filter_map(|k| TILES.iter().find(|x| x.0 == k).map(|x| (k, x.1, x.2))).collect();
-    // три и больше в ряд — подписей нет ни у одной: значки одного размера, без подписи у части
-    let per_row = if tiles.len() <= 2 { tiles.len() } else { tiles.len().div_ceil(2) };
-    let labels = per_row < 3;
-    for (rr, (k, name, icon)) in tile_rects(R::new(gx, y, b.right() - gx, h), tiles.len()).into_iter().zip(tiles) {
-        let (icon, name) = face_of(st, k, name, icon);
+    let n = tiles.len().min(MAX_TILES) as i32;
+    let x0 = b.x + (b.w - n * side - (n - 1).max(0) * GAP) / 2;
+    let ty = b.bottom() - side;
+    for (i, (k, name, icon)) in tiles.into_iter().take(MAX_TILES).enumerate() {
+        let rr = R::new(x0 + i as i32 * (side + GAP), ty, side, side);
+        let (icon, _) = face_of(st, k, name, icon);
         let lit = on(st, k);
         let hov = ui.hover(rr);
         ui.cv.pxbox(rr, &BoxStyle::new(if lit { t.red } else if hov { t.surface_hi } else { t.surface }, if lit { t.ember } else if hov { t.red } else { t.border }).bevel(true));
-        let fg = if lit { t.on_accent } else { t.text };
-        // подпись — если влезает по ширине и есть место под значком; нет — один значок по центру
-        let label = crate::i18n::tr(name);
-        let fits = labels && ui.f.width(PX, label) <= rr.w - 12 && rr.h >= 64;
-        let cell = if rr.w.min(rr.h) >= 120 { 4 } else if rr.w.min(rr.h) >= 64 { 3 } else { 2 };
-        let iy = if fits { rr.cy() - cell * 7 / 2 - 10 } else { rr.cy() - cell * 7 / 2 };
-        ui.cv.icon(icon, rr.x + (rr.w - cell * 7) / 2, iy, cell, fg);
-        if fits {
-            ui.text_center(PX, R::new(rr.x + 4, iy + cell * 7 + 6, rr.w - 8, 20), name, fg);
-        }
+        ui.cv.icon(icon, rr.x + (rr.w - 28) / 2, rr.y + (rr.h - 28) / 2, 4, if lit { t.on_accent } else { t.text });
         ui.zone(rr, Act::CtlTile(k.clone()), Cur::Pointer);
     }
 }

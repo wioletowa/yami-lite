@@ -77,8 +77,3 @@ pub fn clock<A: Action>(ui: &mut Ui<A>, w: i32, h: i32) -> i32 {
     dy + 30
 }
 
-/// 闇 в правом нижнем углу
-pub fn kanji<A: Action>(ui: &mut Ui<A>, w: i32, h: i32) {
-    let t = ui.t;
-    ui.text(font::jp(32), w - 72, h - 64, "闇", t.red.fade(0.5));
-}

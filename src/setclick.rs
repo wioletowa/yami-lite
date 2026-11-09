@@ -57,7 +57,7 @@ impl App {
                         s.control_tiles.remove(i);
                     }
                     Some(_) => {}
-                    None if s.control_tiles.len() < 6 => s.control_tiles.push(k.to_string()),
+                    None if s.control_tiles.len() < crate::control::MAX_TILES => s.control_tiles.push(k.to_string()),
                     None => {}
                 }
                 self.settings_changed();
@@ -78,7 +78,6 @@ impl App {
                     "scanlines" => s.scanlines = !s.scanlines,
                     "icon_pixel" => s.icon_pixel = !s.icon_pixel,
                     "icon_tint" => s.icon_tint = !s.icon_tint,
-                    "wall_kanji" => s.wall_kanji = !s.wall_kanji,
                     "bar_float" => s.bar_float = !s.bar_float,
                     "widget_contrast" => s.widget_contrast = !s.widget_contrast,
                     "blur_shell" => s.blur_shell = !s.blur_shell,
@@ -102,12 +101,6 @@ impl App {
                     "agent_notif" => s.agent_notif = !s.agent_notif,
                     "agent_tray" => s.agent_tray = !s.agent_tray,
                     "media_art_net" => s.media_art_net = !s.media_art_net,
-                    "lyrics_net" => {
-                        s.lyrics_net = !s.lyrics_net;
-                        // тексты из сети включили: «не нашлось» для текущего трека — искать заново
-                        self.st.lyrics = Default::default();
-                        self.lyrics_want();
-                    }
                     _ => {}
                 }
                 self.settings_changed();
@@ -154,6 +147,17 @@ impl App {
                 "wall_apply" => {
                     let p = self.st.wall_field.text.clone();
                     self.set_wall(&p);
+                }
+                "weather_apply" => {
+                    self.st.set.weather_city = self.st.weather_field.text.trim().chars().take(80).collect();
+                    self.st.field_focus = None;
+                    self.settings_changed();
+                    self.weather_reset();
+                }
+                "weather_units" => {
+                    self.st.set.weather_units = if self.st.set.weather_units == "f" { "c" } else { "f" }.into();
+                    self.settings_changed();
+                    self.weather_reset();
                 }
                 "geo_apply" => {
                     let g = self.st.geo_field.text.trim().to_string();
@@ -300,6 +304,10 @@ impl App {
                 if *k == "launcher_cmd" && self.st.launcher_field.text.is_empty() {
                     let p = self.st.set.launcher_cmd.clone();
                     self.st.launcher_field.set(&p);
+                }
+                if *k == "weather_city" && self.st.weather_field.text.is_empty() {
+                    let p = self.st.set.weather_city.clone();
+                    self.st.weather_field.set(&p);
                 }
                 if *k == "night_geo" && self.st.geo_field.text.is_empty() {
                     let p = self.st.set.night_geo.clone();

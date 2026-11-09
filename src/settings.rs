@@ -296,6 +296,8 @@ impl App {
                         self.settings_click(&Act::SCycle("game_apply"));
                     } else if f == "night_geo" {
                         self.settings_click(&Act::SCycle("geo_apply"));
+                    } else if f == "weather_city" {
+                        self.settings_click(&Act::SCycle("weather_apply"));
                     } else if f == "wh_key" {
                         self.settings_click(&Act::SCycle("wh_key_apply"));
                     } else if f == "wh_dir" {
@@ -314,6 +316,7 @@ impl App {
                         "hex" => &mut self.st.hex,
                         "game_apps" => &mut self.st.game_field,
                         "night_geo" => &mut self.st.geo_field,
+                        "weather_city" => &mut self.st.weather_field,
                         "launcher_cmd" => &mut self.st.launcher_field,
                         "font_search" => &mut self.st.font_search,
                         "wh_key" => &mut self.st.wh_key_field,

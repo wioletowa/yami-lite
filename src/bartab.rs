@@ -251,7 +251,6 @@ fn gear_dialog(ui: &mut Ui, st: &State, b: R, m: &str) {
         "media" => {
             let eq = if s.media_viz == "off" { "выкл" } else { crate::widgets::name_of(crate::widgets::STYLES, &s.media_viz) };
             opt(ui, &mut y, "эквалайзер", eq, Act::Drop("media_viz"));
-            opt(ui, &mut y, "всплывашка", crate::widgets::name_of(crate::config::MEDIA_VIEWS, &s.media_view), Act::Drop("media_view"));
         }
         "bat" => tog(ui, &mut y, "прятать полную батарею", s.bat_hide_full, "bat_hide_full"),
         "tasks" => {
@@ -317,7 +316,7 @@ fn bar_layout(ui: &mut Ui, st: &State, b: R, y: i32) -> i32 {
     y += 40;
     // панель управления открывается правым щелчком по бару
     y = title(ui, b.x, y, b.w, "панель управления");
-    ui.text_in(PX, R::new(b.x, y - 6, b.w, 18), &crate::tf!("открывается правым щелчком по бару · плиток: {} из 6", "opens with a right click on the bar · tiles: {} of 6", s.control_tiles.len()), t.text_faint);
+    ui.text_in(PX, R::new(b.x, y - 6, b.w, 18), &crate::tf!("открывается правым щелчком по бару · плиток: {} из {}", "opens with a right click on the bar · tiles: {} of {}", s.control_tiles.len(), crate::control::MAX_TILES), t.text_faint);
     y += 18;
     for (i, (k, name, _)) in crate::control::TILES.iter().enumerate() {
         let on = s.control_tiles.iter().any(|x| x == k);

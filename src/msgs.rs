@@ -64,15 +64,6 @@ impl App {
             Msg::Media(m) => self.media_got(m),
             Msg::Players(l) => self.media_players(l),
             Msg::Themes(l, note, applied) => self.themes_listed(l, note, applied),
-            Msg::Lyrics(l) => {
-                // ответ на прошлый трек — мимо
-                if l.key == self.st.lyrics.key {
-                    self.st.lyrics = l;
-                    // текста нет — всплывашка показывает обложку, и эквалайзеру нужен звук
-                    self.viz_sync();
-                    self.dirty(&SKind::Popup);
-                }
-            }
             Msg::Art(url, img) => {
                 self.st.art.insert(url, img.map(std::rc::Rc::new));
                 self.dirty_where(|k| matches!(k, SKind::Popup | SKind::Widget(_)));
@@ -135,6 +126,7 @@ impl App {
                 }
             }
             Msg::Wall(n, img, accent) => self.wall_ready(n, img, accent),
+            Msg::Weather(w) => self.weather_got(w),
             Msg::WallsListed(gen, dir, dirs, files, more) => self.walls_listed(gen, dir, dirs, files, more),
             Msg::WallThumb(gen, i, img) => self.walls_thumb(gen, i, img),
         }

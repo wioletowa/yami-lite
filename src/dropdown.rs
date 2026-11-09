@@ -61,7 +61,6 @@ pub fn spec(st: &State, key: &str) -> Option<(Opts, String)> {
         "temp_style" => (list(&[("full", "как у процессора"), ("compact", "коротко")]), s.temp_style.clone()),
         "tray_mode" => (list(&[("icons", "все значки в баре"), ("hybrid", "закреплённые в баре, остальные под стрелкой"), ("arrow", "всё под стрелкой")]), s.tray_mode.clone()),
         "media_viz" => (list(&eq), s.media_viz.clone()),
-        "media_view" => (list(crate::config::MEDIA_VIEWS), s.media_view.clone()),
         "bar_sep" => (list(&[("dots", "точки"), ("line", "черта"), ("blocks", "клетки"), ("gap", "пусто")]), s.bar_sep.clone()),
         "bar_sep_color" => (list(&[("border", "рамка"), ("accent", "акцент"), ("dim", "тусклый")]), s.bar_sep_color.clone()),
         "w_source" => (list(crate::widgets::SOURCES), w?.source.clone()),
@@ -171,7 +170,6 @@ impl App {
             "temp_style" => s.temp_style = v,
             "tray_mode" => s.tray_mode = v,
             "media_viz" => s.media_viz = v,
-            "media_view" => s.media_view = v,
             "bar_sep" => s.bar_sep = v,
             "bar_sep_color" => s.bar_sep_color = v,
             k if k.starts_with("w_") => {
@@ -206,7 +204,7 @@ impl App {
             }
             _ => {}
         }
-        if matches!(key, "media_viz" | "media_view") {
+        if key == "media_viz" {
             self.media_sync();
         }
         self.settings_changed();

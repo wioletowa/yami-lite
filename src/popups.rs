@@ -11,7 +11,7 @@ use crate::widgets;
 use smithay_client_toolkit::seat::keyboard::{KeyEvent, Keysym};
 
 /// виды всплывашек: `popup KIND`, `yami open KIND`, shot
-pub const KINDS: &[&str] = &["cal", "sound", "media", "net", "bt", "sys", "bat", "tray", "control", "wallhaven", "fan"];
+pub const KINDS: &[&str] = &["cal", "sound", "media", "net", "bt", "sys", "bat", "tray", "control", "wallhaven", "fan", "weather"];
 
 impl State {
     /// открыта всплывашка этого вида
@@ -27,61 +27,28 @@ pub fn shows_player(st: &State) -> bool {
 
 /// открытая всплывашка рисует эквалайзер (ему нужен захват звука)
 pub fn shows_viz(st: &State) -> bool {
-    st.set.media_viz != "off" && ((st.popup_is("media") && media_view(st) == "cover") || (st.popup_is("sound") && sound_media(st)))
+    st.popup_is("media") || (st.set.media_viz != "off" && st.popup_is("sound") && sound_media(st))
 }
 
-/// вид всплывашки музыки (#13); текста у трека нет — обложка
-pub fn media_view(st: &State) -> &str {
-    let v = st.set.media_view.as_str();
-    match v {
-        "lyrics" | "both" if lyrics_none(st) => "cover",
-        "lyrics" | "both" | "minimal" => v,
-        _ => "cover",
+/// размер всплывашки; вкладки панели управления — все одного размера, со столбиком вкладок
+pub fn size(kind: &str, st: &State) -> (i32, i32) {
+    if crate::control::is_tab(kind) {
+        (crate::control::TAB_SIZE.0 + 38 + crate::control::RAIL, crate::control::TAB_SIZE.1 + 30)
+    } else {
+        base_size(kind, st)
     }
 }
 
-/// текст хотели показать, искали и не нашли
-fn lyrics_none(st: &State) -> bool {
-    matches!(st.set.media_view.as_str(), "lyrics" | "both") && st.lyrics.done && st.lyrics.lines.is_empty() && !st.media.title.is_empty()
-}
-
-/// высота строк текста песни: в виде «текст» и в виде «обложка и текст»
-const LYR_TALL: i32 = 232;
-const LYR_SHORT: i32 = 160;
-
-pub fn size(kind: &str, st: &State) -> (i32, i32) {
+fn base_size(kind: &str, st: &State) -> (i32, i32) {
     match kind {
-        "cal" => (660, 372),
         "sound" => {
             let apps = st.audio.streams.len().min(6) as i32;
             let list = |n: usize| if n > 1 { n.min(5) as i32 * 26 + 30 } else { 0 };
             let media = if sound_media(st) { 170 } else { 0 };
             (420, 44 + 56 + list(st.audio.sinks.len()) + 60 + list(st.audio.sources.len()) + if apps > 0 { 30 + apps * 46 } else { 0 } + media + 50)
         }
-        "media" => {
-            let time = if st.media.length > 0.0 { 24 } else { 0 };
-            let card = match media_view(st) {
-                "cover" if st.set.media_viz != "off" => 156,
-                _ => 70,
-            };
-            let rest = match media_view(st) {
-                "lyrics" => LYR_TALL,
-                "both" => LYR_SHORT,
-                _ if lyrics_none(st) => 22,
-                _ => 0,
-            };
-            (420, 44 + 36 + card + time + rest + 4)
-        }
-        "net" => {
-            let msg = if st.net.msg.is_empty() { 0 } else { 24 };
-            let wifi = if st.net.wifi_present { 40 + msg + if st.net.wifi_on { st.net.nets.len().min(8) as i32 * 28 + if st.wifi_target.is_empty() { 0 } else { 44 } } else { 0 } } else { 0 };
-            (420, 44 + 24 + st.net.active.len().max(1) as i32 * 22 + 130 + wifi + 50)
-        }
-        "bt" => (380, 44 + 40 + if st.bt.msg.is_empty() { 0 } else { 24 } + if st.bt.powered { st.bt.devices.len().clamp(1, 8) as i32 * 34 } else { 30 } + 50),
-        "sys" => (440, 44 + 4 * 74 + 40 + 50),
         "tray" => (300, 66 + tray_items(st).filter(|it| !tray_in_bar(st, it)).count().clamp(1, 12) as i32 * 32),
         "bat" => (340, 44 + 40),
-        "control" => (crate::control::SIZE.0 + 38, crate::control::SIZE.1 + 30),
         "wallhaven" => (crate::wallhaven::SIZE.0 + 38, crate::wallhaven::SIZE.1 + 30),
         "fan" => (crate::fan::SIZE.0 + 38, crate::fan::SIZE.1 + 30),
         _ => (300, 200),
@@ -95,7 +62,12 @@ pub fn draw(ui: &mut Ui, st: &State, w: i32, h: i32) {
     // «язычок» к модулю бара
     let t = ui.t;
     ui.cv.fill(R::new(2, 0, fr.w - 4, 2), t.red);
-    let body = R::new(16, 12, fr.w - 32, fr.h - 24);
+    let tab = crate::control::is_tab(p.kind);
+    let rail = if tab { crate::control::RAIL } else { 0 };
+    if tab {
+        crate::control::rail(ui, p.kind, R::new(12, 12, rail - 8, h - 30));
+    }
+    let body = R::new(16 + rail, 12, w - 38 - rail, h - 30);
     match p.kind {
         "cal" => cal(ui, st, body),
         "sound" => sound(ui, st, body),
@@ -106,6 +78,7 @@ pub fn draw(ui: &mut Ui, st: &State, w: i32, h: i32) {
         "bat" => battery(ui, st, body),
         "tray" => tray(ui, st, body),
         "control" => crate::control::draw(ui, st, body),
+        "weather" => crate::weather::draw(ui, st, body),
         "wallhaven" => crate::wallhaven::draw(ui, st, body),
         "fan" => crate::fan::draw(ui, st, body),
         _ => {}
@@ -273,13 +246,9 @@ pub fn sound_media(st: &State) -> bool {
 fn media(ui: &mut Ui, st: &State, b: R) {
     let t = ui.t;
     let m = &st.media;
-    let view = media_view(st);
-    // шапка: справа — какой вид (щелчок — следующий), между — имя плеера
-    let name = crate::widgets::name_of(crate::config::MEDIA_VIEWS, &st.set.media_view);
-    let bw = ui.w(PX, name) + 20;
-    let mut y = head(ui, b, "music", "музыка", "");
+    let y = head(ui, b, "music", "музыка", "");
     let tw = ui.w(PX, "музыка");
-    let nr = R::new(b.x + 30 + tw, b.y, b.w - bw - 40 - tw, 20);
+    let nr = R::new(b.x + 30 + tw, b.y, b.w - 40 - tw, 20);
     let n = st.players.len();
     if n > 1 {
         // плееров несколько: имя — переключатель (ЛКМ — следующий, ПКМ — прошлый), «2/3» — который (#24)
@@ -290,78 +259,147 @@ fn media(ui: &mut Ui, st: &State, b: R) {
     } else {
         ui.cv.text_in(ui.f, PX, nr, &m.player, t.text_faint);
     }
-    ui.button(R::new(b.right() - bw, b.y - 2, bw, 22), name, "", Tone::Ghost, false, true, Act::MediaView);
-    // обложка с эквалайзером; без эквалайзера и в остальных видах — строка плеера высотой в обложку
-    let viz = if view == "cover" { st.set.media_viz.as_str() } else { "off" };
-    let art = matches!(view, "cover" | "both");
-    if viz != "off" {
-        widgets::media_card(ui, st, R::new(b.x, y, b.w, 150), viz, t.red, true, art);
-        y += 156;
-    } else {
-        widgets::media_card(ui, st, R::new(b.x, y, b.w, 94), "off", t.red, true, art);
-        y += 70;
-    }
-    if m.length > 0.0 {
-        // время: где сейчас (или куда тянут) и сколько всего
-        let at = st.seek.map(|f| f as f64 * m.length).unwrap_or(m.now_pos());
-        ui.cv.text_in(ui.f, PX, R::new(b.x, y, b.w / 2, 20), &yami_px::clock(at), if st.seek.is_some() { t.red } else { t.text_dim });
-        ui.cv.text_right(ui.f, PX, R::new(b.x, y, b.w, 20), &yami_px::clock(m.length), t.text_faint);
-        y += 24;
-    }
-    match view {
-        "lyrics" => lyrics(ui, st, R::new(b.x, y, b.w, LYR_TALL)),
-        "both" => lyrics(ui, st, R::new(b.x, y, b.w, LYR_SHORT)),
-        _ if lyrics_none(st) => {
-            ui.text_in(PX, R::new(b.x, y, b.w, 20), "текста не нашлось", t.text_faint);
-        }
-        _ => {}
-    }
+    // слева карточка «сейчас играет», справа узкий эквалайзер
+    let rest = R::new(b.x, y, b.w, b.bottom() - y);
+    let side = 180;
+    let lw = rest.w - side - 12;
+    now_card(ui, st, R::new(rest.x, rest.y, lw, rest.h));
+    vviz(ui, st, R::new(rest.x + lw + 12, rest.y, side, rest.h));
 }
 
-/// текст песни: с метками времени — звучащая строка в акценте и держится на трети высоты,
-/// спетые — тусклее; простой текст листается вместе с треком
-fn lyrics(ui: &mut Ui, st: &State, r: R) {
+/// карточка плеера: обложка, название, исполнитель, альбом, перемотка и кнопки внизу
+fn now_card(ui: &mut Ui, st: &State, r: R) {
     let t = ui.t;
-    let ly = &st.lyrics;
-    ui.cv.fill(R::new(r.x, r.y, r.w, 1), t.border);
-    let r = R::new(r.x, r.y + 8, r.w, r.h - 12);
-    if !ly.done {
-        ui.text_in(PX, R::new(r.x, r.y, r.w, 20), "ищу текст…", t.text_faint);
+    let m = &st.media;
+    ui.cv.pxbox(r, &BoxStyle::new(t.surface, t.border));
+    let r = r.inset(14);
+    ui.text_in(PX, R::new(r.x, r.y, r.w - 24, 20), "сейчас играет", t.text);
+    ui.cv.icon("music", r.right() - 14, r.y + 3, 2, t.text_dim);
+    if m.title.is_empty() {
+        ui.cv.icon_in("music", R::new(r.x, r.y + 30, r.w, r.h - 60), 6, t.text_faint);
+        ui.text_center(PX, R::new(r.x, r.bottom() - 24, r.w, 20), "тишина — ничего не играет", t.text_faint);
         return;
     }
-    // строки по ширине: (номер строки текста, кусок); текст — как есть, без перевода
-    let lh = ui.f.line(PX) + 6;
-    let mut rows: Vec<(usize, String)> = vec![];
-    for (i, l) in ly.lines.iter().enumerate() {
-        // пустая строка (проигрыш) — один пустой ряд: wrap("") сам отдаёт [""]
-        for part in ui.f.wrap(PX, &l.text, r.w - 8, 3) {
-            rows.push((i, part));
+    // низ снизу вверх: кнопки, перемотка, подписи; обложка — на то, что осталось
+    let by = r.bottom() - 32;
+    let sy = by - 30;
+    let ty = sy - 66;
+    let side = (ty - r.y - 38).min(r.w).max(0);
+    let a = R::new(r.x + (r.w - side) / 2, r.y + 30, side, side);
+    match st.art.get(&m.art).cloned().flatten() {
+        Some(img) => {
+            ui.cv.image_scaled(&img, a, 1.0);
+            ui.cv.outline(a, t.border, 1);
         }
-    }
-    let vis = (r.h / lh).max(1) as usize;
-    let pos = st.media.now_pos();
-    let cur = ly.now(pos);
-    let first = match cur {
-        Some(c) => rows.iter().position(|(i, _)| *i == c).unwrap_or(0).saturating_sub(vis / 3),
-        None if ly.synced => 0,
         None => {
-            let k = if st.media.length > 0.0 { (pos / st.media.length).clamp(0.0, 1.0) } else { 0.0 };
-            (rows.len().saturating_sub(vis) as f64 * k) as usize
+            ui.cv.pxbox(a, &BoxStyle::new(t.code_bg, t.border));
+            ui.cv.icon_in("music", a, 5, t.dim);
         }
-    };
-    let first = first.min(rows.len().saturating_sub(vis));
-    ui.cv.push_clip(r);
-    for (k, (i, s)) in rows.iter().skip(first).take(vis).enumerate() {
-        let c = match cur {
-            Some(c) if *i == c => t.red,
-            Some(c) if *i < c => t.text_faint,
-            _ => t.text_dim,
-        };
-        // звучит проигрыш: на месте строки — многоточие
-        let s = if s.is_empty() && cur == Some(*i) { "…" } else { s.as_str() };
-        ui.cv.text_in(ui.f, PX, R::new(r.x + 4, r.y + k as i32 * lh, r.w - 8, lh), s, c);
     }
-    ui.cv.pop_clip();
+    ui.text_in(font::PX24, R::new(r.x, ty, r.w, 26), &m.title, t.text_hi);
+    ui.text_in(PX, R::new(r.x, ty + 28, r.w, 18), if m.artist.is_empty() { &m.player } else { &m.artist }, t.text_dim);
+    if !m.album.is_empty() {
+        ui.text_in(PX, R::new(r.x, ty + 46, r.w, 18), &m.album, t.text_faint);
+    }
+    // перемотка: время по краям, щёлкнуть или потянуть
+    if m.length > 0.0 {
+        let at = st.seek.map(|f| f as f64 * m.length).unwrap_or(m.now_pos());
+        let lw = ui.text_in(PX, R::new(r.x, sy, 60, 20), &yami_px::clock(at), if st.seek.is_some() { t.red } else { t.text_dim });
+        let rw = ui.text_right(PX, R::new(r.x, sy, r.w, 20), &yami_px::clock(m.length), t.text_faint);
+        let px0 = r.x + lw + 10;
+        let pw = r.right() - rw - 10 - px0;
+        if pw > 40 {
+            let k = st.seek.unwrap_or((m.now_pos() / m.length) as f32).clamp(0.0, 1.0);
+            let zr = R::new(px0, sy - 1, pw, 22);
+            let hov = ui.hover(zr) || st.seek.is_some();
+            ui.cv.fill(R::new(px0, sy + 8, pw, 4), t.code_bg.lerp(t.border, 0.6));
+            ui.cv.fill(R::new(px0, sy + 8, (pw as f32 * k) as i32, 4), t.red);
+            let kx = px0 + (pw as f32 * k) as i32;
+            ui.cv.fill(R::new(kx - 4, sy + 4, 8, 12), if hov { t.ember } else { t.text_hi });
+            ui.zone(zr, Act::MediaSeek, Cur::Pointer);
+        }
+    }
+    // кнопки: повтор, назад, пауза, вперёд, перемешать — по центру
+    let rep = m.repeat.as_str();
+    let total = 5 * 36 + 8 + 4 * 14;
+    let mut x = r.x + (r.w - total) / 2;
+    let sel = |on: bool| if on { Tone::Primary } else { Tone::Ghost };
+    ui.button(R::new(x, by, 36, 32), "", "repeat", sel(matches!(rep, "Playlist" | "Track")), false, !rep.is_empty(), Act::MediaRepeat);
+    if rep == "Track" {
+        ui.cv.fill(R::new(x + 28, by + 4, 4, 4), t.ember);
+    }
+    x += 50;
+    ui.button(R::new(x, by, 36, 32), "", "prev", Tone::Ghost, false, true, Act::MediaPrev);
+    x += 50;
+    ui.button(R::new(x, by, 44, 32), "", if m.playing() { "pause" } else { "play" }, Tone::Primary, false, true, Act::MediaPlay);
+    x += 58;
+    ui.button(R::new(x, by, 36, 32), "", "next", Tone::Ghost, false, true, Act::MediaNext);
+    x += 50;
+    ui.button(R::new(x, by, 36, 32), "", "shuffle", sel(m.shuffle), false, !rep.is_empty(), Act::MediaShuffle);
+}
+
+/// эквалайзер стоймя: полосы частот сверху вниз, каждая — в обе стороны от середины; ЛКМ — стиль
+fn vviz(ui: &mut Ui, st: &State, r: R) {
+    let t = ui.t;
+    let hov = ui.hover(r);
+    ui.cv.pxbox(r, &BoxStyle::new(t.code_bg, if hov { t.red } else { t.border }));
+    let inr = r.inset(12);
+    let idle = st.viz.is_empty() || !st.media.playing();
+    let n = if st.viz.is_empty() { 24 } else { st.viz.len() } as i32;
+    let bh = (inr.h / n).max(2);
+    let top = inr.y + (inr.h - bh * n) / 2;
+    let cx = inr.x + inr.w / 2;
+    let c = t.red;
+    // тишина — пунктир по середине
+    if idle {
+        for y in (inr.y..inr.bottom()).step_by(6) {
+            ui.cv.fill(R::new(cx - 1, y, 2, 3), t.border);
+        }
+    }
+    let mut prev: Option<(i32, i32)> = None;
+    for i in 0..n {
+        let v = if idle { 0.0 } else { st.viz.get(i as usize).copied().unwrap_or(0.0) };
+        let half = ((v * inr.w as f32 / 2.0).round() as i32).min(inr.w / 2);
+        if half <= 0 {
+            prev = None;
+            continue;
+        }
+        let y = top + i * bh;
+        match st.set.ctl_viz.as_str() {
+            "wave" => ui.cv.fill(R::new(cx - half, y + bh / 4, half * 2, (bh / 2).max(1)), c),
+            "dots" => {
+                ui.cv.fill(R::new(cx - half, y, 2, bh - 1), c);
+                ui.cv.fill(R::new(cx + half - 2, y, 2, bh - 1), c);
+            }
+            "blocks" => {
+                for k in 0..(half / 4).max(1) {
+                    let col = if k + 1 == (half / 4).max(1) { t.ember } else { c };
+                    ui.cv.fill(R::new(cx + k * 4, y, 3, bh - 1), col);
+                    ui.cv.fill(R::new(cx - (k + 1) * 4 + 1, y, 3, bh - 1), col);
+                }
+            }
+            "line" => {
+                // края — ломаной: от прошлой полосы к этой
+                let (l0, r0) = prev.unwrap_or((cx - half, cx + half));
+                let (l1, r1) = (cx - half, cx + half);
+                ui.cv.fill(R::new(l0.min(l1), y, (l0 - l1).abs() + 2, 2), c);
+                ui.cv.fill(R::new(r0.min(r1) - 2, y, (r0 - r1).abs() + 2, 2), c);
+                ui.cv.fill(R::new(l1, y, 2, bh), c);
+                ui.cv.fill(R::new(r1 - 2, y, 2, bh), c);
+            }
+            _ => {
+                ui.cv.fill(R::new(cx - half, y, half * 2, bh - 1), c);
+                ui.cv.fill(R::new(cx - half, y, 2, bh - 1), t.ember);
+                ui.cv.fill(R::new(cx + half - 2, y, 2, bh - 1), t.ember);
+            }
+        }
+        prev = Some((cx - half, cx + half));
+    }
+    if hov {
+        let name = crate::widgets::name_of(widgets::STYLES, &st.set.ctl_viz);
+        ui.text_center(PX, R::new(r.x, r.bottom() - 26, r.w, 18), name, t.text_faint);
+    }
+    ui.zone(r, Act::CtlViz, Cur::Pointer);
 }
 
 // ── трей ────────────────────────────────────────────────────────────────────
@@ -444,67 +482,84 @@ fn net(ui: &mut Ui, st: &State, b: R) {
     let t = ui.t;
     let s = &st.sys;
     let sub = if s.online { s.ip.clone() } else { "нет сети".to_string() };
-    let mut y = head(ui, b, "net", "сеть", &sub);
+    let top = head(ui, b, "net", "сеть", &sub);
+    // слева Wi-Fi, справа подключения и график ↓↑
+    let lw = b.w * 3 / 5;
+    let l = R::new(b.x, top, lw, b.bottom() - top);
+    let r = R::new(b.x + lw + 17, top, b.w - lw - 17, b.bottom() - top);
+    ui.cv.fill(R::new(l.right() + 8, top, 1, l.h), t.border);
+    let mut y = r.y;
     if st.net.active.is_empty() {
-        ui.text_in(PX, R::new(b.x, y, b.w, 20), if st.net.loaded { "не подключено" } else { "смотрю…" }, t.text_faint);
+        ui.text_in(PX, R::new(r.x, y, r.w, 20), if st.net.loaded { "не подключено" } else { "смотрю…" }, t.text_faint);
         y += 22;
     }
-    for (name, kind, dev) in &st.net.active {
-        ui.cv.fill(R::new(b.x, y + 7, 6, 6), t.ok);
-        ui.text_in(PX, R::new(b.x + 14, y, b.w - 120, 20), name, t.text);
-        ui.text_right(PX, R::new(b.x, y, b.w, 20), &format!("{kind} · {dev}"), t.text_faint);
-        y += 22;
+    for (name, kind, dev) in st.net.active.iter().take(3) {
+        ui.cv.fill(R::new(r.x, y + 7, 6, 6), t.ok);
+        ui.text_in(PX, R::new(r.x + 14, y, r.w - 14, 20), name, t.text);
+        ui.text_in(PX, R::new(r.x + 14, y + 18, r.w - 14, 18), &format!("{kind} · {dev}"), t.text_faint);
+        y += 40;
     }
-    y += 6;
-    // ↓↑ график
     let full = s.h_rx.max().max(s.h_tx.max()).max(64.0 * 1024.0);
     let rx: Vec<f32> = s.h_rx.tail(120).iter().map(|v| v / full).collect();
     let tx: Vec<f32> = s.h_tx.tail(120).iter().map(|v| v / full).collect();
-    let w1 = ui.text_in(PX, R::new(b.x, y, 160, 20), &crate::tf!("↓ {}/с", "↓ {}/s", crate::sys::rate(s.rx)), t.red);
-    ui.text_in(PX, R::new(b.x + w1 + 16, y, 160, 20), &crate::tf!("↑ {}/с", "↑ {}/s", crate::sys::rate(s.tx)), t.text_dim);
-    ui.text_right(PX, R::new(b.x, y, b.w, 20), &crate::tf!("пик {}/с", "peak {}/s", crate::sys::rate(full as f64)), t.text_faint);
+    let half = r.w / 2;
+    ui.text_in(PX, R::new(r.x, y, half, 20), &crate::tf!("↓ {}/с", "↓ {}/s", crate::sys::rate(s.rx)), t.red);
+    ui.text_in(PX, R::new(r.x + half, y, half, 20), &crate::tf!("↑ {}/с", "↑ {}/s", crate::sys::rate(s.tx)), t.accent2);
+    y += 22;
+    ui.text_in(PX, R::new(r.x, y, r.w, 18), &crate::tf!("пик {}/с", "peak {}/s", crate::sys::rate(full as f64)), t.text_faint);
     y += 24;
-    let gr = R::new(b.x, y, b.w, 90);
+    let gr = R::new(r.x, y, r.w, (r.bottom() - 38 - y).max(40));
     ui.cv.pxbox(gr, &BoxStyle::new(t.code_bg, t.border));
     widgets::graph(ui, gr.inset(6), &rx, "line", "scroll", st.sys_phase(), t.red, Some((&tx, t.accent2)));
-    y += 100;
+    ui.button(R::new(r.x, r.bottom() - 28, r.w, 28), "все подключения", "gear", Tone::Plain, false, true, Act::NetEditor);
     // Wi-Fi
-    if st.net.wifi_present {
-        ui.toggle(R::new(b.x, y, 140, 26), "wi-fi", "", st.net.wifi_on, Act::Wifi(!st.net.wifi_on));
-        if st.net.wifi_on {
-            ui.button(R::new(b.right() - 110, y, 110, 24), "искать", "search", Tone::Ghost, false, !st.net.busy, Act::WifiRescan);
+    let mut y = l.y;
+    if !st.net.wifi_present {
+        ui.text_in(PX, R::new(l.x, y, l.w, 20), "Wi-Fi нет", t.text_faint);
+        return;
+    }
+    ui.toggle(R::new(l.x, y, 140, 26), "wi-fi", "", st.net.wifi_on, Act::Wifi(!st.net.wifi_on));
+    if st.net.wifi_on {
+        ui.button(R::new(l.right() - 110, y, 110, 24), "искать", "search", Tone::Ghost, false, !st.net.busy, Act::WifiRescan);
+    }
+    y += 34;
+    if !st.net.msg.is_empty() {
+        let c = if st.net.busy { t.text_dim } else { t.warn };
+        ui.text_in(PX, R::new(l.x, y - 4, l.w, 20), &st.net.msg, c);
+        y += 24;
+    }
+    if !st.net.wifi_on {
+        return;
+    }
+    // строк — сколько влезает; под поле пароля — место заранее
+    let pass = if st.wifi_target.is_empty() { 0 } else { 44 };
+    for n in &st.net.nets {
+        if y + 26 + pass > l.bottom() && st.wifi_target != n.ssid {
+            continue;
         }
-        y += 34;
-        if !st.net.msg.is_empty() {
-            let c = if st.net.busy { t.text_dim } else { t.warn };
-            ui.text_in(PX, R::new(b.x, y - 4, b.w, 20), &st.net.msg, c);
-            y += 24;
+        if y + 26 > l.bottom() {
+            break;
         }
-        if st.net.wifi_on {
-            for n in st.net.nets.iter().take(8) {
-                let r = R::new(b.x, y, b.w, 26);
-                ui.button(r, "", "", Tone::Ghost, n.active, !st.net.busy, Act::WifiNet(n.ssid.clone()));
-                // сила сигнала — 4 столбика
-                for k in 0..4 {
-                    let on = n.signal as i32 > k * 25;
-                    ui.cv.fill(R::new(r.x + 6 + k * 4, r.y + 18 - k * 3, 3, 3 + k * 3), if on { if n.active { t.ember } else { t.red } } else { t.border });
-                }
-                ui.text_in(PX, R::new(r.x + 30, r.y, r.w - 90, r.h), &n.ssid, if n.active { t.text_hi } else { t.text });
-                if n.secure {
-                    ui.cv.icon("lock", r.right() - 40, r.cy() - 7, 2, if n.known { t.text_dim } else { t.text_faint });
-                }
-                ui.text_right(PX, R::new(r.x, r.y, r.w - 4, r.h), &format!("{}", n.signal), t.text_faint);
-                y += 28;
-                if st.wifi_target == n.ssid {
-                    let focused = st.field_focus == Some("wifi");
-                    ui.field(R::new(b.x + 30, y, b.w - 130, 30), &st.wifi_pass, "пароль", focused, true, Act::SField("wifi"));
-                    ui.button(R::new(b.right() - 92, y + 2, 92, 26), "войти", "check", Tone::Primary, false, true, Act::WifiNet(n.ssid.clone()));
-                    y += 44;
-                }
-            }
+        let rr = R::new(l.x, y, l.w, 26);
+        ui.button(rr, "", "", Tone::Ghost, n.active, !st.net.busy, Act::WifiNet(n.ssid.clone()));
+        // сила сигнала — 4 столбика
+        for k in 0..4 {
+            let on = n.signal as i32 > k * 25;
+            ui.cv.fill(R::new(rr.x + 6 + k * 4, rr.y + 18 - k * 3, 3, 3 + k * 3), if on { if n.active { t.ember } else { t.red } } else { t.border });
+        }
+        ui.text_in(PX, R::new(rr.x + 30, rr.y, rr.w - 90, rr.h), &n.ssid, if n.active { t.text_hi } else { t.text });
+        if n.secure {
+            ui.cv.icon("lock", rr.right() - 40, rr.cy() - 7, 2, if n.known { t.text_dim } else { t.text_faint });
+        }
+        ui.text_right(PX, R::new(rr.x, rr.y, rr.w - 4, rr.h), &format!("{}", n.signal), t.text_faint);
+        y += 28;
+        if st.wifi_target == n.ssid {
+            let focused = st.field_focus == Some("wifi");
+            ui.field(R::new(l.x + 30, y, l.w - 130, 30), &st.wifi_pass, "пароль", focused, true, Act::SField("wifi"));
+            ui.button(R::new(l.right() - 92, y + 2, 92, 26), "войти", "check", Tone::Primary, false, true, Act::WifiNet(n.ssid.clone()));
+            y += 44;
         }
     }
-    ui.button(R::new(b.x, b.bottom() - 28, b.w, 28), "все подключения", "gear", Tone::Plain, false, true, Act::NetEditor);
 }
 
 // ── bluetooth ───────────────────────────────────────────────────────────────
@@ -522,38 +577,83 @@ fn bt(ui: &mut Ui, st: &State, b: R) {
     if s.powered {
         ui.button(R::new(b.right() - 110, y, 110, 24), if s.discovering { "ищу…" } else { "искать" }, "search", Tone::Ghost, s.discovering, !s.discovering, Act::BtScan);
     }
-    y += 36;
     if !s.msg.is_empty() {
-        ui.text_in(PX, R::new(b.x, y - 4, b.w, 20), &s.msg, t.warn);
-        y += 24;
+        ui.text_in(PX, R::new(b.x + 176, y + 3, b.w - 300, 20), &s.msg, t.warn);
     }
+    y += 36;
+    ui.button(R::new(b.x, b.bottom() - 28, b.w, 28), "менеджер устройств", "gear", Tone::Plain, false, true, Act::BtManager);
     if !s.powered {
         ui.text_in(PX, R::new(b.x, y, b.w, 20), "выключен", t.text_faint);
-    } else if s.devices.is_empty() {
-        ui.text_in(PX, R::new(b.x, y, b.w, 20), "устройств нет — нажми «искать»", t.text_faint);
+        return;
     }
-    if s.powered {
-        for d in s.devices.iter().take(8) {
-            let r = R::new(b.x, y, b.w, 30);
-            ui.button(r, "", "", Tone::Ghost, d.connected, true, Act::BtDev(d.path.clone()));
-            let icon = match d.icon.as_str() {
-                i if i.contains("audio") || i.contains("headset") => "music",
-                i if i.contains("input") || i.contains("keyboard") || i.contains("mouse") => "grid",
-                i if i.contains("phone") => "bell",
-                _ => "bt",
-            };
-            ui.cv.icon(icon, r.x + 8, r.cy() - 7, 2, if d.connected { t.ember } else { t.text_dim });
-            ui.text_in(PX, R::new(r.x + 30, r.y, r.w - 130, r.h), &d.name, if d.connected { t.text_hi } else { t.text });
-            let st_txt = if s.busy == d.path { "подождите…".to_string() } else if d.connected { "подключено".to_string() } else if d.paired { "сопряжено".to_string() } else { "новое".to_string() };
-            let st_txt = match d.battery {
-                Some(p) => format!("{p}% · {}", crate::i18n::tr(&st_txt)),
-                None => st_txt,
-            };
-            ui.text_right(PX, R::new(r.x, r.y, r.w - 8, r.h), &st_txt, t.text_faint);
-            y += 34;
+    // слева сопряжённые, справа найденные рядом
+    let cw = (b.w - 17) / 2;
+    let bottom = b.bottom() - 36;
+    ui.cv.fill(R::new(b.x + cw + 8, y, 1, bottom - y), t.border);
+    for (col, mine) in [(R::new(b.x, y, cw, bottom - y), true), (R::new(b.x + cw + 17, y, cw, bottom - y), false)] {
+        let title = if mine { "мои устройства" } else { "рядом" };
+        ui.text_in(PX, R::new(col.x, col.y, col.w, 18), title, t.text_faint);
+        let mut y = col.y + 24;
+        let list: Vec<&crate::net::BtDev> = s.devices.iter().filter(|d| d.paired == mine).collect();
+        if list.is_empty() {
+            let hint = if mine { "пока ни одного" } else if s.discovering { "ищу…" } else { "нажми «искать»" };
+            ui.text_in(PX, R::new(col.x, y, col.w, 20), hint, t.text_faint);
+        }
+        for d in list {
+            let open = st.bt_open == d.path;
+            if y + 30 + if open { 32 } else { 0 } > col.bottom() {
+                break;
+            }
+            bt_row(ui, st, d, R::new(col.x, y, col.w, 30), open);
+            y += if open { 66 } else { 34 };
         }
     }
-    ui.button(R::new(b.x, b.bottom() - 28, b.w, 28), "менеджер устройств", "gear", Tone::Plain, false, true, Act::BtManager);
+}
+
+/// строка устройства; раскрытая — с кнопками под ней
+fn bt_row(ui: &mut Ui, st: &State, d: &crate::net::BtDev, r: R, open: bool) {
+    let t = ui.t;
+    ui.button(r, "", "", Tone::Ghost, d.connected || open, true, Act::BtOpen(d.path.clone()));
+    let icon = match d.icon.as_str() {
+        i if i.contains("audio") || i.contains("headset") => "music",
+        i if i.contains("input") || i.contains("keyboard") || i.contains("mouse") => "grid",
+        i if i.contains("phone") => "bell",
+        _ => "bt",
+    };
+    ui.cv.icon(icon, r.x + 8, r.cy() - 7, 2, if d.connected { t.ember } else { t.text_dim });
+    // справа: заряд или сигнал, состояние
+    let state = if st.bt.busy == d.path {
+        crate::i18n::tr("подождите…").to_string()
+    } else if d.connected {
+        crate::i18n::tr("подключено").to_string()
+    } else {
+        String::new()
+    };
+    let right = match (d.battery, d.rssi) {
+        (Some(p), _) => format!("{p}%"),
+        (None, Some(v)) if !d.paired => format!("{v} dBm"),
+        _ => String::new(),
+    };
+    let info = [right.as_str(), state.as_str()].iter().filter(|x| !x.is_empty()).copied().collect::<Vec<_>>().join(" · ");
+    let iw = if info.is_empty() { 0 } else { ui.text_right(PX, R::new(r.x, r.y, r.w - 8, r.h), &info, t.text_faint) };
+    if let Some(p) = d.battery {
+        ui.cv.gauge(R::new(r.right() - 16 - iw - 26, r.cy() - 4, 20, 8), 4, p as f32 / 100.0, if p <= 15 { t.ember } else { t.ok }, t.surface.lerp(t.border, 0.3), 1);
+    }
+    let nw = r.w - 40 - iw - if d.battery.is_some() { 30 } else { 0 };
+    ui.text_in(PX, R::new(r.x + 30, r.y, nw, r.h), &d.name, if d.connected { t.text_hi } else { t.text });
+    if !open {
+        return;
+    }
+    let y = r.bottom() + 4;
+    let busy = st.bt.busy == d.path;
+    if d.paired {
+        let bw = (r.w - 12) / 3;
+        ui.button(R::new(r.x, y, bw, 26), if d.connected { "отключить" } else { "подключить" }, if d.connected { "close" } else { "check" }, Tone::Plain, false, !busy, Act::BtDev(d.path.clone()));
+        ui.button(R::new(r.x + bw + 6, y, bw, 26), "доверие", if d.trusted { "check" } else { "close" }, Tone::Plain, d.trusted, !busy, Act::BtTrust(d.path.clone()));
+        ui.button(R::new(r.x + 2 * (bw + 6), y, bw, 26), "забыть", "trash", Tone::Plain, false, !busy, Act::BtForget(d.path.clone()));
+    } else {
+        ui.button(R::new(r.x, y, r.w, 26), if busy { "сопрягаю…" } else { "сопрячь и подключить" }, "bt", Tone::Primary, false, !busy, Act::BtDev(d.path.clone()));
+    }
 }
 
 // ── батарея ─────────────────────────────────────────────────────────────────
@@ -577,27 +677,58 @@ fn sys(ui: &mut Ui, st: &State, b: R) {
     let t = ui.t;
     let s = &st.sys;
     let up = std::fs::read_to_string("/proc/uptime").ok().and_then(|x| x.split_whitespace().next().and_then(|v| v.parse::<f64>().ok())).unwrap_or(0.0) as u64;
-    let mut y = head(ui, b, "cpu", "система", &crate::tf!("работает {} ч {} мин", "up {} h {} min", up / 3600, up / 60 % 60));
-    let rows: [(&str, &str, String, &str); 4] = [
-        ("cpu", "процессор", format!("{:.0}%", s.cpu * 100.0), "cpu"),
-        ("ram", "память", crate::tf!("{:.1} / {:.0} ГБ", "{:.1} / {:.0} GB", s.mem_used, s.mem_total), "ram"),
-        ("temp", "температура", format!("{:.0}°C", s.temp), "temp"),
-        ("temp", "видеокарта", if s.gpu_sleep { "сон".into() } else if s.gpu_temp > 0.0 { format!("{:.0}°C  {:.0}%", s.gpu_temp, s.gpu_load * 100.0) } else { "—".into() }, "gpu"),
+    let y = head(ui, b, "cpu", "система", &crate::tf!("работает {} ч {} мин", "up {} h {} min", up / 3600, up / 60 % 60));
+    ui.button(R::new(b.right() - 104, b.y - 2, 104, 22), "процессы", "cpu", Tone::Ghost, false, true, Act::SysMon);
+    // 2×2: процессор, видеокарта, память, сеть — подпись, значение и график
+    let cw = (b.w - 10) / 2;
+    let ch = 84;
+    let gpu = if s.gpu_sleep { crate::i18n::tr("сон").to_string() } else if s.gpu_temp > 0.0 { format!("{:.0}%  {:.0}°", s.gpu_load * 100.0, s.gpu_temp) } else { "—".into() };
+    let full = s.h_rx.max().max(s.h_tx.max()).max(64.0 * 1024.0);
+    let cards: [(&str, &str, String, String); 4] = [
+        ("cpu", "CPU", format!("{:.0}%  {:.0}°", s.cpu * 100.0, s.temp), "cpu".into()),
+        ("bolt", "GPU", gpu, "gpu_load".into()),
+        ("ram", "RAM", crate::tf!("{:.1} / {:.0} ГБ", "{:.1} / {:.0} GB", s.mem_used, s.mem_total), "ram".into()),
+        ("net", "NET", format!("↓ {}  ↑ {}", crate::sys::rate(s.rx), crate::sys::rate(s.tx)), "rx".into()),
     ];
-    for (icon, label, val, src) in rows {
-        ui.cv.icon(icon, b.x, y + 3, 2, t.red);
-        ui.text_in(PX, R::new(b.x + 22, y, 200, 20), label, t.text_dim);
-        ui.text_right(PX, R::new(b.x, y, b.w, 20), &val, t.text);
-        let (ser, full) = s.series(src);
-        let data: Vec<f32> = ser.tail(140).iter().map(|v| v / full).collect();
-        let gr = R::new(b.x, y + 24, b.w, 42);
-        widgets::graph(ui, gr, &data, "bars", "scroll", st.sys_phase(), if src == "temp" && s.temp > 80.0 { t.ember } else { t.red }, None);
-        y += 74;
+    for (i, (icon, label, val, src)) in cards.iter().enumerate() {
+        let r = R::new(b.x + (i as i32 % 2) * (cw + 10), y + (i as i32 / 2) * (ch + 8), cw, ch);
+        ui.cv.pxbox(r, &BoxStyle::new(t.code_bg, t.border));
+        let inr = r.inset(8);
+        ui.cv.icon(icon, inr.x, inr.y + 3, 2, t.red);
+        ui.text_in(PX, R::new(inr.x + 20, inr.y, 60, 20), label, t.text_dim);
+        ui.text_right(PX, R::new(inr.x, inr.y, inr.w, 20), val, t.text);
+        let gr = R::new(inr.x, inr.y + 24, inr.w, inr.h - 24);
+        let tail = |ser: &crate::sys::Series, k: f32| ser.tail(140).iter().map(|v| v / k).collect::<Vec<f32>>();
+        match src.as_str() {
+            // процессор: загрузка и температура второй линией
+            "cpu" => widgets::graph(ui, gr, &tail(&s.h_cpu, 1.0), "line", "scroll", st.sys_phase(), if s.temp > 80.0 { t.ember } else { t.red }, Some((&tail(&s.h_temp, 100.0), t.accent2))),
+            "gpu_load" => widgets::graph(ui, gr, &tail(&s.h_gpu_load, 1.0), "line", "scroll", st.sys_phase(), t.red, Some((&tail(&s.h_gpu, 100.0), t.accent2))),
+            "rx" => widgets::graph(ui, gr, &tail(&s.h_rx, full as f32), "line", "scroll", st.sys_phase(), t.red, Some((&tail(&s.h_tx, full as f32), t.accent2))),
+            _ => {
+                let (ser, k) = s.series(src);
+                widgets::graph(ui, gr, &tail(ser, k), "bars", "scroll", st.sys_phase(), t.red, None);
+            }
+        }
     }
-    ui.text_in(PX, R::new(b.x, y, 140, 20), "диск /", t.text_dim);
-    ui.cv.gauge(R::new(b.x + 90, y + 4, b.w - 150, 12), 24, s.disk, t.red, t.surface.lerp(t.border, 0.3), 2);
-    ui.text_right(PX, R::new(b.x, y, b.w, 20), &format!("{:.0}%", s.disk * 100.0), t.text);
-    ui.button(R::new(b.x, b.bottom() - 28, b.w, 28), "процессы", "cpu", Tone::Plain, false, true, Act::SysMon);
+    // процессы: имя, CPU, память; диск — справа в шапке списка
+    let mut y = y + 2 * (ch + 8) + 2;
+    let (cx, mx) = (b.right() - 150, b.right() - 70);
+    ui.text_in(PX, R::new(b.x, y, 200, 18), "процессы", t.text_faint);
+    ui.text_right(PX, R::new(cx, y, 70, 18), "CPU", t.text_faint);
+    ui.text_right(PX, R::new(mx, y, 70, 18), "RAM", t.text_faint);
+    let dw = ui.text_in(PX, R::new(b.x + 120, y, 60, 18), "диск /", t.text_faint);
+    ui.cv.gauge(R::new(b.x + 128 + dw, y + 5, cx - b.x - 160 - dw, 8), 20, s.disk, t.red, t.surface.lerp(t.border, 0.3), 2);
+    ui.text_right(PX, R::new(b.x, y, cx - b.x - 8, 18), &format!("{:.0}%", s.disk * 100.0), t.text_dim);
+    y += 22;
+    for p in &st.procs.top {
+        if y + 18 > b.bottom() {
+            break;
+        }
+        ui.text_in(PX, R::new(b.x, y, cx - b.x - 8, 18), &p.name, t.text);
+        ui.text_right(PX, R::new(cx, y, 70, 18), &format!("{:.1}%", p.cpu * 100.0), if p.cpu > 0.5 { t.ember } else { t.text_dim });
+        ui.text_right(PX, R::new(mx, y, 70, 18), &crate::sys::rate(p.mem), t.text_dim);
+        y += 20;
+    }
 }
 
 impl App {

@@ -128,7 +128,14 @@ impl App {
             ui.cv.opacity = (0.35 + 0.65 * k).min(1.0);
             ui.cv.oy = rise - ((1.0 - k) * rise as f32).round() as i32;
             let (w, h) = (s.w, s.h - rise);
+            // закрывается: последний кадр (снят со всплытием rise) — с тем же погружением
+            let snap = s.closing.then(|| s.last.take()).flatten();
             match &s.kind {
+                _ if snap.is_some() => {
+                    if let Some(img) = &snap {
+                        ui.cv.image_scaled(img, R::new(0, -rise, img.w, img.h), 1.0);
+                    }
+                }
                 SKind::Wall => crate::wall::draw(&mut ui, st, w, h),
                 SKind::Bar => crate::bar::draw(&mut ui, st, &s.output, w),
                 SKind::Dim => {
@@ -157,9 +164,18 @@ impl App {
                 SKind::Dock => crate::dock::draw(&mut ui, st, w, h),
                 SKind::DockEdge => {}
             }
-            // развёртка — только панели, не обои
-            if st.set.scanlines && !matches!(s.kind, SKind::Dim | SKind::Catcher | SKind::Wall | SKind::EditGrid | SKind::DockEdge) {
+            // готовый кадр панели — для анимации закрытия (без проявления: оно наложится заново)
+            let keep = !s.closing && finished && matches!(s.kind, SKind::Modal | SKind::Popup | SKind::Menu | SKind::Osd | SKind::EditBar | SKind::Widget(_) | SKind::Dock);
+            // развёртка — только панели, не обои; у снимка она уже есть
+            if st.set.scanlines && snap.is_none() && !matches!(s.kind, SKind::Dim | SKind::Catcher | SKind::Wall | SKind::EditGrid | SKind::DockEdge) {
                 ui.cv.scanlines(if st.t.light { 0.06 } else { 0.22 });
+            }
+            if keep {
+                s.last = Some(crate::gfx::Img { w: bw, h: bh, px: ui.cv.buf[..(bw * bh) as usize].to_vec() });
+            }
+            let replay = snap.is_some();
+            if let Some(img) = snap {
+                s.last = Some(img);
             }
             if k < 1.0 && !matches!(s.kind, SKind::Dim | SKind::Catcher) {
                 ui.cv.dissolve(k, 2);
@@ -169,6 +185,9 @@ impl App {
             // (прямоугольники размытия сдвигаются с её всплытием); при закрытии гаснет так же
             blur = if !st.set.blur_on() || k < 0.35 {
                 vec![]
+            } else if replay {
+                // снимок не знает своих областей размытия — прежние, пока панель не погасла
+                s.blur_set.clone()
             } else {
                 std::mem::take(&mut ui.cv.blur)
             };

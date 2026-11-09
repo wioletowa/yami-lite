@@ -83,28 +83,19 @@ impl App {
     // ── всплывашки бара ─────────────────────────────────────────────────────
     pub fn open_popup(&mut self, kind: &'static str, out: &str, ax: i32) {
         let same = self.st.popup_is(kind);
+        // панель уже открыта на другой вкладке: переключить на месте — размер у всех один
+        if !same && crate::control::is_tab(kind) && self.st.popup.as_ref().is_some_and(|p| crate::control::is_tab(p.kind) && p.out == out) {
+            self.switch_tab(kind);
+            return;
+        }
         self.close_popup();
         self.close_menu();
         if same {
             return;
         }
         self.close_modal();
-        self.st.popup = Some(Popup { kind });
-        self.lyrics_want();
-        // модули бара рисуют, открыта ли их всплывашка (стрелка трея, календарь)
-        self.dirty(&SKind::Bar);
-        match kind {
-            "net" => net::refresh_wifi(self.tx.clone()),
-            "bt" => net::refresh_bt(self.tx.clone()),
-            "cal" => {
-                self.st.cal_month = 0;
-                self.st.cal_pick = None;
-            }
-            "wallhaven" => self.wh_opened(),
-            "fan" => self.st.fan.sample(),
-            _ => {}
-        }
-        self.viz_sync();
+        self.st.popup = Some(Popup { kind, out: out.into() });
+        self.popup_opened(kind);
         let (w, h) = popups::size(kind, &self.st);
         let (ow, _) = self.output_size(out);
         let x = (ax - w / 2).clamp(6, (ow - w - 6).max(6));
@@ -127,6 +118,38 @@ impl App {
                 s.applied = s.margin;
             }
         }
+    }
+
+    /// всплывашка этого вида только что показана (или панель переключилась на эту вкладку)
+    fn popup_opened(&mut self, kind: &'static str) {
+        // модули бара рисуют, открыта ли их всплывашка (стрелка трея, календарь)
+        self.dirty(&SKind::Bar);
+        match kind {
+            "net" => net::refresh_wifi(self.tx.clone()),
+            "bt" => net::refresh_bt(self.tx.clone()),
+            "cal" => {
+                self.st.cal_month = 0;
+                self.st.cal_pick = None;
+            }
+            "wallhaven" => self.wh_opened(),
+            "fan" => self.st.fan.sample(),
+            "sys" => self.st.procs.sample(),
+            _ => {}
+        }
+        self.viz_sync();
+    }
+
+    /// вкладка панели управления: окно то же, меняется только содержимое
+    pub fn switch_tab(&mut self, kind: &'static str) {
+        let Some(p) = self.st.popup.as_mut() else { return };
+        if p.kind == kind || !crate::control::is_tab(p.kind) {
+            return;
+        }
+        p.kind = kind;
+        self.st.drop = None;
+        self.st.field_focus = None;
+        self.popup_opened(kind);
+        self.dirty(&SKind::Popup);
     }
 
     pub fn resize_popup(&mut self) {

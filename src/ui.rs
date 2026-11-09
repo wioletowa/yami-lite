@@ -78,6 +78,12 @@ pub enum Act {
     CtlBright,
     CtlTile(String),
     CtlWall,
+    /// вкладка панели управления
+    CtlTab(&'static str),
+    /// вкладка погоды без города: открыть настройки на нём
+    CtlWeatherSet,
+    /// большой эквалайзер вкладки музыки: следующий стиль
+    CtlViz,
     /// всплывашка вентилятора: шкала C · A · 0…7 · F (тянуть или щёлкать)
     FanLevel,
     /// Wallhaven: искать, категория, чистота, порядок, «от/ровно», страница, картинка
@@ -121,12 +127,13 @@ pub enum Act {
     AppVol(u32),
     AppMute(u32),
     MediaPlay,
+    MediaRepeat,
+    MediaShuffle,
     MediaNext,
     MediaPrev,
     /// перемотка по полосе позиции (тянуть; сама перемотка — при отпускании)
     MediaSeek,
     /// вид всплывашки музыки — следующий (#13)
-    MediaView,
     /// шапка всплывашки музыки: другой плеер (#24)
     MediaPlayer,
     Wifi(bool),
@@ -135,6 +142,10 @@ pub enum Act {
     NetEditor,
     BtPower(bool),
     BtDev(String),
+    /// строка устройства: раскрыть кнопки (подключить, доверие, забыть)
+    BtOpen(String),
+    BtTrust(String),
+    BtForget(String),
     BtScan,
     /// полный менеджер bluetooth (blueman или bluetoothctl в терминале)
     BtManager,

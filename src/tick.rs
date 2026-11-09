@@ -13,14 +13,7 @@ impl App {
         let fast = fast || self.st.wall_fade.is_some() || self.st.dock_leave.is_some() || !self.st.dock_bounce.is_empty();
         // смена обоев: свой темп кадров (обои под окнами niri будит редко)
         let ms = if self.st.wall_fade.is_some() { 33 } else if fast { 100 } else { 1000 };
-        // текст песни с метками: следующий тик — к смене строки, а не через секунду
-        let next = self.lyrics_live().then(|| self.st.lyrics.next_in(self.st.media.now_pos())).flatten().map(|s| (s * 1000.0) as u64 + 20);
-        Duration::from_millis(next.map_or(ms, |n| n.clamp(40, ms)))
-    }
-
-    /// всплывашка показывает текст песни с метками времени, и трек играет
-    fn lyrics_live(&self) -> bool {
-        self.st.lyrics.synced && self.st.media.playing() && matches!(crate::popups::media_view(&self.st), "lyrics" | "both") && self.st.popup_is("media")
+        Duration::from_millis(ms)
     }
 
     /// батарея садится: одно уведомление на 10% и одно на 5%, пока не поставят на зарядку
@@ -47,14 +40,6 @@ impl App {
             self.shed_at = None;
             yami_px::shed_code();
         }
-        // текст песни: звучит следующая строка — перерисовать
-        if self.lyrics_live() {
-            let at = self.st.lyrics.now(self.st.media.now_pos());
-            if at != self.st.lyrics.shown {
-                self.st.lyrics.shown = at;
-                self.dirty(&SKind::Popup);
-            }
-        }
         // мигание курсора ввода — раз в полсекунды
         let blink = (self.st.started.elapsed().as_millis() / 500) % 2 == 0;
         if blink != self.st.blink {
@@ -69,12 +54,16 @@ impl App {
         }
         if now.duration_since(self.last_sample) >= Duration::from_millis(990) {
             self.last_sample = now;
+            self.weather_tick();
             // игра на весь экран закрывает все бары: датчики видеокарты не нужны, а nvidia-smi раз в
             // 3 с под игрой — лишняя работа драйвера (рывки кадров)
             let fo = self.focus_out();
             let hidden = self.st.game.fullscreen && self.output_names().iter().all(|n| *n == fo || !self.bar_on(n));
             self.st.sys.want_gpu = self.st.sys.has_gpu && self.uses("gpu") && !hidden;
             self.st.sys.sample();
+            if self.st.popup_is("sys") {
+                self.st.procs.sample();
+            }
             // вентилятор: история копится, пока модуль в баре, — открытая всплывашка видит прошлое
             if self.st.set.on_bar("fan") || self.st.popup_is("fan") {
                 self.st.fan.sample();

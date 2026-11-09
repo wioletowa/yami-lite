@@ -27,7 +27,6 @@ mod config;
 mod control;
 mod ipc;
 mod keys;
-mod lyrics;
 mod leds;
 mod lock;
 mod media;
@@ -60,6 +59,7 @@ mod wall;
 mod wallhaven;
 mod fan;
 mod walls;
+mod weather;
 mod themetab;
 mod widgets;
 

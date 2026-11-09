@@ -5,7 +5,7 @@
 
 use crate::app::{App, Msg, SKind, State};
 use crate::config::Settings;
-use crate::font::{self, PX};
+use crate::font::PX;
 use crate::gfx::{BoxStyle, Img, C, R};
 use crate::settings::{num_btn, opt_btn, title};
 use crate::theme::Theme;
@@ -504,11 +504,6 @@ pub fn draw(ui: &mut Ui, st: &State, w: i32, h: i32) {
     if fade_k(st).is_some() && !fade_done(st) {
         ui.anim = true;
     }
-    if st.set.wall_kanji {
-        let face = font::jp(32);
-        let kw = ui.w(face, "闇");
-        ui.text(face, w - 40 - kw, h - 32 - ui.f.line(face), "闇", t.red.fade(0.45));
-    }
 }
 
 // ── вкладка «обои» ──────────────────────────────────────────────────────────
@@ -581,7 +576,6 @@ pub fn tab(ui: &mut Ui, st: &State, b: R) {
     y += 54;
     y = title(ui, b.x, y, b.w, "цвета");
     ui.toggle(R::new(b.x, y, half, 40), "палитра из обоев", "акцент из картинки", s.wall_accent, Act::SWall("accent"));
-    ui.toggle(R::new(b.x + half + 20, y, half, 40), "иероглиф на обоях", "в правом нижнем углу", s.wall_kanji, Act::SBool("wall_kanji"));
     y += 50;
     y = title(ui, b.x, y, b.w, "смена обоев");
     opt_btn(ui, R::new(b.x, y, half, 26), "узор", name_of(FADES, &s.wall_fade), Act::Drop("wall_fade"));
@@ -610,10 +604,6 @@ impl App {
     pub fn sync_wall(&mut self) {
         if matches!(&self.press, Some(p) if matches!(p.act, Act::SSlider(k, ..) if k.starts_with("wall"))) {
             return;
-        }
-        if self.wall_kanji != self.st.set.wall_kanji {
-            self.wall_kanji = self.st.set.wall_kanji;
-            self.dirty(&SKind::Wall);
         }
         let (w, h) = self.output_size(&self.focus_out());
         let job = Job::new(&self.st.set, &self.st.t, w, h, source(&self.st));

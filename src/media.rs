@@ -18,17 +18,21 @@ pub struct MediaState {
     pub status: String,
     pub artist: String,
     pub title: String,
+    pub album: String,
     pub art: String,
     pub length: f64,
     pub pos: f64,
     pub at: Instant,
     /// с каких пор играет: из играющих показан заигравший последним
     pub played: Option<Instant>,
+    /// повтор: None, Playlist, Track (пусто — плеер не умеет)
+    pub repeat: String,
+    pub shuffle: bool,
 }
 
 impl Default for MediaState {
     fn default() -> Self {
-        MediaState { inst: String::new(), player: String::new(), status: String::new(), artist: String::new(), title: String::new(), art: String::new(), length: 0.0, pos: 0.0, at: Instant::now(), played: None }
+        MediaState { inst: String::new(), player: String::new(), status: String::new(), artist: String::new(), title: String::new(), album: String::new(), art: String::new(), length: 0.0, pos: 0.0, at: Instant::now(), played: None, repeat: String::new(), shuffle: false }
     }
 }
 
@@ -65,6 +69,21 @@ fn playerctl(inst: &str, args: Vec<String>) {
 
 pub fn ctl(inst: &str, cmd: &str) {
     playerctl(inst, vec![cmd.into()]);
+}
+
+/// повтор по кругу: нет → весь список → трек → нет
+pub fn repeat_next(inst: &str, cur: &str) -> &'static str {
+    let next = match cur {
+        "Playlist" => "Track",
+        "Track" => "None",
+        _ => "Playlist",
+    };
+    playerctl(inst, vec!["loop".into(), next.into()]);
+    next
+}
+
+pub fn shuffle_toggle(inst: &str) {
+    playerctl(inst, vec!["shuffle".into(), "Toggle".into()]);
 }
 
 /// перемотать на позицию, с (плеер без CanSeek просто не послушается)
@@ -107,7 +126,7 @@ pub fn spawn(tx: Sender<Msg>) {
     std::thread::Builder::new()
         .name("media".into())
         .spawn(move || loop {
-            let fmt = "{{playerInstance}}\t{{playerName}}\t{{status}}\t{{artist}}\t{{title}}\t{{mpris:artUrl}}\t{{mpris:length}}\t{{position}}";
+            let fmt = "{{playerInstance}}\t{{playerName}}\t{{status}}\t{{artist}}\t{{title}}\t{{mpris:artUrl}}\t{{mpris:length}}\t{{position}}\t{{album}}\t{{loop}}\t{{shuffle}}";
             // -a: строки всех плееров, не только «главного» по мнению playerctl; пустая — плееров не осталось
             let Ok(mut c) = crate::proc::owned(Command::new("playerctl").args(["-a", "-F", "metadata", "--format", fmt]).stdout(Stdio::piped()).stderr(Stdio::null())).spawn() else {
                 std::thread::sleep(std::time::Duration::from_secs(30));
@@ -128,11 +147,14 @@ pub fn spawn(tx: Sender<Msg>) {
                     status: g(2),
                     artist: g(3),
                     title: g(4),
+                    album: g(8),
                     art: g(5),
                     length: g(6).parse::<f64>().unwrap_or(0.0) / 1e6,
                     pos: g(7).parse::<f64>().unwrap_or(0.0) / 1e6,
                     at: Instant::now(),
                     played: None,
+                    repeat: g(9),
+                    shuffle: g(10) == "true",
                 };
                 let _ = tx.send(Msg::Media(m));
             }
@@ -248,7 +270,6 @@ impl App {
             fetch_art(cur.art.clone(), self.st.set.media_art_net, self.tx.clone());
         }
         self.st.media = cur;
-        self.lyrics_want();
         self.viz_sync();
         self.dirty_where(|k| matches!(k, SKind::Bar | SKind::Popup | SKind::Widget(_)));
     }
@@ -263,31 +284,10 @@ impl App {
         viz_wanted(self.media_visible() && self.st.media.playing());
     }
 
-    /// вид всплывашки музыки — следующий по кругу (кнопка в её шапке)
-    pub fn media_view_next(&mut self) {
-        let s = &mut self.st.set;
-        s.media_view = crate::settings::cycle(crate::config::MEDIA_VIEWS, &s.media_view).into();
-        self.media_sync();
-    }
-
-    /// вид или эквалайзер поменялись: текст — если теперь нужен, захват звука — если эквалайзер виден
+    /// эквалайзер поменялся: захват звука — если он виден
     pub fn media_sync(&mut self) {
-        self.lyrics_want();
         self.viz_sync();
         self.dirty_where(|k| matches!(k, SKind::Popup | SKind::Bar));
-    }
-
-    /// текст песни нужен (всплывашка музыки открыта в виде с текстом) и ещё не искался для этого трека
-    pub fn lyrics_want(&mut self) {
-        if !self.st.popup_is("media") || !matches!(self.st.set.media_view.as_str(), "lyrics" | "both") || self.st.media.title.is_empty() {
-            return;
-        }
-        let k = crate::lyrics::key(&self.st.media);
-        if self.st.lyrics.key == k {
-            return;
-        }
-        self.st.lyrics = crate::lyrics::Lyrics { key: k, ..Default::default() };
-        crate::lyrics::fetch(&self.st.media, self.st.set.lyrics_net, self.tx.clone());
     }
 }
 

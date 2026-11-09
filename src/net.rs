@@ -311,7 +311,11 @@ pub struct BtDev {
     pub icon: String,
     pub connected: bool,
     pub paired: bool,
+    /// доверенное: подключается само, без вопросов
+    pub trusted: bool,
     pub battery: Option<u8>,
+    /// сила сигнала, дБм — есть у тех, кого видно при поиске
+    pub rssi: Option<i16>,
 }
 
 #[derive(Clone, Default, Debug)]
@@ -374,7 +378,11 @@ fn query_bt() -> BtState {
                 Some(Value::U8(x)) => Some(*x),
                 _ => None,
             });
-            s.devices.push(BtDev { path: path.to_string(), name, icon: st(d, "Icon"), connected: b(d, "Connected"), paired: b(d, "Paired"), battery });
+            let rssi = match d.get("RSSI").map(|v| &**v) {
+                Some(Value::I16(x)) => Some(*x),
+                _ => None,
+            };
+            s.devices.push(BtDev { path: path.to_string(), name, icon: st(d, "Icon"), connected: b(d, "Connected"), paired: b(d, "Paired"), trusted: b(d, "Trusted"), battery, rssi });
         }
     }
     s.devices.sort_by(|a, b| b.connected.cmp(&a.connected).then(b.paired.cmp(&a.paired)).then(a.name.cmp(&b.name)));
@@ -462,6 +470,35 @@ pub fn bt_toggle_dev(d: BtDev, tx: Sender<Msg>, mut cur: BtState) {
         s.msg = msg;
         s.op = true;
         let _ = tx.send(Msg::Bt(s));
+    });
+}
+
+/// доверие: доверенное подключается само, без вопросов
+pub fn bt_trust(d: BtDev, on: bool, tx: Sender<Msg>) {
+    std::thread::spawn(move || {
+        let mut msg = String::new();
+        if let Some(c) = SYS.get() {
+            let r = Proxy::new(c, "org.bluez", d.path.as_str(), "org.freedesktop.DBus.Properties").and_then(|p| p.call_method("Set", &("org.bluez.Device1", "Trusted", Value::from(on))).map(|_| ()));
+            if let Err(e) = r {
+                msg = bt_err(&e);
+            }
+        }
+        let _ = tx.send(Msg::Bt(BtState { msg, op: true, ..query_bt() }));
+    });
+}
+
+/// забыть устройство: сопряжение снимается, из списка уходит (Adapter1.RemoveDevice)
+pub fn bt_remove(adapter: &str, d: BtDev, tx: Sender<Msg>) {
+    let a = adapter.to_string();
+    std::thread::spawn(move || {
+        let mut msg = String::new();
+        if let (Some(c), Ok(path)) = (SYS.get(), zbus::zvariant::ObjectPath::try_from(d.path.as_str())) {
+            let r = Proxy::new(c, "org.bluez", a, "org.bluez.Adapter1").and_then(|p| p.call_method("RemoveDevice", &(path,)).map(|_| ()));
+            if let Err(e) = r {
+                msg = bt_err(&e);
+            }
+        }
+        let _ = tx.send(Msg::Bt(BtState { msg, op: true, ..query_bt() }));
     });
 }
 

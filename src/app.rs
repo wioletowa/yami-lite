@@ -115,6 +115,9 @@ pub struct Surf {
     /// отпечаток последнего отданного кадра (0 — не было): тот же кадр второй раз не отдаётся —
     /// бар перерисовывается раз в секунду, а меняется обычно раз в минуту
     pub drawn: u64,
+    /// последний кадр панели: закрытие проигрывает появление назад на нём — к закрытию
+    /// состояние, из которого она рисовалась, уже очищено
+    pub last: Option<crate::gfx::Img>,
 }
 
 pub struct LockSurf {
@@ -156,8 +159,6 @@ pub enum Msg {
     WhThumb(u64, String, Option<crate::gfx::Img>),
     WhApplied(Result<std::path::PathBuf, String>),
     Art(String, Option<crate::gfx::Img>),
-    /// текст песни нашёлся (или нет) для трека Lyrics.key
-    Lyrics(crate::lyrics::Lyrics),
     /// свои темы (themetab.rs): список, что сделано, применена ли тема (перечитать настройки)
     Themes(Vec<crate::bundle::Card>, String, bool),
     /// обои готовы (wall.rs): номер задания, картинка, акцент из неё
@@ -166,6 +167,8 @@ pub enum Msg {
     WallsListed(u64, std::path::PathBuf, Vec<std::path::PathBuf>, Vec<std::path::PathBuf>, usize),
     /// миниатюра для выбора обоев (walls.rs): номер открытия, клетка, картинка
     WallThumb(u64, usize, Option<crate::gfx::Img>),
+    /// ответ Open-Meteo (weather.rs)
+    Weather(crate::weather::Weather),
 }
 
 pub struct Res {
@@ -182,6 +185,8 @@ pub struct Res {
 
 pub struct Popup {
     pub kind: &'static str,
+    /// монитор: вкладки панели переключаются на месте только на нём
+    pub out: String,
 }
 
 pub struct State {
@@ -241,8 +246,6 @@ pub struct State {
     pub players: Vec<media::MediaState>,
     pub media_pick: String,
     pub art: HashMap<String, Option<std::rc::Rc<crate::gfx::Img>>>,
-    /// текст песни текущего трека (#13): ищется, только когда всплывашка его показывает
-    pub lyrics: crate::lyrics::Lyrics,
     /// вкладка «цвет»: страница «темы», свои темы и последнее действие с ними (themetab.rs)
     /// раздел вкладки «цвет»: 0 — палитра, 1 — свои темы, 2 — программы (#17)
     pub color_page: u8,
@@ -255,6 +258,10 @@ pub struct State {
     pub bt: net::BtState,
     pub wifi_pass: Field,
     pub wifi_target: String,
+    /// вкладка bluetooth: раскрытое устройство (путь BlueZ)
+    pub bt_open: String,
+    /// вкладка «система»: топ процессов (опрашивается, пока она открыта)
+    pub procs: crate::sys::Procs,
     /// о низком заряде уже сказали: 1 — на 10%, 2 — на 5%; сбрасывается на зарядке
     pub bat_warn: u8,
     pub tray: Vec<dbus::TrayItem>,
@@ -289,6 +296,11 @@ pub struct State {
     pub reply: crate::reply::Reply,
     /// координаты для ночного света
     pub geo_field: Field,
+    /// погода (weather.rs): последний ответ, идёт ли запрос, когда спрашивали, поле города
+    pub weather: crate::weather::Weather,
+    pub weather_busy: bool,
+    pub weather_try: Option<Instant>,
+    pub weather_field: Field,
     /// своя команда лаунчера (настройки → бар)
     pub launcher_field: Field,
     /// список шрифтов во вкладке «вид»: открыт ли, поиск, первая видимая строка
@@ -386,8 +398,6 @@ pub struct App {
     /// когда пришла последняя картинка обоев; идёт пересчёт отложенной (wall_need)
     pub wall_at: Instant,
     pub wall_reload: bool,
-    /// иероглиф рисуется поверх готовой картинки: его переключение — только перерисовка
-    pub wall_kanji: bool,
     pub quit: bool,
     /// выйти и запустить себя заново (тот же путь: после обновления — новый бинарь)
     pub restart: bool,
@@ -455,7 +465,6 @@ impl State {
             players: Vec::new(),
             media_pick: String::new(),
             art: HashMap::new(),
-            lyrics: Default::default(),
             color_page: 0,
             themes: vec![],
             theme_note: String::new(),
@@ -465,6 +474,8 @@ impl State {
             bt: net::BtState::default(),
             wifi_pass: Field::default(),
             wifi_target: String::new(),
+            bt_open: String::new(),
+            procs: Default::default(),
             bat_warn: 0,
             tray: vec![],
             locked: false,
@@ -490,6 +501,10 @@ impl State {
             widget_bg: HashMap::new(),
             reply: Default::default(),
             geo_field: Field::default(),
+            weather: crate::weather::cached(),
+            weather_busy: false,
+            weather_try: None,
+            weather_field: Field::default(),
             launcher_field: Field::default(),
             font_open: None,
             font_search: Field::default(),
@@ -601,7 +616,6 @@ pub fn run() {
         wall_shown_path: Default::default(),
         wall_at: Instant::now(),
         wall_reload: false,
-        wall_kanji: true,
         quit: false,
         restart: false,
         tray_anchor: None,
@@ -756,6 +770,7 @@ impl App {
                 scale: 1.0,
                 frac,
                 drawn: 0,
+                last: None,
             },
         );
     }

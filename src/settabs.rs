@@ -281,6 +281,12 @@ pub(crate) fn tab_system(ui: &mut Ui, st: &State, b: R) {
         num_btn(ui, R::new(rx + qw + 8, y, qw, 26), "до", s.num("night_off_h"), "night_off_h");
     }
     y += 40;
+    // погода — вкладка панели управления; город виден только здесь
+    y = title(ui, b.x, y, b.w, "погода");
+    let wf = st.field_focus == Some("weather_city");
+    ui.field(R::new(lx, y, half, 26), &st.weather_field, if s.weather_city.is_empty() { "город или широта, долгота" } else { &s.weather_city }, wf, false, Act::SField("weather_city"));
+    opt_btn(ui, R::new(rx, y, half, 26), "единицы", if s.weather_units == "f" { "°F, mph" } else { "°C, км/ч" }, Act::SCycle("weather_units"));
+    y += 40;
     y = title(ui, b.x, y, b.w, "язык и музыка");
     let lang = match s.lang.as_str() {
         "ru" => "Русский", // i18n-ok: name of the language
@@ -290,7 +296,6 @@ pub(crate) fn tab_system(ui: &mut Ui, st: &State, b: R) {
     opt_btn(ui, R::new(lx, y, half, 26), "язык", lang, Act::Drop("lang"));
     y += 34;
     ui.toggle(R::new(lx, y, half, 40), "обложки из сети", "если плеер не дал свою", s.media_art_net, Act::SBool("media_art_net"));
-    ui.toggle(R::new(rx, y, half, 40), "тексты песен из сети", "lrclib.net", s.lyrics_net, Act::SBool("lyrics_net"));
     y += 48;
     y = title(ui, b.x, y, b.w, "быстро");
     let bw = (b.w - 18) / 4;

@@ -19,10 +19,9 @@ use wayland_client::protocol::wl_shm;
 
 pub fn draw(ui: &mut Ui, st: &State, w: i32, h: i32, main: bool) {
     let t = ui.t;
-    // то же лицо, что у экрана входа (yami-greet): обои под вуалью, часы, дата, 闇
+    // то же лицо, что у экрана входа (yami-greet): обои под вуалью, часы, дата
     yami_px::face::backdrop(ui, st.wall.as_deref(), w, h);
     let dy = yami_px::face::clock(ui, w, h) - 30;
-    yami_px::face::kanji(ui, w, h);
     if !main {
         return;
     }

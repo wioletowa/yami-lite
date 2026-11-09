@@ -433,7 +433,6 @@ const PAIRS: &[(&str, &str)] = &[
     ("слева снизу", "bottom left"),
     ("снизу по центру", "bottom centre"),
 
-    ("иероглиф на обоях", "kanji on wallpaper"),
     ("скорость анимаций (меньше — быстрее)", "animation speed (lower — faster)"),
     ("авто", "auto"),
     ("простой", "idle"),
@@ -498,14 +497,8 @@ const PAIRS: &[(&str, &str)] = &[
     ("сохранить текущий вид", "keep the current look"),
     ("поделиться своей: yami theme export ФАЙЛ", "share yours: yami theme export FILE"),
     ("поставить чужую: yami theme import ФАЙЛ или ССЫЛКА", "apply someone's: yami theme import FILE or LINK"),
-    ("обложка и текст", "cover and lyrics"),
-    ("текст", "lyrics"),
-    ("текста не нашлось", "no lyrics found"),
-    ("ищу текст…", "looking for lyrics…"),
     ("всплывашка музыки", "music popup"),
-    ("тексты песен из сети", "lyrics from the web"),
     // окна
-    ("в правом нижнем углу", "in the bottom right corner"),
     ("ширина", "width"),
     // док
     ("док", "dock"),
