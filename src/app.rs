@@ -377,6 +377,10 @@ pub struct App {
     /// обои: ключ того, из чего собрана текущая картинка, и номер последнего задания
     pub wall_key: String,
     pub wall_job: u64,
+    /// картинка последней запущенной подготовки обоев и та, что сейчас на экране: та же —
+    /// значит, её только перекрасили (wall_ready не начинает смену заново)
+    pub wall_job_path: std::path::PathBuf,
+    pub wall_shown_path: std::path::PathBuf,
     /// когда пришла последняя картинка обоев; идёт пересчёт отложенной (wall_need)
     pub wall_at: Instant,
     pub wall_reload: bool,
@@ -590,6 +594,8 @@ pub fn run() {
         palette_written: String::new(),
         wall_key: String::new(),
         wall_job: 0,
+        wall_job_path: Default::default(),
+        wall_shown_path: Default::default(),
         wall_at: Instant::now(),
         wall_reload: false,
         wall_kanji: true,

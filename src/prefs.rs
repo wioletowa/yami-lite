@@ -54,12 +54,43 @@ impl App {
             return;
         }
         self.set_seen = self.st.set.clone();
-        let j = self.st.set.to_json();
+        let mut j = self.st.set.to_json();
         if j != self.set_saved {
+            // файл поменяли снаружи (yami-lite config set), а шелл его ещё не перечитал (раз в
+            // секунду): не затирать — поверх свежего файла только то, что поменяли здесь
+            let m = std::fs::metadata(config::settings_path()).and_then(|m| m.modified()).ok();
+            if m != self.set_mtime {
+                j = self.merge_settings(&j);
+            }
             let _ = config::write_atomic(&config::settings_path(), &j);
             self.set_saved = j;
             self.set_mtime = std::fs::metadata(config::settings_path()).and_then(|m| m.modified()).ok();
         }
+    }
+
+    /// ключи, что шелл поменял с прошлой записи (против set_saved), — поверх файла как он есть
+    /// сейчас; остальное — из файла. Итог — и в памяти, и в файл
+    fn merge_settings(&mut self, mine: &str) -> String {
+        use serde_json::Value;
+        let obj = |t: &str| match serde_json::from_str::<Value>(t) {
+            Ok(Value::Object(m)) => Some(m),
+            _ => None,
+        };
+        let disk = std::fs::read_to_string(config::settings_path()).unwrap_or_default();
+        let (Some(base), Some(mem), Some(mut file)) = (obj(&self.set_saved), obj(mine), obj(&disk)) else { return mine.to_string() };
+        for (k, v) in mem {
+            if base.get(&k) != Some(&v) {
+                file.insert(k, v);
+            }
+        }
+        let merged = Settings::lenient(&Value::Object(file).to_string());
+        let changed = merged != self.st.set;
+        self.st.set = merged;
+        self.set_seen = self.st.set.clone();
+        if changed {
+            self.settings_changed();
+        }
+        self.st.set.to_json()
     }
 
     pub(crate) fn check_settings_file(&mut self) {

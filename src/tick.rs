@@ -121,6 +121,11 @@ impl App {
                 s.dirty = true;
                 s.frame_pending = false;
             }
+            // стол закрыт окном на весь экран: под ним не рисуем, и смена сама не дойдёт до конца —
+            // время вышло, значит, она закончена; откроют стол — сразу новые обои, без доигрывания
+            if self.st.game.fullscreen && crate::wall::fade_k(&self.st).is_some_and(|k| k >= 1.0) {
+                crate::wall::finish_fade(&self.st);
+            }
             if crate::wall::fade_done(&self.st) {
                 self.st.wall_prev = None;
                 self.st.wall_fade = None;

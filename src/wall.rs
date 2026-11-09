@@ -126,8 +126,13 @@ impl Job {
 
     pub fn key(&self) -> String {
         let m = std::fs::metadata(&self.path).and_then(|m| m.modified()).ok();
+        // цвета темы — в ключе, только когда они меняют картинку: свои обои «как есть», без
+        // затемнения и полей от темы не зависят. Иначе новый акцент из этих же обоев запускал бы их
+        // подготовку заново, и смена обоев обрывалась на середине
+        let themed = !self.own || !self.tone.is_empty() || self.dim > 0.0 || self.fit;
+        let theme = if themed { format!("{:x?}|{:x}|{}", self.ramp, self.border, self.light) } else { String::new() };
         // и «палитра из обоев»: включили её на той же картинке — акцент надо вычислить заново
-        format!("{:?}|{m:?}|{}|{}x{}|{}|{}|{}|{}|{:x?}|{}|{:x}|{}", self.path, self.own, self.w, self.h, self.cell, self.fit, self.tone, self.dim, self.ramp, self.accent, self.border, self.light)
+        format!("{:?}|{m:?}|{}|{}x{}|{}|{}|{}|{}|{}|{theme}", self.path, self.own, self.w, self.h, self.cell, self.fit, self.tone, self.dim, self.accent)
     }
 }
 
@@ -394,8 +399,11 @@ pub fn cover(ui: &mut Ui, img: &Img, w: i32, h: i32) {
 /// узоры смены обоев: ключ, подпись
 pub const FADES: &[(&str, &str)] = &[("dither", "дизеринг"), ("noise", "шум"), ("scan", "развёртка"), ("wipe", "диагональ"), ("blocks", "крупные блоки"), ("none", "сразу")];
 
-/// шагов смены: клетки открываются ступенями
-const FADE_STEPS: i32 = 24;
+/// шагов смены: клетки открываются ступенями, около 30 в секунду — длинная смена не дробится
+/// на редкие кадры, короткая не меньше 12 ступеней
+fn fade_steps(st: &State) -> i32 {
+    ((fade_secs(st) * 30.0).round() as i32).clamp(12, 120)
+}
 
 /// сколько идёт смена обоев, с
 pub fn fade_secs(st: &State) -> f32 {
@@ -409,9 +417,14 @@ pub fn fade_k(st: &State) -> Option<f32> {
     Some((t.elapsed().as_secs_f32() / fade_secs(st)).min(1.0))
 }
 
+/// считать смену законченной (последний шаг), не рисуя её
+pub fn finish_fade(st: &State) {
+    st.wall_step.set(fade_steps(st));
+}
+
 /// смена закончилась: показан последний шаг
 pub fn fade_done(st: &State) -> bool {
-    st.wall_step.get() >= FADE_STEPS
+    st.wall_step.get() >= fade_steps(st)
 }
 
 fn hash(x: i32, y: i32) -> u32 {
@@ -439,13 +452,14 @@ pub fn shown(st: &State) -> Option<std::rc::Rc<Img>> {
     let new = st.wall.clone()?;
     let (Some(k), Some(old)) = (fade_k(st), st.wall_prev.as_ref()) else { return Some(new) };
     if old.w != new.w || old.h != new.h || st.set.wall_fade == "none" {
-        st.wall_step.set(FADE_STEPS);
+        st.wall_step.set(fade_steps(st));
         return Some(new);
     }
-    // по времени, но не больше шага за кадр
-    let step = ((k * FADE_STEPS as f32) as i32).min(st.wall_step.get() + 1).max(1);
-    if step >= FADE_STEPS {
-        st.wall_step.set(FADE_STEPS);
+    let steps = fade_steps(st);
+    // по времени, но не больше шага за кадр: медленный кадр растягивает смену, а не выбрасывает ступени
+    let step = ((k * steps as f32) as i32).min(st.wall_step.get() + 1).max(1);
+    if step >= steps {
+        st.wall_step.set(steps);
         return Some(new);
     }
     if let Some((s, img)) = st.wall_mix.borrow().as_ref() {
@@ -458,7 +472,7 @@ pub fn shown(st: &State) -> Option<std::rc::Rc<Img>> {
     let big = if st.set.wall_fade == "blocks" { 4 } else { 1 };
     let cell = ((st.set.num("wall_fade_cell") * big) / cell(st.set.wall_pixel) as i32).max(1);
     let (cols, rows) = ((new.w + cell - 1) / cell, (new.h + cell - 1) / cell);
-    let lvl = step * 256 / FADE_STEPS;
+    let lvl = step * 256 / steps;
     let style = st.set.wall_fade.as_str();
     let mut px = Vec::with_capacity(new.px.len());
     // пороги — по ряду клеток один раз, дальше копирование кусками
@@ -609,6 +623,7 @@ impl App {
         }
         self.wall_key = key;
         self.wall_job += 1;
+        self.wall_job_path = job.path.clone();
         let (n, tx) = (self.wall_job, self.tx.clone());
         std::thread::spawn(move || {
             let (img, accent) = prepare(&job);
@@ -621,9 +636,42 @@ impl App {
             return;
         }
         let new = img.map(std::rc::Rc::new);
+        // новые обои с «палитрой из обоев»: сначала их акцент. Если картинка зависит от темы
+        // (тон, затемнение, поля), под новый акцент она уже готовится заново — смена начнётся
+        // сразу с неё, без подмены цели посередине; эту не показываем
+        if self.wall_job_path != self.wall_shown_path && !cands.is_empty() && accent_from_image(&self.st.set) {
+            self.st.wall_cands = cands.clone();
+            let job = self.wall_job;
+            let pick = self.st.set.wall_pick as usize;
+            self.wall_pick(pick);
+            if self.wall_job != job {
+                return;
+            }
+        }
+        let same = self.wall_job_path == self.wall_shown_path;
+        self.wall_shown_path = self.wall_job_path.clone();
+        // та же картинка, перекрашенная (тон, затемнение от новой темы), пока идёт смена: подменить
+        // цель, а смену вести дальше с того же шага — не начинать заново с середины
+        let fading = self.st.wall_fade.is_some() && self.st.wall_prev.is_some() && !fade_done(&self.st);
+        if same && fading {
+            if let (Some(n), Some(o)) = (&new, &self.st.wall_prev) {
+                if n.w == o.w && n.h == o.h {
+                    self.st.wall = new;
+                    *self.st.wall_mix.borrow_mut() = None;
+                    self.wall_shown();
+                    return;
+                }
+            }
+        }
         // смена обоев: новые проступают клетками сквозь прошлые. Прошлые могли быть отложены в
         // уменьшенной копии (wall_park, пока листали выбор обоев) — растянуть её до размера новых
-        let old = self.st.wall.take().filter(|_| self.st.set.anim() && self.st.set.wall_fade != "none").and_then(|o| {
+        // отложенную копию тех же обоев перечитали в полный размер — это не смена, проявлять нечего
+        let reload = same && self.wall_reload;
+        // посреди прошлой смены — от того, что сейчас на экране (её кадр), а не от её цели: иначе
+        // ещё не проступившие клетки перескочили бы разом
+        let from = if fading { shown(&self.st) } else { None };
+        let cur = self.st.wall.take();
+        let old = from.or(cur).filter(|_| !reload && self.st.set.anim() && self.st.set.wall_fade != "none").and_then(|o| {
             let n = new.as_ref()?;
             if o.w == n.w && o.h == n.h {
                 Some(o)
@@ -636,6 +684,16 @@ impl App {
         self.st.wall_prev = old;
         *self.st.wall_mix.borrow_mut() = None;
         self.st.wall = new;
+        self.wall_shown();
+        self.st.wall_cands = cands;
+        if accent_from_image(&self.st.set) {
+            let pick = self.st.set.wall_pick as usize;
+            self.wall_pick(pick);
+        }
+    }
+
+    /// новая картинка обоев на месте: поверхности, блокировка, панели, виджеты — перерисовать
+    fn wall_shown(&mut self) {
         self.st.wall_parked = false;
         // карточка часов панели управления — на тех же обоях
         self.dirty(&SKind::Popup);
@@ -654,11 +712,6 @@ impl App {
         self.dirty_panels();
         // новые обои: виджеты на них — в тон
         self.widget_contrast();
-        self.st.wall_cands = cands;
-        if accent_from_image(&self.st.set) {
-            let pick = self.st.set.wall_pick as usize;
-            self.wall_pick(pick);
-        }
     }
 
     /// акцент — i-й по весу цвет обоев (номер запоминается для следующих), второй — к нему

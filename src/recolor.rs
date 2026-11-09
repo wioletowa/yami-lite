@@ -17,6 +17,7 @@ pub const APPS: &[(&str, &str, &str)] = &[
     ("alacritty", "alacritty", "import в alacritty.toml"),
     ("fuzzel", "fuzzel", "include в fuzzel.ini"),
     ("niri", "niri", "рамки окон: include в конце config.kdl"),
+    ("icons", "значки папок", "Neuwaita — папка цвета акцента, Papirus — ближайший цвет папок"),
 ];
 
 /// метка наших строк и файлов
@@ -191,6 +192,7 @@ pub fn apply(p: &Pal, apps: &[String]) {
     alacritty(p, on("alacritty"));
     fuzzel(p, on("fuzzel"));
     niri(p, on("niri"));
+    icons(p, on("icons"));
 }
 
 fn gtk(p: &Pal, on: bool) {
@@ -507,9 +509,157 @@ fn niri(p: &Pal, on: bool) {
     attach(&dir.join("config.kdl"), &line, "");
 }
 
+// ── значки папок ────────────────────────────────────────────────────────────
+
+fn icon_theme() -> String {
+    let o = std::process::Command::new("gsettings").args(["get", "org.gnome.desktop.interface", "icon-theme"]).output();
+    o.ok().map(|o| String::from_utf8_lossy(&o.stdout).trim().trim_matches('\'').to_string()).unwrap_or_default()
+}
+
+fn user_icons(theme: &str) -> PathBuf {
+    PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".local/share/icons").join(theme)
+}
+
+/// программы перечитывают тему значков, только когда она сменилась: туда и обратно
+fn reload_icons(theme: &str) {
+    for t in ["hicolor", theme] {
+        let _ = std::process::Command::new("gsettings").args(["set", "org.gnome.desktop.interface", "icon-theme", t]).output();
+    }
+}
+
+fn icons(p: &Pal, on: bool) {
+    if !crate::proc::which("gsettings") {
+        return;
+    }
+    let theme = icon_theme();
+    if theme.starts_with("Neuwaita") {
+        neuwaita(&theme, p, on);
+    } else if theme.starts_with("Papirus") {
+        papirus(&theme, p, on);
+    }
+}
+
+/// Neuwaita: у папки два листа — задний (path6) и передний (path8), их цвета и меняет её же
+/// change-color.sh. Задний — акцент, передний — он же почти до белого. Оригинал — рядом
+/// (.yami-lite), выключили — вернулся
+fn neuwaita(theme: &str, p: &Pal, on: bool) {
+    let f = user_icons(theme).join("scalable/places/folder.svg");
+    let keep = f.with_extension("svg.yami-lite");
+    if !on {
+        if keep.exists() && std::fs::copy(&keep, &f).is_ok() {
+            let _ = std::fs::remove_file(&keep);
+            reload_icons(theme);
+        }
+        return;
+    }
+    let Ok(t) = std::fs::read_to_string(&f) else { return };
+    let back = h(p.accent);
+    let front = h(p.accent.lerp(crate::theme::WHITE, 0.68));
+    let Some(new) = set_fill(&t, "path6", &back).and_then(|t| set_fill(&t, "path8", &front)) else { return };
+    if new == t {
+        return;
+    }
+    if !keep.exists() {
+        let _ = std::fs::copy(&f, &keep);
+    }
+    write(&f, &new);
+    reload_icons(theme);
+}
+
+/// цвет fill в style элемента с этим id (style идёт после id); элемента нет — None
+fn set_fill(svg: &str, id: &str, color: &str) -> Option<String> {
+    let at = svg.find(&format!("id=\"{id}\""))?;
+    let rel = svg[at..].find("style=\"fill:#")?;
+    let start = at + rel + "style=\"fill:#".len() - 1;
+    let end = start + 7;
+    (svg.len() >= end && svg[start + 1..end].chars().all(|c| c.is_ascii_hexdigit())).then(|| format!("{}{}{}", &svg[..start], color, &svg[end..]))
+}
+
+/// цвета папок papirus-folders (как в шаблоне Noctalia)
+const PAPIRUS: &[(&str, u32)] = &[
+    ("adwaita", 0x93c0ea), ("black", 0x4f4f4f), ("blue", 0x5294e2), ("bluegrey", 0x607d8b), ("breeze", 0x57b8ec),
+    ("brown", 0xae8e6c), ("carmine", 0xa30002), ("cyan", 0x00bcd4), ("darkcyan", 0x45abb7), ("deeporange", 0xeb6637),
+    ("green", 0x87b158), ("grey", 0x8e8e8f), ("indigo", 0x5c6bc0), ("magenta", 0xca71df), ("nordic", 0x81a1c1),
+    ("orange", 0xee923a), ("palebrown", 0xd1bfae), ("paleorange", 0xeeca8f), ("pink", 0xf06292), ("red", 0xe25252),
+    ("teal", 0x16a085), ("violet", 0x7e57c2), ("white", 0xe4e4e4), ("yaru", 0x676767), ("yellow", 0xf9bd30),
+];
+
+fn hsv(c: u32) -> (f32, f32, f32) {
+    let (r, g, b) = (((c >> 16) & 255) as f32 / 255.0, ((c >> 8) & 255) as f32 / 255.0, (c & 255) as f32 / 255.0);
+    let (mx, mn) = (r.max(g).max(b), r.min(g).min(b));
+    let d = mx - mn;
+    let h = if d == 0.0 {
+        0.0
+    } else if mx == r {
+        60.0 * ((g - b) / d).rem_euclid(6.0)
+    } else if mx == g {
+        60.0 * ((b - r) / d + 2.0)
+    } else {
+        60.0 * ((r - g) / d + 4.0)
+    };
+    (h, if mx == 0.0 { 0.0 } else { d / mx }, mx)
+}
+
+/// ближайший цвет папок: оттенок важнее всего, но только между насыщенными (у серых оттенка нет),
+/// потом насыщенность, меньше всего — яркость. Веса — как у Noctalia
+fn papirus_nearest(c: u32) -> &'static str {
+    let (th, ts, tv) = hsv(c);
+    let dist = |p: u32| {
+        let (h, s, v) = hsv(p);
+        let mut dh = (th - h).abs();
+        if dh > 180.0 {
+            dh = 360.0 - dh;
+        }
+        dh /= 180.0;
+        10.0 * ts * s * dh * dh + (ts - s).powi(2) + 0.3 * (tv - v).powi(2)
+    };
+    PAPIRUS.iter().min_by(|a, b| dist(a.1).total_cmp(&dist(b.1))).map_or("blue", |p| p.0)
+}
+
+/// Papirus: papirus-folders красит папки одним из своих цветов. Только копия темы в
+/// ~/.local/share/icons (системную без root не тронуть); выключили — цвет по умолчанию
+fn papirus(theme: &str, p: &Pal, on: bool) {
+    if !crate::proc::which("papirus-folders") || !user_icons(theme).is_dir() {
+        return;
+    }
+    let mark = PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(format!(".local/state/{MARK}/papirus-folders"));
+    let run = |args: &[&str]| {
+        let _ = std::process::Command::new("papirus-folders").args(args).args(["--theme", theme]).stdin(std::process::Stdio::null()).output();
+    };
+    if !on {
+        if mark.exists() {
+            run(&["-D"]);
+            let _ = std::fs::remove_file(&mark);
+        }
+        return;
+    }
+    let name = papirus_nearest(p.accent.0 & 0xffffff);
+    // тот же цвет — не дёргать: papirus-folders переписывает сотни ссылок
+    if std::fs::read_to_string(&mark).is_ok_and(|m| m.trim() == name) {
+        return;
+    }
+    run(&["-C", name]);
+    if let Some(d) = mark.parent() {
+        let _ = std::fs::create_dir_all(d);
+    }
+    let _ = std::fs::write(&mark, name);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn folder_fills_and_papirus_colours() {
+        let svg = "<path\n id=\"path6\"\n style=\"fill:#fa8a3f;fill-opacity:1\" /><path fill=\"#a4caee\" id=\"path8\" style=\"fill:#ffdac1;fill-opacity:1\" />";
+        let t = set_fill(svg, "path6", "#112233").and_then(|t| set_fill(&t, "path8", "#445566")).unwrap();
+        assert!(t.contains("fill:#112233") && t.contains("fill:#445566") && t.contains("fill=\"#a4caee\""), "{t}");
+        assert!(set_fill(svg, "path9", "#000000").is_none());
+        assert_eq!(papirus_nearest(0xe0302a), "red");
+        assert_eq!(papirus_nearest(0x3a9fd0), "breeze");
+        assert_eq!(papirus_nearest(0x5fae34), "green");
+        assert_eq!(papirus_nearest(0x808080), "grey");
+    }
 
     #[test]
     fn gtk_theme_pairs_by_dark_suffix() {
