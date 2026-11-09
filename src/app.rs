@@ -259,6 +259,8 @@ pub struct State {
     pub bat_warn: u8,
     pub tray: Vec<dbus::TrayItem>,
     pub locked: bool,
+    /// раскладка до блокировки: на экране пароля включается английская, после — эта
+    pub lock_kb: Option<usize>,
     pub lock_field: Field,
     pub lock_status: String,
     pub lock_fails: u32,
@@ -466,6 +468,7 @@ impl State {
             bat_warn: 0,
             tray: vec![],
             locked: false,
+            lock_kb: None,
             lock_field: Field::default(),
             lock_status: String::new(),
             lock_fails: 0,

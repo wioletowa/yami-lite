@@ -220,6 +220,13 @@ impl Niri {
     pub fn is_min(&self, w: &Win) -> bool {
         self.hidden.contains(&w.id)
     }
+    /// английская раскладка из списка niri — для ввода пароля на экране блокировки
+    pub fn kb_english(&self) -> Option<usize> {
+        self.kb_names.iter().position(|n| {
+            let n = n.to_lowercase();
+            n.starts_with("eng") || n.contains("(us)")
+        })
+    }
     pub fn kb_short(&self) -> String {
         let n = self.kb_names.get(self.kb_idx).map(|s| s.to_lowercase()).unwrap_or_default();
         if n.starts_with("rus") {

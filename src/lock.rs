@@ -112,6 +112,10 @@ impl App {
         }
         self.close_all();
         self.st.locked = true;
+        if let Some(en) = self.st.niri.kb_english().filter(|&en| en != self.st.niri.kb_idx) {
+            self.st.lock_kb = Some(self.st.niri.kb_idx);
+            self.st.niri.act(serde_json::json!({"SwitchLayout": {"layout": {"Index": en}}}));
+        }
         // первый кадр — на копии обоев, полная догонит
         self.wall_need();
         self.st.lock_field.wipe();
@@ -121,7 +125,10 @@ impl App {
                 self.lock = Some(l);
                 self.sync_lock_surfs();
             }
-            Err(_) => self.st.locked = false,
+            Err(_) => {
+                self.st.locked = false;
+                self.restore_kb();
+            }
         }
     }
 
@@ -149,8 +156,17 @@ impl App {
         self.drop_lock_surfs();
         self.st.locked = false;
         self.st.lock_field.wipe();
+        self.restore_kb();
         let _ = self.conn.roundtrip();
         self.dirty_all();
+    }
+
+    /// вернуть раскладку, что была до блокировки, если на экране пароля её не меняли
+    fn restore_kb(&mut self) {
+        let Some(prev) = self.st.lock_kb.take() else { return };
+        if self.st.niri.kb_english() == Some(self.st.niri.kb_idx) {
+            self.st.niri.act(serde_json::json!({"SwitchLayout": {"layout": {"Index": prev}}}));
+        }
     }
 
     /// поверхности блокировки — со своими масштабом и viewport
