@@ -843,7 +843,9 @@ impl App {
             }
             if self.find(&SKind::EditBar).is_empty() {
                 let top = self.bar_bottom(&out) + 12;
-                self.mk(SKind::EditBar, &out, Layer::Overlay, "yami-menu", Anchor::TOP, (520, 52), (top, 0, 0, 0), -1, KeyboardInteractivity::Exclusive);
+                // слой Top и клавиатура по требованию: панель не перекрывает скриншотилку и не
+                // забирает у неё клавиши; Esc и Enter — после щелчка по панели
+                self.mk(SKind::EditBar, &out, Layer::Top, "yami-menu", Anchor::TOP, (520, 52), (top, 0, 0, 0), -1, KeyboardInteractivity::OnDemand);
             }
         } else {
             self.close_kind(&SKind::EditBar);
