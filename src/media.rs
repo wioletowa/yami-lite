@@ -27,12 +27,13 @@ pub struct MediaState {
     pub played: Option<Instant>,
     /// повтор: None, Playlist, Track (пусто — плеер не умеет)
     pub repeat: String,
-    pub shuffle: bool,
+    /// перемешивание; None — плеер не умеет
+    pub shuffle: Option<bool>,
 }
 
 impl Default for MediaState {
     fn default() -> Self {
-        MediaState { inst: String::new(), player: String::new(), status: String::new(), artist: String::new(), title: String::new(), album: String::new(), art: String::new(), length: 0.0, pos: 0.0, at: Instant::now(), played: None, repeat: String::new(), shuffle: false }
+        MediaState { inst: String::new(), player: String::new(), status: String::new(), artist: String::new(), title: String::new(), album: String::new(), art: String::new(), length: 0.0, pos: 0.0, at: Instant::now(), played: None, repeat: String::new(), shuffle: None }
     }
 }
 
@@ -154,7 +155,11 @@ pub fn spawn(tx: Sender<Msg>) {
                     at: Instant::now(),
                     played: None,
                     repeat: g(9),
-                    shuffle: g(10) == "true",
+                    shuffle: match g(10).as_str() {
+                        "true" => Some(true),
+                        "false" => Some(false),
+                        _ => None,
+                    },
                 };
                 let _ = tx.send(Msg::Media(m));
             }
@@ -282,6 +287,16 @@ impl App {
     /// захват звука для эквалайзера — пока тот где-то виден и музыка играет
     pub fn viz_sync(&self) {
         viz_wanted(self.media_visible() && self.st.media.playing());
+    }
+
+    /// поправить показанный плеер и его запись в списке плееров
+    pub fn media_patch(&mut self, f: impl Fn(&mut MediaState)) {
+        f(&mut self.st.media);
+        let inst = self.st.media.inst.clone();
+        if let Some(p) = self.st.players.iter_mut().find(|p| p.inst == inst) {
+            f(p);
+        }
+        self.dirty(&SKind::Popup);
     }
 
     /// эквалайзер поменялся: захват звука — если он виден

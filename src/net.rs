@@ -487,6 +487,11 @@ pub fn bt_trust(d: BtDev, on: bool, tx: Sender<Msg>) {
     });
 }
 
+/// устройство без адаптера: «dev_AA_BB_…» из пути BlueZ — тот же после смены hci0 на hci1
+pub fn bt_key(path: &str) -> &str {
+    path.rsplit('/').next().unwrap_or(path)
+}
+
 /// автоподключение: тихо — без «подождите» и без ошибки в шапке (устройство могло быть далеко)
 pub fn bt_connect_quiet(path: String, tx: Sender<Msg>) {
     std::thread::spawn(move || {

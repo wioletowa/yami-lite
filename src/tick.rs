@@ -24,10 +24,14 @@ impl App {
             return;
         }
         let now = Instant::now();
+        // подключённые — из памяти попыток: отключатся — пробовать сразу
+        let waiting: Vec<&String> = b.devices.iter().filter(|d| !d.connected).map(|d| &d.path).collect();
+        self.st.bt_auto_try.retain(|p, _| waiting.contains(&p));
+        let b = &self.st.bt;
         let due: Vec<String> = b
             .devices
             .iter()
-            .filter(|d| d.paired && !d.connected && self.st.set.bt_auto.contains(&d.path))
+            .filter(|d| d.paired && !d.connected && self.st.set.bt_auto.iter().any(|k| k == crate::net::bt_key(&d.path)))
             .filter(|d| self.st.bt_auto_try.get(&d.path).is_none_or(|t| now.duration_since(*t).as_secs() >= 30))
             .map(|d| d.path.clone())
             .collect();

@@ -164,11 +164,15 @@ impl App {
             Act::Sink(name) => audio::set_sink(&name),
             Act::Source(name) => audio::set_source(&name),
             Act::MediaPlay => self.media_ctl("play-pause"),
-            // сразу на экране, плеер подтвердит своей строкой
-            Act::MediaRepeat => self.st.media.repeat = crate::media::repeat_next(&self.st.media.inst, &self.st.media.repeat).into(),
+            // сразу на экране и в списке плееров (из него собирается показанный), плеер подтвердит
+            // своей строкой
+            Act::MediaRepeat => {
+                let rep: String = crate::media::repeat_next(&self.st.media.inst, &self.st.media.repeat).into();
+                self.media_patch(|m| m.repeat = rep.clone());
+            }
             Act::MediaShuffle => {
                 crate::media::shuffle_toggle(&self.st.media.inst);
-                self.st.media.shuffle = !self.st.media.shuffle;
+                self.media_patch(|m| m.shuffle = m.shuffle.map(|v| !v));
             }
             Act::MediaNext => self.media_ctl("next"),
             Act::MediaPrev => self.media_ctl("previous"),
@@ -204,13 +208,14 @@ impl App {
                 net::bt_trust(d, on, self.tx.clone());
             }
             Act::BtAuto(path) => {
+                let key = net::bt_key(&path).to_string();
                 let list = &mut self.st.set.bt_auto;
-                match list.iter().position(|p| *p == path) {
+                match list.iter().position(|k| *k == key) {
                     Some(i) => {
                         list.remove(i);
                     }
                     None => {
-                        list.push(path.clone());
+                        list.push(key);
                         self.st.bt_auto_try.remove(&path);
                     }
                 }
@@ -220,7 +225,7 @@ impl App {
                 let Some(d) = self.st.bt.devices.iter().find(|d| d.path == path).cloned() else { return };
                 self.st.bt_open.clear();
                 // забытое не подключать
-                if let Some(i) = self.st.set.bt_auto.iter().position(|p| *p == path) {
+                if let Some(i) = self.st.set.bt_auto.iter().position(|k| k == net::bt_key(&path)) {
                     self.st.set.bt_auto.remove(i);
                     self.settings_changed();
                 }

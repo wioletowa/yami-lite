@@ -285,7 +285,7 @@ pub(crate) fn tab_system(ui: &mut Ui, st: &State, b: R) {
     y = title(ui, b.x, y, b.w, "погода");
     let wf = st.field_focus == Some("weather_city");
     ui.field(R::new(lx, y, half, 26), &st.weather_field, if s.weather_city.is_empty() { "город или широта, долгота" } else { &s.weather_city }, wf, false, Act::SField("weather_city"));
-    opt_btn(ui, R::new(rx, y, half, 26), "единицы", if s.weather_units == "f" { "°F, mph" } else { "°C, км/ч" }, Act::SCycle("weather_units"));
+    opt_btn(ui, R::new(rx, y, half, 26), "единицы", if s.weather_units == "f" { "°F, mph" } else { "°C, м/с" }, Act::SCycle("weather_units"));
     y += 40;
     y = title(ui, b.x, y, b.w, "язык и музыка");
     let lang = match s.lang.as_str() {

@@ -446,16 +446,13 @@ impl Procs {
             }
         }
         // одинаковые имена (вкладки браузера, воркеры) — одной строкой
-        let mut merged: Vec<Proc> = vec![];
+        let mut by_name: std::collections::HashMap<String, Proc> = std::collections::HashMap::new();
         for p in list {
-            match merged.iter_mut().find(|m| m.name == p.name) {
-                Some(m) => {
-                    m.cpu += p.cpu;
-                    m.mem += p.mem;
-                }
-                None => merged.push(p),
-            }
+            let m = by_name.entry(p.name.clone()).or_insert_with(|| Proc { name: p.name.clone(), ..Default::default() });
+            m.cpu += p.cpu;
+            m.mem += p.mem;
         }
+        let mut merged: Vec<Proc> = by_name.into_values().collect();
         merged.sort_by(|a, b| b.cpu.total_cmp(&a.cpu).then(b.mem.total_cmp(&a.mem)));
         merged.truncate(12);
         self.top = merged;

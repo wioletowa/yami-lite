@@ -516,27 +516,37 @@ pub fn media_card(ui: &mut Ui, st: &State, r: R, style: &str, c: C, label: bool,
     ui.button(R::new(x, by, 26, 22), "", "prev", Tone::Ghost, false, true, Act::MediaPrev);
     ui.button(R::new(x + 30, by, 30, 22), "", if m.playing() { "pause" } else { "play" }, Tone::Primary, false, true, Act::MediaPlay);
     ui.button(R::new(x + 64, by, 26, 22), "", "next", Tone::Ghost, false, true, Act::MediaNext);
-    // полоса позиции: щёлкнуть или потянуть — перемотка (пока тянут, бегунок там, где курсор)
-    if m.length > 0.0 {
-        let px0 = x + 100;
-        let pw = r.right() - px0;
-        if pw > 40 {
-            let k = st.seek.unwrap_or((m.now_pos() / m.length) as f32).clamp(0.0, 1.0);
-            let zr = R::new(px0, by, pw, 22);
-            let hov = ui.hover(zr) || st.seek.is_some();
-            ui.cv.fill(R::new(px0, by + 10, pw, 2), if hov { t.text_faint } else { t.border });
-            ui.cv.fill(R::new(px0, by + 10, (pw as f32 * k) as i32, 2), c);
-            ui.cv.fill(R::new(px0 + (pw as f32 * k) as i32 - 2, by + if hov { 7 } else { 8 }, 4, if hov { 8 } else { 6 }), t.ember);
-            ui.zone(zr, Act::MediaSeek, Cur::Pointer);
-            if m.playing() {
-                ui.anim = false;
-            }
+    if m.length > 0.0 && r.right() - x - 100 > 40 {
+        seek_bar(ui, st, R::new(x + 100, by, r.right() - x - 100, 22), c, false);
+        if m.playing() {
+            ui.anim = false;
         }
     }
     let vy = r.y + side + 6;
     if style != "off" && r.bottom() - vy >= 8 {
         viz(ui, R::new(r.x, vy, r.w, r.bottom() - vy), &st.viz, style, c, st.viz.is_empty() || !m.playing());
     }
+}
+
+/// полоса позиции трека: щёлкнуть или потянуть — перемотка (пока тянут, бегунок там, где
+/// курсор); big — толстая, с крупным бегунком (вкладка музыки)
+pub fn seek_bar(ui: &mut Ui, st: &State, r: R, c: C, big: bool) {
+    let t = ui.t;
+    let m = &st.media;
+    let k = st.seek.unwrap_or((m.now_pos() / m.length.max(0.001)) as f32).clamp(0.0, 1.0);
+    let hov = ui.hover(r) || st.seek.is_some();
+    let th = if big { 4 } else { 2 };
+    let ty = r.y + (r.h - th) / 2;
+    let kx = r.x + (r.w as f32 * k) as i32;
+    let track = if big { t.code_bg.lerp(t.border, 0.6) } else if hov { t.text_faint } else { t.border };
+    ui.cv.fill(R::new(r.x, ty, r.w, th), track);
+    ui.cv.fill(R::new(r.x, ty, kx - r.x, th), c);
+    if big {
+        ui.cv.fill(R::new(kx - 4, ty - 4, 8, th + 8), if hov { t.ember } else { t.text_hi });
+    } else {
+        ui.cv.fill(R::new(kx - 2, ty - if hov { 3 } else { 2 }, 4, if hov { 8 } else { 6 }), t.ember);
+    }
+    ui.zone(r, Act::MediaSeek, Cur::Pointer);
 }
 
 /// месяц сеткой: сегодня — в акценте, выходные — тусклее

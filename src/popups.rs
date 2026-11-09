@@ -27,7 +27,7 @@ pub fn shows_player(st: &State) -> bool {
 
 /// открытая всплывашка рисует эквалайзер (ему нужен захват звука)
 pub fn shows_viz(st: &State) -> bool {
-    st.popup_is("media") || (st.set.media_viz != "off" && st.popup_is("sound") && sound_media(st))
+    st.set.media_viz != "off" && (st.popup_is("media") || (st.popup_is("sound") && sound_media(st)))
 }
 
 /// размер всплывашки; вкладки панели управления — все одного размера, со столбиком вкладок
@@ -309,14 +309,7 @@ fn now_card(ui: &mut Ui, st: &State, r: R) {
         let px0 = r.x + lw + 10;
         let pw = r.right() - rw - 10 - px0;
         if pw > 40 {
-            let k = st.seek.unwrap_or((m.now_pos() / m.length) as f32).clamp(0.0, 1.0);
-            let zr = R::new(px0, sy - 1, pw, 22);
-            let hov = ui.hover(zr) || st.seek.is_some();
-            ui.cv.fill(R::new(px0, sy + 8, pw, 4), t.code_bg.lerp(t.border, 0.6));
-            ui.cv.fill(R::new(px0, sy + 8, (pw as f32 * k) as i32, 4), t.red);
-            let kx = px0 + (pw as f32 * k) as i32;
-            ui.cv.fill(R::new(kx - 4, sy + 4, 8, 12), if hov { t.ember } else { t.text_hi });
-            ui.zone(zr, Act::MediaSeek, Cur::Pointer);
+            widgets::seek_bar(ui, st, R::new(px0, sy - 1, pw, 22), t.red, true);
         }
     }
     // кнопки: повтор, назад, пауза, вперёд, перемешать — по центру
@@ -335,7 +328,7 @@ fn now_card(ui: &mut Ui, st: &State, r: R) {
     x += 58;
     ui.button(R::new(x, by, 36, 32), "", "next", Tone::Ghost, false, true, Act::MediaNext);
     x += 50;
-    ui.button(R::new(x, by, 36, 32), "", "shuffle", sel(m.shuffle), false, !rep.is_empty(), Act::MediaShuffle);
+    ui.button(R::new(x, by, 36, 32), "", "shuffle", sel(m.shuffle == Some(true)), false, m.shuffle.is_some(), Act::MediaShuffle);
 }
 
 /// эквалайзер стоймя: полосы частот сверху вниз, каждая — в обе стороны от середины; ЛКМ — стиль
@@ -344,7 +337,8 @@ fn vviz(ui: &mut Ui, st: &State, r: R) {
     let hov = ui.hover(r);
     ui.cv.pxbox(r, &BoxStyle::new(t.code_bg, if hov { t.red } else { t.border }));
     let inr = r.inset(12);
-    let idle = st.viz.is_empty() || !st.media.playing();
+    // эквалайзер выключен (настройки бара) — звук не захватывается, только пунктир
+    let idle = st.set.media_viz == "off" || st.viz.is_empty() || !st.media.playing();
     let n = if st.viz.is_empty() { 24 } else { st.viz.len() } as i32;
     let bh = (inr.h / n).max(2);
     let top = inr.y + (inr.h - bh * n) / 2;
@@ -648,7 +642,7 @@ fn bt_row(ui: &mut Ui, st: &State, d: &crate::net::BtDev, r: R, open: bool) {
     let busy = st.bt.busy == d.path;
     if d.paired {
         // подключить, доверие, автоподключение (горят, когда включены) и мусорка — забыть
-        let auto = st.set.bt_auto.contains(&d.path);
+        let auto = st.set.bt_auto.iter().any(|k| k == crate::net::bt_key(&d.path));
         let tw = 30;
         let bw = (r.w - tw - 18) / 3;
         ui.button(R::new(r.x, y, bw + 20, 26), if d.connected { "отключить" } else { "подключить" }, "", Tone::Plain, false, !busy, Act::BtDev(d.path.clone()));

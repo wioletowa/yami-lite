@@ -171,7 +171,12 @@ impl App {
                 ui.cv.scanlines(if st.t.light { 0.06 } else { 0.22 });
             }
             if keep {
-                s.last = Some(crate::gfx::Img { w: bw, h: bh, px: ui.cv.buf[..(bw * bh) as usize].to_vec() });
+                // в прежний буфер, если размер тот же: без выделения памяти на каждый кадр
+                let px = &ui.cv.buf[..(bw * bh) as usize];
+                match s.last.as_mut().filter(|l| l.w == bw && l.h == bh) {
+                    Some(l) => l.px.copy_from_slice(px),
+                    None => s.last = Some(crate::gfx::Img { w: bw, h: bh, px: px.to_vec() }),
+                }
             }
             let replay = snap.is_some();
             if let Some(img) = snap {

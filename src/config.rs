@@ -266,7 +266,7 @@ pub struct Settings {
     pub night_geo: String,
     /// погода во вкладке панели: город или «широта, долгота»; единицы c или f
     pub weather_city: String,
-    /// bluetooth: устройства (пути BlueZ) с автоподключением — шелл подключает их сам
+    /// bluetooth: устройства с автоподключением («dev_AA_BB_…», без адаптера) — шелл подключает их сам
     pub bt_auto: Vec<String>,
     /// стиль большого эквалайзера во вкладке музыки панели (ЛКМ по нему — следующий)
     pub ctl_viz: String,
@@ -513,6 +513,13 @@ impl Settings {
         if !crate::widgets::STYLES.iter().any(|(k, _)| *k == self.ctl_viz) {
             self.ctl_viz = "bars".into();
         }
+        // старые записи — полные пути BlueZ: только устройство
+        self.bt_auto = self.bt_auto.iter().map(|p| crate::net::bt_key(p).to_string()).collect();
+        let mut seen: Vec<String> = vec![];
+        self.bt_auto.retain(|k| !seen.contains(k) && {
+            seen.push(k.clone());
+            true
+        });
         if self.weather_units != "f" {
             self.weather_units = "c".into();
         }

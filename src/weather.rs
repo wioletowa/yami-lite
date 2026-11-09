@@ -284,7 +284,7 @@ pub fn draw(ui: &mut Ui, st: &State, b: R) {
 /// сутки по часам: температура линией, вероятность осадков столбиками снизу, часы через 3
 fn hourly(ui: &mut Ui, w: &Weather, r: R) {
     let t = ui.t;
-    if w.hours.len() < 2 || r.h < 40 {
+    if w.hours.len() < 2 || r.h < 70 {
         return;
     }
     ui.cv.pxbox(r, &BoxStyle::new(t.code_bg, t.border));
@@ -292,10 +292,22 @@ fn hourly(ui: &mut Ui, w: &Weather, r: R) {
     let lo = w.hours.iter().map(|h| h.1).fold(f32::MAX, f32::min);
     let hi = w.hours.iter().map(|h| h.1).fold(f32::MIN, f32::max);
     let span = (hi - lo).max(4.0);
-    let n = w.hours.len();
-    let step = inr.w as f32 / (n - 1) as f32;
-    let at = |i: usize| inr.x + (i as f32 * step).round() as i32;
-    let yof = |v: f32| inr.bottom() - ((v - lo) / span * inr.h as f32).round() as i32;
+    // температура — общим графиком (widgets::graph, линия): он кладёт точки столбцами по 3 px
+    // справа налево, поэтому сутки растягиваются на всю ширину — по точке на столбец
+    const COL: i32 = 3;
+    let cols = (inr.w / COL) as usize + 2;
+    let last = w.hours.len() - 1;
+    let temp_at = |f: f32| {
+        let i = (f.floor() as usize).min(last);
+        let (a, b) = (w.hours[i].1, w.hours[(i + 1).min(last)].1);
+        a + (b - a) * (f - i as f32)
+    };
+    let data: Vec<f32> = (0..cols).map(|j| (temp_at(j as f32 / (cols - 1) as f32 * last as f32) - lo) / span).collect();
+    let at = |i: usize| {
+        let j = (i as f32 / last as f32 * (cols - 1) as f32).round() as i32;
+        inr.right() - (cols as i32 - j) * COL + COL
+    };
+    let yof = |v: f32| inr.bottom() - (((v - lo) / span).clamp(0.0, 1.0) * inr.h as f32).round().max(1.0) as i32;
     // осадки — столбики у дна
     for (i, h) in w.hours.iter().enumerate() {
         if h.2 >= 10.0 {
@@ -303,15 +315,7 @@ fn hourly(ui: &mut Ui, w: &Weather, r: R) {
             ui.cv.fill(R::new(at(i) - 2, r.bottom() - 22 - ph, 4, ph), t.accent2.alpha(0.6));
         }
     }
-    // температура — ломаная из пиксельных отрезков
-    for i in 0..n - 1 {
-        let (x0, y0, x1, y1) = (at(i), yof(w.hours[i].1), at(i + 1), yof(w.hours[i + 1].1));
-        let steps = (x1 - x0).max(1);
-        for k in 0..=steps {
-            let y = y0 + (y1 - y0) * k / steps;
-            ui.cv.fill(R::new(x0 + k - 1, y - 1, 2, 2), t.red);
-        }
-    }
+    crate::widgets::graph(ui, inr, &data, "line", "none", 0.0, t.red, None);
     // подписи: градусы над точкой и час под ней, через 3 часа
     for (i, h) in w.hours.iter().enumerate().step_by(3) {
         let x = at(i);
