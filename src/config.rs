@@ -268,6 +268,14 @@ pub struct Settings {
     pub weather_city: String,
     /// bluetooth: устройства с автоподключением («dev_AA_BB_…», без адаптера) — шелл подключает их сам
     pub bt_auto: Vec<String>,
+    /// рабочий стол (desk.rs): значки файлов из папки стола, их размер, скрытые файлы
+    pub desk: bool,
+    pub desk_size: i32,
+    pub desk_hidden: bool,
+    /// строк в подписи, миниатюры картинок и видео, открывать одним щелчком
+    pub desk_lines: i32,
+    pub desk_thumbs: bool,
+    pub desk_single: bool,
     /// стиль большого эквалайзера во вкладке музыки панели (ЛКМ по нему — следующий; off — выключен)
     pub ctl_viz: String,
     pub weather_units: String,
@@ -473,6 +481,12 @@ impl Default for Settings {
             night_geo: String::new(),
             weather_city: String::new(),
             bt_auto: vec![],
+            desk: true,
+            desk_size: 56,
+            desk_hidden: false,
+            desk_lines: 2,
+            desk_thumbs: true,
+            desk_single: false,
             ctl_viz: "bars".into(),
             weather_units: "c".into(),
             night_on_h: 20,
@@ -520,6 +534,10 @@ impl Settings {
             seen.push(k.clone());
             true
         });
+        if ![48, 56, 64, 96].contains(&self.desk_size) {
+            self.desk_size = 56;
+        }
+        self.desk_lines = self.desk_lines.clamp(1, 3);
         if self.weather_units != "f" {
             self.weather_units = "c".into();
         }

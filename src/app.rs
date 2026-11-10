@@ -74,6 +74,10 @@ pub enum SKind {
     EditGrid,
     /// подсказка у индикатора приватности (privacy.rs)
     Tip,
+    /// рабочий стол: значки файлов на слое обоев (desk.rs)
+    Desk,
+    /// окно «свойства» файла со стола (xdg-shell, как настройки)
+    Info,
     Dock,
     DockEdge,
 }
@@ -169,6 +173,20 @@ pub enum Msg {
     WallThumb(u64, usize, Option<crate::gfx::Img>),
     /// ответ Open-Meteo (weather.rs)
     Weather(crate::weather::Weather),
+    /// рабочий стол (desk.rs): список папки, миниатюра картинки, итог действия с файлами
+    Desk(std::path::PathBuf, Vec<crate::desk::Item>),
+    DeskThumb(String, Option<crate::gfx::Img>),
+    DeskDone(String),
+    /// на стол бросили файлы из другого окна: пути, куда, перенос ли (dnd.rs)
+    DeskDropped(Vec<std::path::PathBuf>, crate::dnd::DropAt, bool),
+    /// переименовали снаружи: пары (было, стало) — место за новым именем
+    DeskRenamed(std::path::PathBuf, Vec<(String, String)>),
+    /// файлы легли в папку: имена, клетка рядом с которой их поставить, ошибки
+    DeskPlaced(Vec<String>, Option<(i32, i32)>, String),
+    /// посчитан размер для «свойств»
+    DeskInfo(String),
+    /// прочитан чужой буфер: пути, куда вставить, вырезаны ли, клетка
+    DeskPasted(Vec<std::path::PathBuf>, std::path::PathBuf, bool, Option<(i32, i32)>),
 }
 
 pub struct Res {
@@ -266,6 +284,8 @@ pub struct State {
     pub bt_auto_hold: HashSet<String>,
     /// вкладка «система»: топ процессов (опрашивается, пока она открыта)
     pub procs: crate::sys::Procs,
+    /// рабочий стол (desk.rs)
+    pub desk: crate::desk::Desk,
     /// о низком заряде уже сказали: 1 — на 10%, 2 — на 5%; сбрасывается на зарядке
     pub bat_warn: u8,
     pub tray: Vec<dbus::TrayItem>,
@@ -357,6 +377,12 @@ pub struct App {
     pub(crate) shm: Shm,
     pub(crate) cursor_mgr: Option<CursorShapeManager>,
     pub(crate) cursor_dev: Option<WpCursorShapeDeviceV1>,
+    /// перетаскивание файлов (dnd.rs): менеджер, устройство сиденья, своё состояние, серийный
+    /// номер последнего нажатия (им начинается перетаскивание)
+    pub(crate) dd_mgr: Option<smithay_client_toolkit::data_device_manager::DataDeviceManagerState>,
+    pub(crate) data_dev: Option<smithay_client_toolkit::data_device_manager::data_device::DataDevice>,
+    pub(crate) dnd: crate::dnd::Dnd,
+    pub(crate) press_serial: u32,
     pub(crate) cursor_now: Option<Shape>,
     pub(crate) viewporter: Option<wp_viewporter::WpViewporter>,
     pub(crate) fx_mgr: Option<ext_background_effect_manager_v1::ExtBackgroundEffectManagerV1>,
@@ -482,6 +508,7 @@ impl State {
             bt_auto_try: HashMap::new(),
             bt_auto_hold: HashSet::new(),
             procs: Default::default(),
+            desk: Default::default(),
             bat_warn: 0,
             tray: vec![],
             locked: false,
@@ -555,6 +582,7 @@ pub fn run() {
     let xdg = smithay_client_toolkit::shell::xdg::XdgShell::bind(&globals, &qh).ok();
     let shm = Shm::bind(&globals, &qh).expect("wl_shm");
     let cursor_mgr = CursorShapeManager::bind(&globals, &qh).ok();
+    let dd_mgr = smithay_client_toolkit::data_device_manager::DataDeviceManagerState::bind(&globals, &qh).ok();
     let viewporter: Option<wp_viewporter::WpViewporter> = globals.bind(&qh, 1..=1, ()).ok();
     let fx_mgr: Option<ext_background_effect_manager_v1::ExtBackgroundEffectManagerV1> = globals.bind(&qh, 1..=1, ()).ok();
     let idle: Option<ext_idle_notifier_v1::ExtIdleNotifierV1> = globals.bind(&qh, 1..=1, ()).ok();
@@ -587,6 +615,10 @@ pub fn run() {
         shm,
         cursor_mgr,
         cursor_dev: None,
+        dd_mgr,
+        data_dev: None,
+        dnd: Default::default(),
+        press_serial: 0,
         cursor_now: None,
         viewporter,
         fx_mgr,
@@ -882,6 +914,10 @@ impl App {
         }
         for n in names {
             if self.find_on(&SKind::Wall, &n).is_none() {
+                // стол на слое обоев — выше обоев, только если создан после них
+                for id in self.find(&SKind::Desk) {
+                    self.destroy(id);
+                }
                 let id = self.mk(SKind::Wall, &n, Layer::Background, "yami-wall", Anchor::all(), (0, 0), (0, 0, 0, 0), -1, KeyboardInteractivity::None);
                 // мышь сквозь обои: щёлкать на них нечего, а вход и выход курсора перерисовывали
                 // бы всю картинку
@@ -896,6 +932,7 @@ impl App {
         // монитор сменил размер: ширина бара в процентах — от новой
         self.sync_bar();
         self.sync_widgets();
+        self.sync_desk();
         self.sync_dock();
         self.sync_lock_surfs();
     }

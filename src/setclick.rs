@@ -6,7 +6,7 @@ use crate::config::Widget;
 use crate::settings::cycle;
 use crate::theme::{parse_hex, PRESETS};
 use crate::ui::Act;
-use crate::widgets::{self, ANIMS, COLORS, SIZES, SOURCES, STYLES};
+use crate::widgets::{self, ANIMS, COLORS, SOURCES, STYLES};
 
 impl App {
     /// клики внутри настроек; true — обработано
@@ -97,6 +97,13 @@ impl App {
                     "dock_launcher" => s.dock_launcher = !s.dock_launcher,
                     "dock_trash" => s.dock_trash = !s.dock_trash,
                     "game_dnd" => s.game_dnd = !s.game_dnd,
+                    "desk" => s.desk = !s.desk,
+                    "desk_thumbs" => s.desk_thumbs = !s.desk_thumbs,
+                    "desk_single" => s.desk_single = !s.desk_single,
+                    "desk_hidden" => {
+                        s.desk_hidden = !s.desk_hidden;
+                        self.desk_watch();
+                    }
                     "night" => s.night = !s.night,
                     "agent_notif" => s.agent_notif = !s.agent_notif,
                     "agent_tray" => s.agent_tray = !s.agent_tray,
@@ -154,6 +161,22 @@ impl App {
                     self.settings_changed();
                     self.weather_reset();
                 }
+                "desk_size" => {
+                    let s = &mut self.st.set;
+                    s.desk_size = match s.desk_size {
+                        48 => 56,
+                        56 => 64,
+                        64 => 96,
+                        _ => 48,
+                    };
+                    self.settings_changed();
+                }
+                "desk_lines" => {
+                    let s = &mut self.st.set;
+                    s.desk_lines = s.desk_lines % 3 + 1;
+                    self.settings_changed();
+                }
+                "desk_folder" => App::spawn(&["xdg-open".into(), crate::desk::desktop_dir().display().to_string()]),
                 "weather_units" => {
                     self.st.set.weather_units = if self.st.set.weather_units == "f" { "c" } else { "f" }.into();
                     self.settings_changed();
@@ -270,7 +293,7 @@ impl App {
                         "source" => cycle(SOURCES, &w.source).to_string(),
                         "style" => cycle(STYLES, &w.style).to_string(),
                         "anim" => cycle(ANIMS, &w.anim).to_string(),
-                        "size" => cycle(SIZES, &w.size).to_string(),
+                        "size" => cycle(widgets::sizes_of(&w.kind), &w.size).to_string(),
                         "color" => cycle(COLORS, &w.color).to_string(),
                         _ => String::new(),
                     };

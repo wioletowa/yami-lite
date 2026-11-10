@@ -18,6 +18,17 @@ pub const SOURCES: &[(&str, &str)] = &[("cpu", "процессор"), ("ram", "�
 pub const STYLES: &[(&str, &str)] = &[("bars", "столбики"), ("line", "линия"), ("blocks", "клетки"), ("wave", "волна"), ("dots", "точки")];
 pub const ANIMS: &[(&str, &str)] = &[("scroll", "бегущий"), ("rise", "рост"), ("flicker", "мерцание"), ("none", "без анимации")];
 pub const SIZES: &[(&str, &str)] = &[("s", "маленький"), ("m", "средний"), ("l", "большой")];
+/// у виджета музыки есть ещё квадратный: шириной с календарь и средние часы
+pub const MEDIA_SIZES: &[(&str, &str)] = &[("s", "маленький"), ("m", "средний"), ("l", "большой"), ("sq", "квадратный")];
+
+/// размеры, что есть у виджета этого вида
+pub fn sizes_of(kind: &str) -> &'static [(&'static str, &'static str)] {
+    if kind == "media" {
+        MEDIA_SIZES
+    } else {
+        SIZES
+    }
+}
 pub const COLORS: &[(&str, &str)] = &[("accent", "акцент"), ("bright", "яркий"), ("ok", "зелёный"), ("warn", "жёлтый"), ("text", "белый")];
 
 pub fn name_of(list: &[(&'static str, &'static str)], id: &str) -> &'static str {
@@ -98,6 +109,9 @@ pub fn size_of(w: &Widget, f: &mut crate::font::Fonts) -> (i32, i32) {
         let l = clock_lay(w, f);
         return (l.w + 4, l.h + 4);
     }
+    if w.kind == "media" && w.size == "sq" {
+        return (280 + 4, 280 + 4);
+    }
     let k = match w.size.as_str() {
         "s" => 0,
         "l" => 2,
@@ -156,7 +170,8 @@ pub fn widget_menu(w: &Widget) -> Vec<MItem> {
         }
         _ => {}
     }
-    items.push(MItem::sub(&crate::tf!("размер: {}", "size: {}", crate::i18n::tr(name_of(SIZES, &w.size))), "max", pick("size", SIZES, &w.size)));
+    let sizes = sizes_of(&w.kind);
+    items.push(MItem::sub(&crate::tf!("размер: {}", "size: {}", crate::i18n::tr(name_of(sizes, &w.size))), "max", pick("size", sizes, &w.size)));
     items.push(MItem::sub(&crate::tf!("цвет: {}", "color: {}", crate::i18n::tr(name_of(COLORS, &w.color))), "image", pick("color", COLORS, &w.color)));
     items.push(MItem::new("подложка", "", MAct::Widget(id, "frame", String::new())).check(w.frame));
     if matches!(w.kind.as_str(), "graph" | "net" | "media") {
@@ -452,7 +467,11 @@ fn draw_widget(ui: &mut Ui, st: &State, w: &Widget, sw: i32, sh: i32) {
         }
         "media" => {
             panel(ui, w, r);
-            media_card(ui, st, R::new(10, 10, r.w - 20, r.h - 20), &w.style, c, w.label, true);
+            if w.size == "sq" {
+                media_square(ui, st, R::new(12, 12, r.w - 24, r.h - 24), &w.style, c);
+            } else {
+                media_card(ui, st, R::new(10, 10, r.w - 20, r.h - 20), &w.style, c, w.label, true);
+            }
         }
         "cal" => {
             panel(ui, w, r);
@@ -525,6 +544,50 @@ pub fn media_card(ui: &mut Ui, st: &State, r: R, style: &str, c: C, label: bool,
     let vy = r.y + side + 6;
     if style != "off" && r.bottom() - vy >= 8 {
         viz(ui, R::new(r.x, vy, r.w, r.bottom() - vy), &st.viz, style, c, st.viz.is_empty() || !m.playing());
+    }
+}
+
+/// квадратный виджет музыки: обложка по центру, название и исполнитель, кнопки, перемотка,
+/// внизу — эквалайзер
+fn media_square(ui: &mut Ui, st: &State, r: R, style: &str, c: C) {
+    let t = ui.t;
+    let m = &st.media;
+    if m.title.is_empty() {
+        ui.cv.icon_in("music", R::new(r.x, r.y, r.w, r.h - 30), 6, t.text_faint);
+        ui.text_center(PX, R::new(r.x, r.bottom() - 24, r.w, 18), "тишина — ничего не играет", t.text_faint);
+        return;
+    }
+    let side = 112;
+    let a = R::new(r.x + (r.w - side) / 2, r.y, side, side);
+    match st.art.get(&m.art).cloned().flatten() {
+        Some(img) => {
+            ui.cv.image_scaled(&img, a, 1.0);
+            ui.cv.outline(a, t.border, 1);
+        }
+        None => {
+            ui.cv.pxbox(a, &BoxStyle::new(t.surface, t.border));
+            ui.cv.icon_in("music", a, 4, t.dim);
+        }
+    }
+    let mut y = a.bottom() + 8;
+    ui.text_center(PX, R::new(r.x, y, r.w, 18), &m.title, t.text);
+    y += 20;
+    ui.text_center(PX, R::new(r.x, y, r.w, 18), if m.artist.is_empty() { &m.player } else { &m.artist }, t.text_dim);
+    y += 24;
+    let bx = r.x + (r.w - 98) / 2;
+    ui.button(R::new(bx, y, 30, 24), "", "prev", Tone::Ghost, false, true, Act::MediaPrev);
+    ui.button(R::new(bx + 34, y, 30, 24), "", if m.playing() { "pause" } else { "play" }, Tone::Primary, false, true, Act::MediaPlay);
+    ui.button(R::new(bx + 68, y, 30, 24), "", "next", Tone::Ghost, false, true, Act::MediaNext);
+    y += 28;
+    if m.length > 0.0 {
+        seek_bar(ui, st, R::new(r.x, y, r.w, 16), c, false);
+        if m.playing() {
+            ui.anim = false;
+        }
+    }
+    y += 20;
+    if style != "off" && r.bottom() - y >= 8 {
+        viz(ui, R::new(r.x, y, r.w, r.bottom() - y), &st.viz, style, c, st.viz.is_empty() || !m.playing());
     }
 }
 

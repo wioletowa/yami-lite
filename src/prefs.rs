@@ -35,6 +35,7 @@ impl App {
         self.setup_idle();
         self.sync_bar_outputs();
         self.sync_widgets();
+        self.sync_desk();
         self.sync_dock();
         self.sync_bar();
         self.dirty_all();

@@ -154,6 +154,8 @@ impl App {
                 },
                 SKind::Settings => crate::settings::draw(&mut ui, st, w, h),
                 SKind::Tip => crate::privacy::draw_tip(&mut ui, st, w, h),
+                SKind::Desk => crate::desk::draw(&mut ui, st, w, h),
+                SKind::Info => crate::desk::draw_info(&mut ui, st, w, h),
                 SKind::Popup => crate::popups::draw(&mut ui, st, w, h),
                 SKind::Menu => crate::menu::draw(&mut ui, st, w, h),
                 SKind::Notifs => crate::notif::draw(&mut ui, st, w, h),

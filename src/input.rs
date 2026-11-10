@@ -122,6 +122,7 @@ impl App {
             }
             PointerEventKind::Press { button, serial, .. } => {
                 self.ptr = Some((sid, x, y));
+                self.press_serial = serial;
                 let z = self.zone_at(sid, x, y);
                 // заголовок окна настроек: окно двигает niri, как за его рамку
                 if let (Some(Act::MDrag), Some(win), Some(seat)) = (z.as_ref().map(|z| &z.act), self.surfs.get(&sid).and_then(|s| s.layer.window()), self.seat.seats().next()) {
@@ -135,10 +136,14 @@ impl App {
                     // тащим от того места, где поверхность реально стоит
                     let start = (sx, sy);
                     self.press = Some(Press { sid, act: z.act.clone(), button, x, y, zone: z.r, ax: x + sx as f64, ay: y + sy as f64, moved: false, start, origin: (sx, sy) });
+                    if matches!(z.act, Act::DeskItem(_) | Act::DeskBg) {
+                        self.desk_press(&z.act, button, x as i32, y as i32);
+                    }
                     if z.act.is_drag() && button == 0x110 {
                         self.on_drag(x, y);
                     }
-                    if z.act.is_drag() {
+                    // рука — у ползунков и окон; значки стола тянутся обычным курсором
+                    if z.act.is_drag() && !matches!(z.act, Act::DeskItem(_) | Act::DeskBg) {
                         self.set_cursor(Cur::Grab);
                     }
                 } else {
@@ -204,6 +209,13 @@ impl App {
         let sid = p.sid;
         let act = p.act.clone();
         let zone = p.zone;
+        let (press, button) = ((p.x, p.y), p.button);
+        if matches!(act, Act::DeskItem(_) | Act::DeskBg) {
+            if p.moved && button == 0x110 {
+                self.desk_drag(&act, press, x, y);
+            }
+            return;
+        }
         let (sx, sy) = p.origin;
         let ax = x + sx as f64;
         let ay = y + sy as f64;
@@ -303,6 +315,9 @@ impl App {
     }
 
     pub(crate) fn on_drag_end(&mut self, p: &Press) {
+        if matches!(p.act, Act::DeskItem(_) | Act::DeskBg) {
+            self.desk_drag_end();
+        }
         if let Act::MDrag = p.act {
             self.mdrag = None;
         }
@@ -363,6 +378,12 @@ impl App {
             Some(SKind::Popup) => self.popup_key(e),
             Some(SKind::Menu) => self.menu_key(e),
             Some(SKind::Widget(_)) => self.widget_key(e),
+            Some(SKind::Desk) => self.desk_key(e),
+            Some(SKind::Info) => {
+                if matches!(e.keysym, Keysym::Escape | Keysym::Return) {
+                    self.desk_info_close();
+                }
+            }
             Some(SKind::EditBar) => {
                 if matches!(e.keysym, Keysym::Escape | Keysym::Return) {
                     self.set_editing(false);

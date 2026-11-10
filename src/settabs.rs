@@ -7,7 +7,7 @@ use crate::gfx::{BoxStyle, C, R};
 use crate::settings::{num_btn, opt_btn, title};
 use crate::theme::{parse_hex, PRESETS, WHITE};
 use crate::ui::{Act, Cur, Tone, Ui};
-use crate::widgets::{self, name_of, ANIMS, COLORS, KINDS, SIZES, SOURCES, STYLES};
+use crate::widgets::{self, name_of, ANIMS, COLORS, KINDS, SOURCES, STYLES};
 
 pub(crate) fn tab_color(ui: &mut Ui, st: &State, b: R) {
     let t = ui.t;
@@ -187,7 +187,7 @@ pub(crate) fn tab_widgets(ui: &mut Ui, st: &State, b: R) {
         "media" => row(ui, &mut y, "эквалайзер", name_of(STYLES, &w.style), "style"),
         _ => {}
     }
-    row(ui, &mut y, "размер", name_of(SIZES, &w.size), "size");
+    row(ui, &mut y, "размер", name_of(widgets::sizes_of(&w.kind), &w.size), "size");
     row(ui, &mut y, "цвет", name_of(COLORS, &w.color), "color");
     y += 4;
     ui.toggle(R::new(px, y, pw / 2, 26), "подложка", "", w.frame, Act::SWidgetOpt(id, "frame"));
@@ -422,7 +422,7 @@ pub(crate) fn tab_about(ui: &mut Ui, st: &State, b: R) {
     let face = crate::font::px(32);
     ui.text(face, b.x, y, "YAMI-LITE", t.red);
     y += ui.f.line(face) + 4;
-    ui.text_in(PX, R::new(b.x, y, b.w, 20), &crate::tf!("yami-lite {} — личный пиксельный шелл для niri, один бинарник", "yami-lite {} — a personal pixel shell for niri, one binary", env!("CARGO_PKG_VERSION")), t.text_dim);
+    ui.text_in(PX, R::new(b.x, y, b.w, 20), &format!("yami-lite {}", env!("CARGO_PKG_VERSION")), t.text_dim);
     y += 34;
     let up = st.started.elapsed().as_secs();
     let rows = [

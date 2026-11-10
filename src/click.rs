@@ -6,8 +6,8 @@ use crate::gfx::R;
 use crate::ui::Act;
 use crate::{audio, net};
 
-const LMB: u32 = 0x110;
-const RMB: u32 = 0x111;
+pub const LMB: u32 = 0x110;
+pub const RMB: u32 = 0x111;
 const MMB: u32 = 0x112;
 
 impl App {
@@ -29,6 +29,13 @@ impl App {
                 self.close_modal();
             }
             return;
+        }
+        if a == Act::InfoClose {
+            return self.desk_info_close();
+        }
+        // стол: выделяет нажатие (desk_press), отпускание только уточняет
+        if matches!(a, Act::DeskItem(_) | Act::DeskBg) {
+            return self.desk_release(&a, button);
         }
         match &a {
             Act::Drop(k) => return self.drop_open(k, sid, zone),

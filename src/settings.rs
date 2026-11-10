@@ -51,6 +51,7 @@ pub const GROUPS: &[(&str, &[Tab])] = &[
             tab("bar", "бар", "menu", crate::bartab::tab_bar),
             tab("widgets", "виджеты", "grid", tab_widgets),
             tab("dock", "док", "tile", tab_dock),
+            tab("desk", "стол", "folder", crate::desk::tab),
         ],
     ),
     (

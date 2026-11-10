@@ -66,7 +66,7 @@ pub fn spec(st: &State, key: &str) -> Option<(Opts, String)> {
         "w_source" => (list(crate::widgets::SOURCES), w?.source.clone()),
         "w_style" => (list(crate::widgets::STYLES), w?.style.clone()),
         "w_anim" => (list(crate::widgets::ANIMS), w?.anim.clone()),
-        "w_size" => (list(crate::widgets::SIZES), w?.size.clone()),
+        "w_size" => (list(crate::widgets::sizes_of(&w?.kind)), w?.size.clone()),
         "w_color" => (list(crate::widgets::COLORS), w?.color.clone()),
         "wh_sort" => (list(crate::wallhaven::SORTS), crate::wallhaven::SORTS[st.wh.sort].0.to_string()),
         "wh_ratio" => (list(crate::wallhaven::RATIOS), crate::wallhaven::RATIOS[st.wh.ratio].0.to_string()),

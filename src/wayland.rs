@@ -103,6 +103,9 @@ impl WindowHandler for App {
         if self.surfs.values().any(|s| s.layer.is_window(window) && s.kind == SKind::Settings) {
             self.close_settings();
         }
+        if self.surfs.values().any(|s| s.layer.is_window(window) && s.kind == SKind::Info) {
+            self.desk_info_close();
+        }
     }
     fn configure(&mut self, _: &Connection, _: &QueueHandle<Self>, window: &Window, c: WindowConfigure, _: u32) {
         if let Some(s) = self.surfs.values_mut().find(|s| s.layer.is_window(window)) {
@@ -157,6 +160,9 @@ impl SeatHandler for App {
                 if let Some(m) = &self.cursor_mgr {
                     self.cursor_dev = Some(m.get_shape_device(&p, qh));
                 }
+                if let Some(m) = &self.dd_mgr {
+                    self.data_dev = Some(m.get_data_device(qh, &seat));
+                }
                 self.pointer = Some(p);
             }
         }
@@ -196,7 +202,9 @@ impl KeyboardHandler for App {
             }
         }
     }
-    fn press_key(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: u32, e: KeyEvent) {
+    fn press_key(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, serial: u32, e: KeyEvent) {
+        // буфер обмена (Ctrl+C на столе) ставится по серийному номеру последнего ввода
+        self.press_serial = serial;
         self.on_key(&e);
     }
     fn repeat_key(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: u32, e: KeyEvent) {

@@ -16,6 +16,8 @@ pub enum MAct {
     Dock(&'static str, &'static str),
     /// смешанный трей: закрепить или открепить программу (ключ — popups::tray_key)
     TrayPin(String),
+    /// рабочий стол: действие и его довесок (команда «открыть в»)
+    Desk(&'static str, String),
 }
 
 #[derive(Clone, Debug, Default)]
@@ -198,6 +200,7 @@ impl App {
                 self.settings_changed();
             }
             MAct::Dock(id, op) => self.dock_op(id, op),
+            MAct::Desk(op, arg) => self.desk_op(op, arg),
             MAct::TrayPin(key) => {
                 let p = &mut self.st.set.tray_pinned;
                 match p.iter().position(|x| *x == key) {

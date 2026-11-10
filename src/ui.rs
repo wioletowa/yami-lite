@@ -84,6 +84,11 @@ pub enum Act {
     CtlWeatherSet,
     /// большой эквалайзер вкладки музыки: следующий стиль
     CtlViz,
+    /// рабочий стол: значок (имя в папке) и пустое место
+    DeskItem(String),
+    DeskBg,
+    /// закрыть окно «свойства»
+    InfoClose,
     /// всплывашка вентилятора: шкала C · A · 0…7 · F (тянуть или щёлкать)
     FanLevel,
     /// Wallhaven: искать, категория, чистота, порядок, «от/ровно», страница, картинка
@@ -173,7 +178,7 @@ pub enum Act {
 
 impl Act {
     pub fn is_drag(&self) -> bool {
-        matches!(self, Act::SSlider(..) | Act::CtlVol | Act::CtlBright | Act::FanLevel | Act::VolSlider | Act::MicSlider | Act::AppVol(_) | Act::MediaSeek | Act::MDrag | Act::WDrag(_) | Act::SModDrag(..) | Act::SModNew(_))
+        matches!(self, Act::SSlider(..) | Act::CtlVol | Act::CtlBright | Act::FanLevel | Act::VolSlider | Act::MicSlider | Act::AppVol(_) | Act::MediaSeek | Act::MDrag | Act::WDrag(_) | Act::SModDrag(..) | Act::SModNew(_) | Act::DeskItem(_) | Act::DeskBg)
     }
 }
 

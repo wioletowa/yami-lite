@@ -127,6 +127,14 @@ impl App {
             }
             Msg::Wall(n, img, accent) => self.wall_ready(n, img, accent),
             Msg::Weather(w) => self.weather_got(w),
+            Msg::Desk(dir, items) => self.desk_got(dir, items),
+            Msg::DeskThumb(k, img) => self.desk_thumb(k, img),
+            Msg::DeskDone(err) => self.desk_done(err),
+            Msg::DeskDropped(paths, at, mv) => self.desk_dropped(paths, at, mv),
+            Msg::DeskRenamed(dir, pairs) => self.desk_renamed(dir, pairs),
+            Msg::DeskPlaced(names, at, err) => self.desk_placed(names, at, err),
+            Msg::DeskInfo(s) => self.desk_info(s),
+            Msg::DeskPasted(paths, dest, cut, cell) => self.desk_pasted(paths, dest, cut, cell),
             Msg::WallsListed(gen, dir, dirs, files, more) => self.walls_listed(gen, dir, dirs, files, more),
             Msg::WallThumb(gen, i, img) => self.walls_thumb(gen, i, img),
         }
