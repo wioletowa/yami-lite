@@ -98,6 +98,7 @@ fn help_msg(y: &Sty) {
     for (c, ru, en) in [
         ("settings [tab]", "настройки (на вкладке)", "settings (on a tab)"),
         ("power | lock", "питание / заблокировать", "power menu / lock"),
+        ("hide", "скрыть окно из трансляции (прицел niri)", "hide a window from screencasts (niri picker)"),
         (&format!("popup {}", crate::popups::KINDS.join("|")), "всплывашка бара", "a bar popup"),
         ("bar | edit", "бар / правка виджетов", "bar / edit widgets"),
         ("wallpaper [path] | walls", "обои / выбор обоев из папки", "wallpaper / pick from the wallpaper folder"),
@@ -117,7 +118,7 @@ pub fn msg_ok(cmd: &str) -> bool {
     let head = w.next().unwrap_or("");
     let one = |w: &mut std::str::SplitWhitespace| w.next().is_none();
     match head {
-        "power" | "lock" | "bar" | "edit" | "reload" | "quit" | "ping" | "restart" | "night" | "walls" => one(&mut w),
+        "power" | "lock" | "hide" | "bar" | "edit" | "reload" | "quit" | "ping" | "restart" | "night" | "walls" => one(&mut w),
         "settings" => w.next().is_none_or(|t| crate::settings::find(t).is_some()) && one(&mut w),
         "popup" => w.next().is_some_and(|k| crate::popups::KINDS.contains(&k)) && one(&mut w),
         "media" => w.next().is_some_and(|a| matches!(a, "play-pause" | "play" | "pause" | "stop" | "next" | "previous" | "player")) && one(&mut w),
