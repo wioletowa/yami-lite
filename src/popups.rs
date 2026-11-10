@@ -568,12 +568,14 @@ fn bt(ui: &mut Ui, st: &State, b: R) {
         ui.text_in(PX, R::new(b.x, y, b.w, 20), "адаптер не найден (bluez не запущен?)", t.text_faint);
         return;
     }
-    ui.toggle(R::new(b.x, y, 160, 26), "включён", "", s.powered, Act::BtPower(!s.powered));
+    ui.toggle(R::new(b.x, y, 150, 26), "включён", "", s.powered, Act::BtPower(!s.powered));
+    // как у Noctalia: при включении адаптера — подключить доверенные (автоподключение)
+    ui.toggle(R::new(b.x + 160, y, 290, 26), "подключать при включении", "", st.set.bt_connect_on, Act::BtConnectOn);
     if s.powered {
         ui.button(R::new(b.right() - 110, y, 110, 24), if s.discovering { "ищу…" } else { "искать" }, "search", Tone::Ghost, s.discovering, !s.discovering, Act::BtScan);
     }
     if !s.msg.is_empty() {
-        ui.text_in(PX, R::new(b.x + 176, y + 3, b.w - 300, 20), &s.msg, t.warn);
+        ui.text_in(PX, R::new(b.x, b.bottom() - 54, b.w, 20), &s.msg, t.warn);
     }
     y += 36;
     ui.button(R::new(b.x, b.bottom() - 28, b.w, 28), "менеджер устройств", "gear", Tone::Plain, false, true, Act::BtManager);
@@ -585,37 +587,60 @@ fn bt(ui: &mut Ui, st: &State, b: R) {
     let cw = (b.w - 17) / 2;
     let bottom = b.bottom() - 36;
     ui.cv.fill(R::new(b.x + cw + 8, y, 1, bottom - y), t.border);
-    for (col, mine) in [(R::new(b.x, y, cw, bottom - y), true), (R::new(b.x + cw + 17, y, cw, bottom - y), false)] {
+    let mut max = [0, 0];
+    for (k, (col, mine)) in [(R::new(b.x, y, cw, bottom - y), true), (R::new(b.x + cw + 17, y, cw, bottom - y), false)].into_iter().enumerate() {
+        // пустое место колонки: щелчок сворачивает раскрытое, колесо листает (строки — поверх)
+        ui.zone(col, Act::BtList(mine), Cur::Default);
         let title = if mine { "мои устройства" } else { "рядом" };
         ui.text_in(PX, R::new(col.x, col.y, col.w, 18), title, t.text_faint);
-        let mut y = col.y + 24;
+        let top = col.y + 24;
         let list: Vec<&crate::net::BtDev> = s.devices.iter().filter(|d| d.paired == mine).collect();
         if list.is_empty() {
             let hint = if mine { "пока ни одного" } else if s.discovering { "ищу…" } else { "нажми «искать»" };
-            ui.text_in(PX, R::new(col.x, y, col.w, 20), hint, t.text_faint);
+            ui.text_in(PX, R::new(col.x, top, col.w, 20), hint, t.text_faint);
         }
-        for d in list {
+        // сколько строк влезает; раскрытое занимает две
+        let fit = ((col.bottom() - top + 4) / 34).max(1);
+        let extra = list.iter().any(|d| st.bt_open == d.path) as i32;
+        max[k] = (list.len() as i32 + extra - fit).max(0);
+        let skip = st.bt_scroll[k].clamp(0, max[k]) as usize;
+        let mut y = top;
+        let rw = if max[k] > 0 { col.w - 8 } else { col.w };
+        for d in list.iter().skip(skip) {
             let open = st.bt_open == d.path;
             if y + 30 + if open { 32 } else { 0 } > col.bottom() {
                 break;
             }
-            bt_row(ui, st, d, R::new(col.x, y, col.w, 30), open);
+            bt_row(ui, st, d, R::new(col.x, y, rw, 30), open);
             y += if open { 66 } else { 34 };
         }
+        // полоса прокрутки: где окно среди всего списка
+        if max[k] > 0 {
+            let track = R::new(col.right() - 3, top, 3, col.bottom() - top);
+            let total = list.len() as i32 + extra;
+            let th = (track.h * fit / total).max(12);
+            let ty = track.y + (track.h - th) * skip as i32 / max[k];
+            ui.cv.fill(track, t.border.fade(0.5));
+            ui.cv.fill(R::new(track.x, ty, 3, th), t.red);
+        }
     }
+    st.bt_scroll_max.set(max);
 }
 
 /// строка устройства; раскрытая — с кнопками под ней
 fn bt_row(ui: &mut Ui, st: &State, d: &crate::net::BtDev, r: R, open: bool) {
     let t = ui.t;
     ui.button(r, "", "", Tone::Ghost, d.connected || open, true, Act::BtOpen(d.path.clone()));
-    let icon = match d.icon.as_str() {
-        i if i.contains("audio") || i.contains("headset") => "music",
-        i if i.contains("input") || i.contains("keyboard") || i.contains("mouse") => "grid",
-        i if i.contains("phone") => "bell",
-        _ => "bt",
-    };
-    ui.cv.icon(icon, r.x + 8, r.cy() - 7, 2, if d.connected { t.ember } else { t.text_dim });
+    let (ix, iy) = (r.x + 8, r.cy() - 7);
+    ui.cv.icon(crate::net::bt_icon(&d.icon, &d.name), ix, iy, 2, if d.connected { t.ember } else { t.text_dim });
+    // метка «автоподключение» (доверено) — галочка в углу значка, как у blueman
+    if d.paired && d.trusted {
+        let (bx, by) = (ix + 10, iy + 9);
+        ui.cv.fill(R::new(bx - 1, by - 1, 7, 6), t.surface);
+        for (dx, dy) in [(0, 2), (1, 3), (2, 2), (3, 1), (4, 0)] {
+            ui.cv.fill(R::new(bx + dx, by + dy, 1, 1), t.ok);
+        }
+    }
     // справа: заряд или сигнал, состояние
     let state = if st.bt.busy == d.path {
         crate::i18n::tr("подождите…").to_string()
@@ -642,13 +667,11 @@ fn bt_row(ui: &mut Ui, st: &State, d: &crate::net::BtDev, r: R, open: bool) {
     let y = r.bottom() + 4;
     let busy = st.bt.busy == d.path;
     if d.paired {
-        // подключить, доверие, автоподключение (горят, когда включены) и мусорка — забыть
-        let auto = st.set.bt_auto.iter().any(|k| k == crate::net::bt_key(&d.path));
+        // подключить, автоподключение (= доверие в BlueZ, горит — включено) и мусорка — забыть
         let tw = 30;
-        let bw = (r.w - tw - 18) / 3;
-        ui.button(R::new(r.x, y, bw + 20, 26), if d.connected { "отключить" } else { "подключить" }, "", Tone::Plain, false, !busy, Act::BtDev(d.path.clone()));
-        ui.button(R::new(r.x + bw + 26, y, bw - 10, 26), "доверие", "", Tone::Plain, d.trusted, !busy, Act::BtTrust(d.path.clone()));
-        ui.button(R::new(r.x + 2 * bw + 22, y, bw - 10, 26), "авто", "", Tone::Plain, auto, true, Act::BtAuto(d.path.clone()));
+        let bw = (r.w - tw - 12) / 2;
+        ui.button(R::new(r.x, y, bw, 26), if d.connected { "отключить" } else { "подключить" }, "", Tone::Plain, false, !busy, Act::BtDev(d.path.clone()));
+        ui.button(R::new(r.x + bw + 6, y, bw, 26), "автоподключение", "", Tone::Plain, d.trusted, !busy, Act::BtTrust(d.path.clone()));
         ui.button(R::new(r.right() - tw, y, tw, 26), "", "trash", Tone::Plain, false, !busy, Act::BtForget(d.path.clone()));
     } else {
         ui.button(R::new(r.x, y, r.w, 26), if busy { "сопрягаю…" } else { "сопрячь и подключить" }, "bt", Tone::Primary, false, !busy, Act::BtDev(d.path.clone()));

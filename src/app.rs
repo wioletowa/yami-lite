@@ -31,7 +31,7 @@ use smithay_client_toolkit::{
     },
     shm::{slot::SlotPool, Shm},
 };
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 use wayland_client::{
     globals::registry_queue_init,
@@ -278,10 +278,9 @@ pub struct State {
     pub wifi_target: String,
     /// вкладка bluetooth: раскрытое устройство (путь BlueZ)
     pub bt_open: String,
-    /// автоподключение: когда пробовали подключить устройство последний раз
-    pub bt_auto_try: HashMap<String, Instant>,
-    /// автоподключение: отключённые руками — сами не подключаются, пока их не подключат снова
-    pub bt_auto_hold: HashSet<String>,
+    /// вкладка bluetooth: прокрутка колонок (мои, рядом) в строках и докуда можно (с прошлого кадра)
+    pub bt_scroll: [i32; 2],
+    pub bt_scroll_max: std::cell::Cell<[i32; 2]>,
     /// вкладка «система»: топ процессов (опрашивается, пока она открыта)
     pub procs: crate::sys::Procs,
     /// рабочий стол (desk.rs)
@@ -505,8 +504,8 @@ impl State {
             wifi_pass: Field::default(),
             wifi_target: String::new(),
             bt_open: String::new(),
-            bt_auto_try: HashMap::new(),
-            bt_auto_hold: HashSet::new(),
+            bt_scroll: [0, 0],
+            bt_scroll_max: Default::default(),
             procs: Default::default(),
             desk: Default::default(),
             bat_warn: 0,

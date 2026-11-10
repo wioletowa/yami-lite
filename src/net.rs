@@ -487,21 +487,63 @@ pub fn bt_trust(d: BtDev, on: bool, tx: Sender<Msg>) {
     });
 }
 
-/// устройство без адаптера: «dev_AA_BB_…» из пути BlueZ — тот же после смены hci0 на hci1
-pub fn bt_key(path: &str) -> &str {
-    path.rsplit('/').next().unwrap_or(path)
+/// значок устройства по Icon из BlueZ (тип по классу устройства), без него — по имени
+pub fn bt_icon(icon: &str, name: &str) -> &'static str {
+    let n = name.to_lowercase();
+    match icon {
+        "audio-headset" => "dev_headset",
+        "audio-headphones" => "dev_headphones",
+        "audio-card" | "audio-speakers" | "multimedia-player" => "dev_speaker",
+        "input-mouse" => "dev_mouse",
+        "input-keyboard" => "dev_kbd",
+        "input-gaming" => "dev_pad",
+        "input-tablet" => "dev_tablet",
+        "phone" => "dev_phone",
+        "computer" => "dev_pc",
+        "video-display" => "dev_tv",
+        "printer" => "dev_printer",
+        "camera-photo" | "camera-video" => "dev_camera",
+        _ if n.contains("trackpad") || n.contains("touchpad") => "dev_tablet",
+        _ if n.contains("mouse") => "dev_mouse",
+        _ if n.contains("keyboard") => "dev_kbd",
+        _ if n.contains("controller") || n.contains("gamepad") || n.contains("8bitdo") || n.contains("dualsense") => "dev_pad",
+        _ if n.contains("buds") || n.contains("airpods") => "dev_headset",
+        _ => "bt",
+    }
 }
 
-/// автоподключение: тихо — без «подождите» и без ошибки в шапке (устройство могло быть далеко)
-pub fn bt_connect_quiet(path: String, tx: Sender<Msg>) {
+/// кого подключать в проход: сопряжённые, доверенные, не подключённые
+pub fn bt_pass_due(devs: &[BtDev]) -> Vec<String> {
+    devs.iter().filter(|d| d.paired && d.trusted && !d.connected).map(|d| d.path.clone()).collect()
+}
+
+/// один проход при включении адаптера (как у Noctalia): через 2 с — доверенные по одному, каждое
+/// после ответа на Connect() прошлого (адаптер всё равно ищет по очереди, а параллельные попытки
+/// мешают тем, кто подключается сам); перед каждым — заново: не подключилось ли само, не выключили
+/// ли Bluetooth. Ошибки — тихо: устройства может не быть рядом
+pub fn bt_connect_pass(tx: Sender<Msg>) {
+    static RUNNING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if RUNNING.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
     std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_secs(2));
         if let Some(c) = SYS.get() {
-            if let Ok(dev) = Proxy::new(c, "org.bluez", path.as_str(), "org.bluez.Device1") {
-                if dev.call_method("Connect", &()).is_ok() {
-                    let _ = tx.send(Msg::Bt(query_bt()));
+            for path in bt_pass_due(&query_bt().devices) {
+                let s = query_bt();
+                if !s.powered {
+                    break;
                 }
+                if !bt_pass_due(&s.devices).contains(&path) {
+                    continue;
+                }
+                if let Ok(dev) = Proxy::new(c, "org.bluez", path.as_str(), "org.bluez.Device1") {
+                    let _ = dev.call_method("Connect", &());
+                }
+                let _ = tx.send(Msg::Bt(query_bt()));
             }
         }
+        RUNNING.store(false, std::sync::atomic::Ordering::SeqCst);
     });
 }
 
@@ -531,4 +573,25 @@ pub fn bt_scan(adapter: &str, tx: Sender<Msg>) {
         let _ = p.call_method("StopDiscovery", &());
         let _ = tx.send(Msg::Bt(query_bt()));
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bt_icon_by_class_then_name() {
+        assert_eq!(bt_icon("input-mouse", "VXE R1SE+"), "dev_mouse");
+        assert_eq!(bt_icon("audio-headset", "Buds3 FE"), "dev_headset");
+        assert_eq!(bt_icon("", "Magic Trackpad 2"), "dev_tablet");
+        assert_eq!(bt_icon("", "Pro Controller"), "dev_pad");
+        assert_eq!(bt_icon("", "что-то"), "bt");
+    }
+
+    #[test]
+    fn connect_pass_takes_paired_trusted_disconnected() {
+        let d = |p: &str, paired, trusted, connected| BtDev { path: p.into(), paired, trusted, connected, ..Default::default() };
+        let devs = [d("a", true, true, false), d("b", true, false, false), d("c", true, true, true), d("e", false, true, false)];
+        assert_eq!(bt_pass_due(&devs), vec!["a".to_string()]);
+    }
 }

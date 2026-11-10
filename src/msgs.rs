@@ -99,7 +99,12 @@ impl App {
                     b.msg = std::mem::take(&mut self.st.bt.msg);
                     b.busy = std::mem::take(&mut self.st.bt.busy);
                 }
+                // адаптер включился (или шелл запустился с включённым): доверенные — подключить
+                let came_up = b.present && b.powered && !(self.st.bt.present && self.st.bt.powered);
                 self.st.bt = b;
+                if came_up && self.st.set.bt_connect_on {
+                    crate::net::bt_connect_pass(self.tx.clone());
+                }
                 self.dirty_where(|k| matches!(k, SKind::Popup | SKind::Bar));
             }
             Msg::Pam(ok) => self.on_pam(ok),

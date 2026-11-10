@@ -266,8 +266,9 @@ pub struct Settings {
     pub night_geo: String,
     /// погода во вкладке панели: город или «широта, долгота»; единицы c или f
     pub weather_city: String,
-    /// bluetooth: устройства с автоподключением («dev_AA_BB_…», без адаптера) — шелл подключает их сам
-    pub bt_auto: Vec<String>,
+    /// bluetooth: при включении адаптера (и запуске шелла) подключить доверенные устройства —
+    /// один проход, по одному, как у Noctalia
+    pub bt_connect_on: bool,
     /// рабочий стол (desk.rs): значки файлов из папки стола, их размер, скрытые файлы
     pub desk: bool,
     pub desk_size: i32,
@@ -480,7 +481,7 @@ impl Default for Settings {
             night_temp: 4000,
             night_geo: String::new(),
             weather_city: String::new(),
-            bt_auto: vec![],
+            bt_connect_on: true,
             desk: true,
             desk_size: 56,
             desk_hidden: false,
@@ -527,13 +528,6 @@ impl Settings {
         if self.ctl_viz != "off" && !crate::widgets::STYLES.iter().any(|(k, _)| *k == self.ctl_viz) {
             self.ctl_viz = "bars".into();
         }
-        // старые записи — полные пути BlueZ: только устройство
-        self.bt_auto = self.bt_auto.iter().map(|p| crate::net::bt_key(p).to_string()).collect();
-        let mut seen: Vec<String> = vec![];
-        self.bt_auto.retain(|k| !seen.contains(k) && {
-            seen.push(k.clone());
-            true
-        });
         if ![48, 56, 64, 96].contains(&self.desk_size) {
             self.desk_size = 56;
         }

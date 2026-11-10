@@ -209,13 +209,6 @@ impl App {
             Act::BtPower(on) => net::bt_power(&self.st.bt.adapter.clone(), on, self.tx.clone()),
             Act::BtDev(path) => {
                 let Some(d) = self.st.bt.devices.iter().find(|d| d.path == path).cloned() else { return };
-                // отключил руками — автоподключение не возвращает, пока не подключат снова; занято
-                // сразу, чтобы тик не увидел его ещё подключённым и не снял запрет
-                if d.connected {
-                    self.st.bt_auto_hold.insert(path.clone());
-                } else {
-                    self.st.bt_auto_hold.remove(&path);
-                }
                 self.st.bt.busy = path;
                 net::bt_toggle_dev(d, self.tx.clone(), self.st.bt.clone());
             }
@@ -227,30 +220,14 @@ impl App {
                 let on = !d.trusted;
                 net::bt_trust(d, on, self.tx.clone());
             }
-            Act::BtAuto(path) => {
-                let key = net::bt_key(&path).to_string();
-                self.st.bt_auto_hold.remove(&path);
-                let list = &mut self.st.set.bt_auto;
-                match list.iter().position(|k| *k == key) {
-                    Some(i) => {
-                        list.remove(i);
-                    }
-                    None => {
-                        list.push(key);
-                        self.st.bt_auto_try.remove(&path);
-                    }
-                }
+            Act::BtList(_) => self.st.bt_open.clear(),
+            Act::BtConnectOn => {
+                self.st.set.bt_connect_on = !self.st.set.bt_connect_on;
                 self.settings_changed();
             }
             Act::BtForget(path) => {
                 let Some(d) = self.st.bt.devices.iter().find(|d| d.path == path).cloned() else { return };
                 self.st.bt_open.clear();
-                self.st.bt_auto_hold.remove(&path);
-                // забытое не подключать
-                if let Some(i) = self.st.set.bt_auto.iter().position(|k| k == net::bt_key(&path)) {
-                    self.st.set.bt_auto.remove(i);
-                    self.settings_changed();
-                }
                 net::bt_remove(&self.st.bt.adapter.clone(), d, self.tx.clone());
             }
             Act::BtScan => net::bt_scan(&self.st.bt.adapter.clone(), self.tx.clone()),
@@ -341,6 +318,18 @@ impl App {
                 self.st.niri.act(if up { serde_json::json!({"FocusWorkspaceUp": {}}) } else { serde_json::json!({"FocusWorkspaceDown": {}}) });
             }
             Act::DockItem(i) => self.dock_wheel(i, up),
+            // колонки bluetooth: колесо над колонкой или её строкой листает её
+            Act::BtList(_) | Act::BtOpen(_) | Act::BtDev(_) | Act::BtTrust(_) | Act::BtForget(_) => {
+                let mine = match &a {
+                    Act::BtList(m) => *m,
+                    Act::BtOpen(p) | Act::BtDev(p) | Act::BtTrust(p) | Act::BtForget(p) => self.st.bt.devices.iter().find(|d| &d.path == p).is_none_or(|d| d.paired),
+                    _ => true,
+                };
+                let k = if mine { 0 } else { 1 };
+                let max = self.st.bt_scroll_max.get()[k];
+                self.st.bt_scroll[k] = (self.st.bt_scroll[k] + if up { -1 } else { 1 }).clamp(0, max);
+                self.dirty(&SKind::Popup);
+            }
             Act::CtlTab(_) => {
                 if let Some(k) = self.st.popup.as_ref().map(|p| crate::control::tab_step(p.kind, up)) {
                     self.switch_tab(k);
