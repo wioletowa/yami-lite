@@ -562,13 +562,21 @@ fn module(ui: &mut Ui, st: &State, out: &str, m: &str, x: i32, measure: bool) ->
             let date = format!("{} {:02}.{:02}", crate::i18n::tr(RU_DAY[tm.wday as usize]), tm.day, tm.mon);
             let tw = ui.w(PX, &time);
             let dw = if st.set.clock_date { ui.w(PX, &date) + 6 } else { 0 };
-            let w = tw + dw;
+            // место под точку непрочитанного — всегда: появилась точка — соседи не сдвигаются
+            const DOT: i32 = 8;
+            let w = DOT + tw + dw;
             if !measure {
                 let r = R::new(x - 4, 0, w + 8, H - 1);
                 let hov = ui.hover(r) || st.popup_is("cal");
                 if hov {
                     ui.cv.fill(R::new(x - 4, H - 3, w + 8, 2), t.red);
                 }
+                // непрочитанные уведомления: акцентом, при «не беспокоить» — красной
+                if st.notifs.unread() && !st.popup_is("cal") {
+                    let c = if st.quiet() { crate::privacy::RED } else { t.red };
+                    ui.cv.fill(R::new(x, cy - 2, 4, 4), c);
+                }
+                let x = x + DOT;
                 ui.text_in(PX, R::new(x, 0, tw, H - 1), &time, if hov { t.text_hi } else { t.text });
                 if st.set.clock_date {
                     ui.text_in(PX, R::new(x + tw + 6, 0, dw, H - 1), &date, t.text_dim);
@@ -659,6 +667,17 @@ fn module(ui: &mut Ui, st: &State, out: &str, m: &str, x: i32, measure: bool) ->
                 let r = R::new(x - 2, 0, 18, H - 1);
                 ui.cv.icon(icon, x, cy - 7, 2, crate::privacy::RED);
                 ui.zone(r, Act::Privacy(kind), Cur::Default);
+            }
+            14
+        }
+        // замок приватности (hide.rs): виден всегда — тусклый, пока ничего не спрятано из
+        // трансляции, акцентом — когда спрятано
+        "privacy_hidden" => {
+            if !measure {
+                let r = R::new(x - 2, 0, 18, H - 1);
+                let c = if st.popup_is("hidden") || ui.hover(r) { t.text_hi } else if st.set.hide_apps.is_empty() { t.text_dim } else { t.red };
+                ui.cv.icon("lock", x, cy - 7, 2, c);
+                ui.zone(r, Act::Popup("hidden"), Cur::Pointer);
             }
             14
         }

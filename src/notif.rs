@@ -49,6 +49,8 @@ pub struct Notifs {
     pub history: Vec<Note>,
     pub hover: bool,
     last: Option<Instant>,
+    /// когда историю последний раз открывали (всплывашка часов): пришедшее позже — непрочитанное
+    pub seen: Option<Instant>,
 }
 
 impl Notifs {
@@ -60,6 +62,10 @@ impl Notifs {
         if from_history {
             self.history.retain(|n| n.id != id);
         }
+    }
+    /// есть уведомления, пришедшие после того, как историю смотрели
+    pub fn unread(&self) -> bool {
+        self.history.iter().any(|n| self.seen.is_none_or(|s| n.born > s))
     }
     pub fn resume(&mut self) {
         self.last = Some(Instant::now());

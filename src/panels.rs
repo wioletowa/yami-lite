@@ -128,6 +128,8 @@ impl App {
             "net" => net::refresh_wifi(self.tx.clone()),
             "bt" => net::refresh_bt(self.tx.clone()),
             "cal" => {
+                // история показана — прочитано
+                self.st.notifs.seen = Some(std::time::Instant::now());
                 self.st.cal_month = 0;
                 self.st.cal_pick = None;
             }

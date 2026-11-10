@@ -62,6 +62,7 @@ mod wall;
 mod wallhaven;
 mod fan;
 mod fileops;
+mod hide;
 mod walls;
 mod weather;
 mod themetab;

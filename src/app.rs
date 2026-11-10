@@ -191,6 +191,8 @@ pub enum Msg {
     PrepareSleep,
     /// значки папок перекрашены (recolor.rs): кеш значков — заново
     IconsRecolored,
+    /// прицелом niri выбрали окно: app-id (hide.rs)
+    HidePicked(String),
 }
 
 pub struct Res {
@@ -692,6 +694,7 @@ pub fn run() {
     media::spawn(tx.clone());
     net::spawn_bt(tx.clone());
     app.sleep_ack = Some(crate::sleep::spawn(tx.clone()));
+    app.hide_init();
     crate::leds::spawn(tx.clone());
     crate::camera::spawn(tx.clone());
     app.write_palette();

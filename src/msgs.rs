@@ -140,6 +140,7 @@ impl App {
             Msg::DeskPlaced(names, at, err) => self.desk_placed(names, at, err),
             Msg::DeskInfo(s) => self.desk_info(s),
             Msg::PrepareSleep => self.prepare_sleep(),
+            Msg::HidePicked(app) => self.hide_toggle(app),
             Msg::IconsRecolored => {
                 self.res.icons.drop_cache();
                 self.dirty_all();

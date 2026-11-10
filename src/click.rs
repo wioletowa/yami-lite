@@ -30,6 +30,13 @@ impl App {
             }
             return;
         }
+        if a == Act::HidePick {
+            self.close_popup();
+            return self.hide_pick();
+        }
+        if let Act::HideShow(app) = &a {
+            return self.hide_show(&app.clone());
+        }
         if a == Act::InfoClose {
             return self.desk_info_close();
         }
@@ -47,8 +54,9 @@ impl App {
             return;
         }
         let (out, ax, ay) = self.anchor(sid, zone);
-        // ПКМ по бару: окна и трей — свои меню, в остальном месте — панель управления
-        if kind == Some(SKind::Bar) && button == RMB && !matches!(a, Act::Task(_) | Act::Tray(_)) {
+        // ПКМ по бару: окна, трей и замок приватности — свои меню, в остальном месте — панель
+        // управления
+        if kind == Some(SKind::Bar) && button == RMB && !matches!(a, Act::Task(_) | Act::Tray(_) | Act::Popup("hidden")) {
             let (mx, _) = self.surfs.get(&sid).map(|s| s.margin).unwrap_or((0, 0));
             let px = self.ptr.filter(|p| p.0 == sid).map_or(zone.x + zone.w / 2, |p| p.1 as i32);
             let py = if crate::bar::low(&self.st.set) { ay } else { self.bar_bottom(&out) + 2 };
@@ -151,6 +159,8 @@ impl App {
                     self.settings_changed();
                 }
                 ("sys", RMB) => self.open_sysmon(),
+                // замок приватности: ЛКМ — выбрать окно, ПКМ — список скрытых
+                ("hidden", LMB) => self.hide_pick(),
                 _ => self.open_popup(k, &out, ax),
             },
             // ── питание ─────────────────────────────────────────────────────

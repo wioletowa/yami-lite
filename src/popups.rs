@@ -11,7 +11,7 @@ use crate::widgets;
 use smithay_client_toolkit::seat::keyboard::{KeyEvent, Keysym};
 
 /// виды всплывашек: `popup KIND`, `yami open KIND`, shot
-pub const KINDS: &[&str] = &["cal", "sound", "media", "net", "bt", "sys", "bat", "tray", "control", "wallhaven", "fan", "weather"];
+pub const KINDS: &[&str] = &["cal", "sound", "media", "net", "bt", "sys", "bat", "tray", "control", "wallhaven", "fan", "weather", "hidden"];
 
 impl State {
     /// открыта всплывашка этого вида
@@ -52,6 +52,10 @@ fn base_size(kind: &str, st: &State) -> (i32, i32) {
         "bat" => (340, 44 + 40),
         "wallhaven" => (crate::wallhaven::SIZE.0 + 38, crate::wallhaven::SIZE.1 + 30),
         "fan" => (crate::fan::SIZE.0 + 38, crate::fan::SIZE.1 + 30),
+        "hidden" => {
+            let (w, h) = crate::hide::size(st);
+            (w + 38, h + 30)
+        }
         _ => (300, 200),
     }
 }
@@ -82,6 +86,7 @@ pub fn draw(ui: &mut Ui, st: &State, w: i32, h: i32) {
         "weather" => crate::weather::draw(ui, st, body),
         "wallhaven" => crate::wallhaven::draw(ui, st, body),
         "fan" => crate::fan::draw(ui, st, body),
+        "hidden" => crate::hide::draw(ui, st, body),
         _ => {}
     }
     crate::dropdown::draw(ui, st, &crate::app::SKind::Popup, w, h);

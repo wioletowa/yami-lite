@@ -269,6 +269,8 @@ pub struct Settings {
     /// bluetooth: при включении адаптера (и запуске шелла) подключить доверенные устройства —
     /// один проход, по одному, как у Noctalia
     pub bt_connect_on: bool,
+    /// приватность: приложения (app-id), спрятанные из трансляции экрана (hide.rs)
+    pub hide_apps: Vec<String>,
     /// рабочий стол (desk.rs): значки файлов из папки стола, их размер, скрытые файлы
     pub desk: bool,
     pub desk_size: i32,
@@ -341,6 +343,7 @@ pub const ALL_MODULES: &[(&str, &str)] = &[
     ("privacy_mic", "микрофон занят"),
     ("privacy_screen", "показ экрана"),
     ("privacy_cam", "камера занята"),
+    ("privacy_hidden", "скрытые окна"),
     ("clock", "часы"),
     ("notif", "уведомления"),
     ("settings", "настройки"),
@@ -482,6 +485,7 @@ impl Default for Settings {
             night_geo: String::new(),
             weather_city: String::new(),
             bt_connect_on: true,
+            hide_apps: vec![],
             desk: true,
             desk_size: 56,
             desk_hidden: false,
