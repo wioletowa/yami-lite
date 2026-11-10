@@ -54,6 +54,7 @@ mod setclick;
 mod settabs;
 mod shellsurf;
 mod settings;
+mod sleep;
 mod sys;
 mod tick;
 mod ui;

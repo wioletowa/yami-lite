@@ -120,10 +120,15 @@ impl App {
         static GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         static RUN: std::sync::Mutex<()> = std::sync::Mutex::new(());
         let gen = GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+        let tx = self.tx.clone();
         std::thread::spawn(move || {
             let _one = RUN.lock();
             if GEN.load(std::sync::atomic::Ordering::SeqCst) == gen {
                 crate::recolor::apply(&p, &apps);
+                // значки папок перекрашены на диске: свой кеш значков (стол, док) — заново
+                if apps.iter().any(|a| a == "icons") {
+                    let _ = tx.send(crate::app::Msg::IconsRecolored);
+                }
             }
         });
     }

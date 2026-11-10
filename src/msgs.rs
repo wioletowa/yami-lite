@@ -139,6 +139,11 @@ impl App {
             Msg::DeskRenamed(dir, pairs) => self.desk_renamed(dir, pairs),
             Msg::DeskPlaced(names, at, err) => self.desk_placed(names, at, err),
             Msg::DeskInfo(s) => self.desk_info(s),
+            Msg::PrepareSleep => self.prepare_sleep(),
+            Msg::IconsRecolored => {
+                self.res.icons.drop_cache();
+                self.dirty_all();
+            }
             Msg::DeskPasted(paths, dest, cut, cell) => self.desk_pasted(paths, dest, cut, cell),
             Msg::WallsListed(gen, dir, dirs, files, more) => self.walls_listed(gen, dir, dirs, files, more),
             Msg::WallThumb(gen, i, img) => self.walls_thumb(gen, i, img),

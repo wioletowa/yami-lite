@@ -53,6 +53,70 @@ pub fn draw(ui: &mut Ui, st: &State, w: i32, h: i32, main: bool) {
     ui.text_center(PX, R::new(fx, fy + 48, fw, 20), &status, sc);
     ui.zone(R::new(0, 0, w, h), Act::Block, Cur::Default);
     ui.zone(fr, Act::LockField, Cur::Text);
+    let mut y = fy + 84;
+    if !st.media.title.is_empty() {
+        player(ui, st, R::new(fx, y, fw, 64));
+        y += 80;
+    }
+    notes(ui, st, R::new(fx, y, fw, h - y - 24));
+}
+
+/// маленький плеер: обложка, название, исполнитель, назад · пауза · вперёд
+fn player(ui: &mut Ui, st: &State, r: R) {
+    let t = ui.t;
+    let m = &st.media;
+    ui.cv.pxbox(r, &BoxStyle::new(t.glass_panel(), t.border).shadow(4));
+    let a = R::new(r.x + 8, r.y + 8, 48, 48);
+    match st.art.get(&m.art).cloned().flatten() {
+        Some(img) => {
+            ui.cv.image_scaled(&img, a, 1.0);
+            ui.cv.outline(a, t.border, 1);
+        }
+        None => {
+            ui.cv.pxbox(a, &BoxStyle::new(t.surface, t.border));
+            ui.cv.icon_in("music", a, 3, t.dim);
+        }
+    }
+    let bx = r.right() - 8 - 3 * 30 - 8;
+    let tw = bx - a.right() - 18;
+    ui.text_in(PX, R::new(a.right() + 10, r.y + 12, tw, 18), &m.title, t.text);
+    ui.text_in(PX, R::new(a.right() + 10, r.y + 32, tw, 18), if m.artist.is_empty() { &m.player } else { &m.artist }, t.text_dim);
+    let by = r.y + (r.h - 26) / 2;
+    ui.button(R::new(bx, by, 28, 26), "", "prev", crate::ui::Tone::Ghost, false, true, Act::MediaPrev);
+    ui.button(R::new(bx + 32, by, 30, 26), "", if m.playing() { "pause" } else { "play" }, crate::ui::Tone::Primary, false, true, Act::MediaPlay);
+    ui.button(R::new(bx + 66, by, 28, 26), "", "next", crate::ui::Tone::Ghost, false, true, Act::MediaNext);
+}
+
+/// уведомления, пришедшие пока заперто: только программа, её значок и время — текста нет
+fn notes(ui: &mut Ui, st: &State, r: R) {
+    let t = ui.t;
+    let Some(since) = st.lock_at else { return };
+    let list: Vec<&crate::notif::Note> = st.notifs.history.iter().filter(|n| n.born >= since).collect();
+    if list.is_empty() || r.h < 40 {
+        return;
+    }
+    let mut y = r.y;
+    let more = list.len().saturating_sub(5);
+    for n in list.iter().take(5) {
+        if y + 30 > r.bottom() {
+            break;
+        }
+        let row = R::new(r.x, y, r.w, 30);
+        ui.cv.pxbox(row, &BoxStyle::new(t.glass_panel(), if n.critical { t.ember } else { t.border }));
+        let mut x = row.x + 8;
+        if !n.icon.is_empty() {
+            let icon = n.icon.clone();
+            ui.app_icon(&icon, x, row.y + 7, 16, 1.0);
+            x += 24;
+        }
+        let app = if n.app.is_empty() { crate::i18n::tr("система").to_string() } else { n.app.clone() };
+        ui.text_in(PX, R::new(x, row.y, row.w - (x - row.x) - 70, row.h), &app, t.text);
+        ui.text_right(PX, R::new(row.x, row.y, row.w - 10, row.h), &n.time, t.text_faint);
+        y += 34;
+    }
+    if more > 0 {
+        ui.text_center(PX, R::new(r.x, y, r.w, 20), &crate::tf!("и ещё {}", "and {} more", more), t.text_faint);
+    }
 }
 
 impl App {
@@ -111,6 +175,7 @@ impl App {
         }
         self.close_all();
         self.st.locked = true;
+        self.st.lock_at = Some(Instant::now());
         if let Some(en) = self.st.niri.kb_english().filter(|&en| en != self.st.niri.kb_idx) {
             self.st.lock_kb = Some(self.st.niri.kb_idx);
             self.st.niri.act(serde_json::json!({"SwitchLayout": {"layout": {"Index": en}}}));

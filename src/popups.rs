@@ -146,6 +146,7 @@ fn cal(ui: &mut Ui, st: &State, b: R) {
         return;
     }
     ui.cv.push_clip(R::new(nr.x, y, nr.w, nr.bottom() - y));
+    let hide = st.auto_quiet();
     for note in &st.notifs.history {
         if y > nr.bottom() {
             break;
@@ -169,9 +170,95 @@ fn cal(ui: &mut Ui, st: &State, b: R) {
         if !note.body.is_empty() {
             ui.text_in(PX, R::new(r.x + 8, r.y + 46, r.w - 16, 18), &note.body.replace('\n', " "), t.text_dim);
         }
+        // тихо само: текст под пиксельным шумом, наведение его рассыпает, уход — собирает
+        if hide {
+            let tr = R::new(r.x + 6, r.y + 24, r.w - 12, ch - 28);
+            spoiler(ui, st, tr, note.id, hov);
+        }
         y += ch + 6;
     }
     ui.cv.pop_clip();
+}
+
+/// ключ спойлера для строки (имя сети): не пересекается с id уведомлений
+fn spoiler_key(s: &str) -> u32 {
+    (yami_px::fnv(yami_px::FNV0, s.as_bytes()) as u32) | 0x8000_0000
+}
+
+/// сколько спойлера открыто сейчас: к цели за четверть секунды
+fn spoiler_open(e: &(bool, f32, std::time::Instant), now: std::time::Instant) -> f32 {
+    let k = (now.duration_since(e.2).as_secs_f32() / 0.25).min(1.0);
+    let k = 1.0 - (1.0 - k) * (1.0 - k);
+    e.1 + ((if e.0 { 1.0 } else { 0.0 }) - e.1) * k
+}
+
+/// спойлер над текстом в r (тихо само: игра, весь экран, демонстрация): размыт, пока не наведут
+/// open_on; открывается и закрывается за четверть секунды. bg — фон под текстом
+fn spoiler(ui: &mut Ui, st: &State, r: R, id: u32, open_on: bool) {
+    let now = std::time::Instant::now();
+    let open = {
+        let mut m = st.spoilers.borrow_mut();
+        // старые (ушедшие уведомления, сети) не копить
+        if m.len() > 256 {
+            m.retain(|_, e| e.0 || now.duration_since(e.2).as_secs() < 60);
+        }
+        let e = m.entry(id).or_insert((false, 0.0, now));
+        if e.0 != open_on {
+            let cur = spoiler_open(e, now);
+            *e = (open_on, cur, now);
+        }
+        spoiler_open(e, now)
+    };
+    // кадры — только пока проявляется или прячется
+    if open > 0.001 && open < 0.999 {
+        ui.anim = true;
+    }
+    spoiler_cover(ui, r, 1.0 - open);
+}
+
+/// размытие текста в r: cover 1 — сильное (не прочесть, но видно, сколько строк и какой длины),
+/// 0 — как есть. Ящичное размытие по буферу в два прохода (по строкам, потом по столбцам), радиус
+/// растёт с cover
+fn spoiler_cover(ui: &mut Ui, r: R, cover: f32) {
+    let rad = (cover * 6.0).round() as i32;
+    if rad <= 0 {
+        return;
+    }
+    let (ox, oy, cw) = (ui.cv.ox, ui.cv.oy, ui.cv.w);
+    let area = R::new(r.x + ox, r.y + oy, r.w, r.h).inter(&ui.cv.clip_rect());
+    if area.w <= 0 || area.h <= 0 {
+        return;
+    }
+    let buf = &mut *ui.cv.buf;
+    let ch = |p: u32, s: u32| (p >> s) & 255;
+    // одна линия: n пикселей с шагом step от start; скользящая сумма окна 2·rad+1 (края — повтором)
+    let mut line = |start: usize, step: usize, n: usize| {
+        let src: Vec<u32> = (0..n).map(|i| buf[start + i * step]).collect();
+        let win = (2 * rad + 1) as u32;
+        let at = |i: i32| src[i.clamp(0, n as i32 - 1) as usize];
+        let mut sum = [0u32; 4];
+        for i in -rad..=rad {
+            let p = at(i);
+            for (k, s) in [24, 16, 8, 0].into_iter().enumerate() {
+                sum[k] += ch(p, s);
+            }
+        }
+        for i in 0..n as i32 {
+            buf[start + i as usize * step] = (sum[0] / win) << 24 | (sum[1] / win) << 16 | (sum[2] / win) << 8 | sum[3] / win;
+            let (out, inn) = (at(i - rad), at(i + rad + 1));
+            for (k, s) in [24, 16, 8, 0].into_iter().enumerate() {
+                sum[k] = sum[k] + ch(inn, s) - ch(out, s);
+            }
+        }
+    };
+    for _ in 0..2 {
+        for y in area.y..area.bottom() {
+            line((y * cw + area.x) as usize, 1, area.w as usize);
+        }
+        for x in area.x..area.right() {
+            line((area.y * cw + x) as usize, cw as usize, area.h as usize);
+        }
+    }
 }
 
 // ── звук ────────────────────────────────────────────────────────────────────
@@ -488,9 +575,15 @@ fn net(ui: &mut Ui, st: &State, b: R) {
         ui.text_in(PX, R::new(r.x, y, r.w, 20), if st.net.loaded { "не подключено" } else { "смотрю…" }, t.text_faint);
         y += 22;
     }
+    let hide = st.auto_quiet();
     for (name, kind, dev) in st.net.active.iter().take(3) {
         ui.cv.fill(R::new(r.x, y + 7, 6, 6), t.ok);
         ui.text_in(PX, R::new(r.x + 14, y, r.w - 14, 20), name, t.text);
+        // тихо само (демонстрация, игра): имя сети под спойлером; адрес и устройство — нет
+        if hide {
+            let nr = R::new(r.x + 12, y, (ui.w(PX, name) + 6).min(r.w - 12), 20);
+            spoiler(ui, st, nr, spoiler_key(name), ui.hover(nr));
+        }
         ui.text_in(PX, R::new(r.x + 14, y + 18, r.w - 14, 18), &format!("{kind} · {dev}"), t.text_faint);
         y += 40;
     }
@@ -543,6 +636,11 @@ fn net(ui: &mut Ui, st: &State, b: R) {
             ui.cv.fill(R::new(rr.x + 6 + k * 4, rr.y + 18 - k * 3, 3, 3 + k * 3), if on { if n.active { t.ember } else { t.red } } else { t.border });
         }
         ui.text_in(PX, R::new(rr.x + 30, rr.y, rr.w - 90, rr.h), &n.ssid, if n.active { t.text_hi } else { t.text });
+        if hide {
+            let hov = ui.hover(rr);
+            let sw = (ui.w(PX, &n.ssid) + 6).min(rr.w - 92);
+            spoiler(ui, st, R::new(rr.x + 28, rr.y + 4, sw, rr.h - 8), spoiler_key(&n.ssid), hov);
+        }
         if n.secure {
             ui.cv.icon("lock", rr.right() - 40, rr.cy() - 7, 2, if n.known { t.text_dim } else { t.text_faint });
         }

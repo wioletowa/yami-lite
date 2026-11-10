@@ -187,6 +187,10 @@ pub enum Msg {
     DeskInfo(String),
     /// прочитан чужой буфер: пути, куда вставить, вырезаны ли, клетка
     DeskPasted(Vec<std::path::PathBuf>, std::path::PathBuf, bool, Option<(i32, i32)>),
+    /// система собирается спать: запереть экран (sleep.rs)
+    PrepareSleep,
+    /// значки папок перекрашены (recolor.rs): кеш значков — заново
+    IconsRecolored,
 }
 
 pub struct Res {
@@ -295,6 +299,10 @@ pub struct State {
     pub lock_status: String,
     pub lock_fails: u32,
     pub lock_shake: Option<Instant>,
+    /// когда заперли: уведомления с тех пор — на экране блокировки (без текста)
+    pub lock_at: Option<Instant>,
+    /// спойлеры истории уведомлений: id → (открыт ли, с какой доли и когда сменилось)
+    pub spoilers: std::cell::RefCell<HashMap<u32, (bool, f32, Instant)>>,
     pub cal_month: i32,
     pub blink: bool,
     pub wall: Option<std::rc::Rc<crate::gfx::Img>>,
@@ -382,6 +390,8 @@ pub struct App {
     pub(crate) data_dev: Option<smithay_client_toolkit::data_device_manager::data_device::DataDevice>,
     pub(crate) dnd: crate::dnd::Dnd,
     pub(crate) press_serial: u32,
+    /// нить сна (sleep.rs): ей — «заперто», и она отпускает сон
+    pub(crate) sleep_ack: Option<std::sync::mpsc::Sender<()>>,
     pub(crate) cursor_now: Option<Shape>,
     pub(crate) viewporter: Option<wp_viewporter::WpViewporter>,
     pub(crate) fx_mgr: Option<ext_background_effect_manager_v1::ExtBackgroundEffectManagerV1>,
@@ -446,6 +456,12 @@ impl State {
     /// демонстрации уведомления снова приходят сами
     pub fn quiet(&self) -> bool {
         self.set.dnd || (self.set.game_dnd && (self.game.game || self.game.fullscreen)) || (self.set.cast_dnd && self.niri.casting)
+    }
+
+    /// тихо само (игра, окно на весь экран, демонстрация), а не «не беспокоить» руками: в истории
+    /// текст уведомлений спрятан под спойлер
+    pub fn auto_quiet(&self) -> bool {
+        self.quiet() && !self.set.dnd
     }
 }
 
@@ -516,6 +532,8 @@ impl State {
             lock_status: String::new(),
             lock_fails: 0,
             lock_shake: None,
+            lock_at: None,
+            spoilers: Default::default(),
             cal_month: 0,
             blink: true,
             wall: None,
@@ -618,6 +636,7 @@ pub fn run() {
         data_dev: None,
         dnd: Default::default(),
         press_serial: 0,
+        sleep_ack: None,
         cursor_now: None,
         viewporter,
         fx_mgr,
@@ -672,6 +691,7 @@ pub fn run() {
     audio::spawn(tx.clone());
     media::spawn(tx.clone());
     net::spawn_bt(tx.clone());
+    app.sleep_ack = Some(crate::sleep::spawn(tx.clone()));
     crate::leds::spawn(tx.clone());
     crate::camera::spawn(tx.clone());
     app.write_palette();

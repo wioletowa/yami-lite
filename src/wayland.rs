@@ -125,7 +125,10 @@ impl WindowHandler for App {
 }
 
 impl SessionLockHandler for App {
-    fn locked(&mut self, _: &Connection, _: &QueueHandle<Self>, _: SessionLock) {}
+    fn locked(&mut self, _: &Connection, _: &QueueHandle<Self>, _: SessionLock) {
+        // niri запер экран: если ждут сна — можно спать
+        self.sleep_locked();
+    }
     fn finished(&mut self, _: &Connection, _: &QueueHandle<Self>, _: SessionLock) {
         self.lock = None;
         self.drop_lock_surfs();
