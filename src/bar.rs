@@ -5,7 +5,7 @@ use crate::app::{App, SKind, State, BAR_H};
 use crate::clock::{local_now, RU_DAY};
 use crate::config::Settings;
 use crate::font::{self, PX};
-use crate::gfx::{BoxStyle, C, R};
+use crate::gfx::{BoxStyle, RoundBox, C, R};
 use crate::icons;
 use crate::theme::CLEAR;
 use crate::ui::{Act, Cur, Tone, Ui};
@@ -88,7 +88,15 @@ pub fn draw(ui: &mut Ui, st: &State, out: &str, w: i32) {
         // прижатая к нижнему краю — без тени, вплотную к краю
         let flush = low(set) && !set.bar_float;
         let pw = w - if flush { 0 } else { SHADE };
-        ui.cv.pxbox(R::new(0, 0, pw, H), &BoxStyle::new(t.glass_panel(), t.border).shadow(if flush { 0 } else { SHADE }));
+        let shadow = if flush { 0 } else { SHADE };
+        let rad = set.num("bar_radius");
+        if rad > 0 {
+            // ступеньками по 2 px — сетка шрифта и значков; у края экрана углы прямые
+            let (top, bot) = (set.bar_float || low(set), set.bar_float || !low(set));
+            ui.cv.round_box(R::new(0, 0, pw, H), &RoundBox { cell: 2, rad, corners: [top, top, bot, bot], fill: t.glass_panel(), outline: t.border, shadow });
+        } else {
+            ui.cv.pxbox(R::new(0, 0, pw, H), &BoxStyle::new(t.glass_panel(), t.border).shadow(shadow));
+        }
         pw
     };
 

@@ -64,11 +64,13 @@ pub fn clock<A: Action>(ui: &mut Ui<A>, w: i32, h: i32) -> i32 {
     let tm = local_now();
     let big = font::px(128);
     let s = format!("{:02}:{:02}", tm.hour, tm.min);
-    let cw = ui.w(big, &s);
+    // по середине нарисованного: пустой столбец справа у Tiny5 при 128 — это 8 px сдвига
+    let (lo, cw) = ui.f.ink(big, &s).unwrap_or((0, ui.w(big, &s)));
+    let x = (w - cw) / 2 - lo;
     let cy = h / 2 - 150;
     // тень-сдвиг на 4 px, как у панелей
-    ui.text(big, (w - cw) / 2 + 4, cy + 4, &s, t.blood.fade(0.8));
-    ui.text(big, (w - cw) / 2, cy, &s, t.text);
+    ui.text(big, x + 4, cy + 4, &s, t.blood.fade(0.8));
+    ui.text(big, x, cy, &s, t.text);
     let (day, mon) = ((ui.tr)(RU_DAY_FULL[tm.wday as usize % 7]), (ui.tr)(RU_MON[(tm.mon as usize).clamp(1, 12) - 1]));
     // «sábado, 7 de novembro» по-португальски
     let date = format!("{day}, {} {mon}", tm.day);

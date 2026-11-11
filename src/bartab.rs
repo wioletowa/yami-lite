@@ -298,14 +298,12 @@ fn bar_layout(ui: &mut Ui, st: &State, b: R, y: i32) -> i32 {
     opt_btn(ui, R::new(col(0), y, cw, 26), "середина", align, Act::Drop("bar_center_align"));
     let pos = if crate::bar::low(s) { "снизу" } else { "сверху" };
     opt_btn(ui, R::new(col(1), y, cw, 26), "край экрана", pos, Act::Drop("bar_pos"));
-    let shape = if crate::bar::strip(s) {
-        "полоса во всю ширину"
-    } else if s.bar_float {
-        "плашка с отступом"
+    // у полосы во всю ширину углов нет — там подсказка вместо скругления
+    if crate::bar::strip(s) {
+        ui.text_in(PX, R::new(col(2) + 4, y, cw - 4, 26), "полоса во всю ширину", t.text_faint);
     } else {
-        "плашка у края"
-    };
-    ui.text_in(PX, R::new(col(2) + 4, y, cw - 4, 26), shape, t.text_faint);
+        num_btn(ui, R::new(col(2), y, cw, 26), "скругление", s.num("bar_radius"), "bar_radius");
+    }
     y += 40;
     y = title(ui, b.x, y, b.w, "отступы");
     for (i, (k, label)) in [("bar_pad_l", "край в начале"), ("bar_pad_r", "край в конце"), ("bar_gap", "между модулями")].into_iter().enumerate() {

@@ -365,6 +365,24 @@ impl Fonts {
         s.chars().filter(|c| *c != '\n').map(|c| self.advance(face, c)).sum()
     }
 
+    /// где в строке нарисованное: отступ первой точки от пера и ширина до последней. У Tiny5
+    /// справа от знака пустой столбец, а «1» уже остальных цифр — по шагу «11» уезжает влево
+    pub fn ink(&mut self, face: Face, s: &str) -> Option<(i32, i32)> {
+        let (mut pen, mut lo, mut hi) = (0, i32::MAX, i32::MIN);
+        for ch in s.chars().filter(|c| *c != '\n') {
+            let (left, w, adv) = match self.glyph(face, ch) {
+                Some(g) => (g.left, g.w, g.adv),
+                None => (0, 0, self.advance(face, ch)),
+            };
+            if w > 0 {
+                lo = lo.min(pen + left);
+                hi = hi.max(pen + left + w);
+            }
+            pen += adv;
+        }
+        (lo < hi).then_some((lo, hi - lo))
+    }
+
     /// строка, урезанная до max px с многоточием; влезает — как есть
     pub fn elide(&mut self, face: Face, s: &str, max: i32) -> String {
         if self.width(face, s) <= max {
@@ -443,5 +461,20 @@ impl Fonts {
 
     pub fn wrap_height(&mut self, face: Face, s: &str, max: i32, max_lines: usize) -> i32 {
         self.wrap(face, s, max, max_lines).len() as i32 * (self.line(face) + 2)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ink_skips_trailing_column_and_narrow_one() {
+        let mut f = Fonts::new();
+        // Tiny5 на 16: пиксель — 2 px, цифра 3×5 в шаге 4, «1» — 2×5
+        assert_eq!(f.width(PX, "11"), 16);
+        assert_eq!(f.ink(PX, "11"), Some((0, 12)));
+        assert_eq!(f.ink(PX, "12"), Some((0, 14)));
+        assert_eq!(f.ink(PX, " "), None);
     }
 }

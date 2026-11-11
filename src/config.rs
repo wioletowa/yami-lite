@@ -191,6 +191,8 @@ pub struct Settings {
     pub bar_width_pc: i32,
     /// отступ плавающего бара от краёв экрана, px
     pub bar_margin: i32,
+    /// скругление углов плашки ступеньками по 2 px, в ступеньках; 0 — фаска как у панелей
+    pub bar_radius: i32,
     /// экраны с баром (имена niri: DP-2, eDP-1); пусто — все. Нет ни одного из них — тоже все (#8)
     pub bar_outputs: Vec<String>,
     /// модули середины: "center" — по центру бара, "after-left" — сразу за левыми
@@ -369,6 +371,7 @@ pub const NUMS: &[(&str, i32, i32, i32)] = &[
     ("task_width", 60, 400, 10),
     ("bar_width_pc", 30, 100, 5),
     ("bar_margin", 0, 32, 2),
+    ("bar_radius", 0, 8, 1),
     ("reveal_grain", 1, 4, 1),
     ("night_temp", 2500, 6000, 250),
     ("night_on_h", 0, 23, 1),
@@ -446,6 +449,7 @@ impl Default for Settings {
             bar_width_pc: 100,
             bar_outputs: vec![],
             bar_margin: 6,
+            bar_radius: 0,
             bar_center_align: "center".into(),
             bar_pos: "top".into(),
             lock_after: 10,
@@ -683,6 +687,7 @@ impl Settings {
             "night_off_h" => self.night_off_h,
             "bar_width_pc" => self.bar_width_pc,
             "bar_margin" => self.bar_margin,
+            "bar_radius" => self.bar_radius,
             "notif_offset" => self.notif_offset,
             "notif_offset_x" => self.notif_offset_x,
             "osd_offset" => self.osd_offset,
@@ -710,6 +715,7 @@ impl Settings {
             "night_off_h" => self.night_off_h = v,
             "bar_width_pc" => self.bar_width_pc = v,
             "bar_margin" => self.bar_margin = v,
+            "bar_radius" => self.bar_radius = v,
             "notif_offset" => self.notif_offset = v,
             "notif_offset_x" => self.notif_offset_x = v,
             "osd_offset" => self.osd_offset = v,

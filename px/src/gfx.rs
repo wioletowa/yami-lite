@@ -456,6 +456,55 @@ impl<'a> Canvas<'a> {
         }
     }
 
+    pub fn round_box(&mut self, r: R, b: &RoundBox) {
+        if r.w <= 0 || r.h <= 0 {
+            return;
+        }
+        let glass = b.fill.a() < 255;
+        for y in r.y..r.bottom() {
+            let Some((x0, x1)) = b.span(r, y) else { continue };
+            // под стеклом — размытие по той же ступенчатой форме
+            if glass && b.shadow > 0 {
+                self.blur_rect(R::new(x0, y, x1 - x0, 1), 0);
+            }
+        }
+        // жёсткая тень: сдвинутая плашка без самой плашки
+        if b.shadow > 0 {
+            let a = R::new(r.x + b.shadow, r.y + b.shadow, r.w, r.h);
+            for y in a.y..a.bottom() {
+                let Some((a0, a1)) = b.span(a, y) else { continue };
+                match b.span(r, y) {
+                    Some((p0, p1)) => {
+                        if p0 > a0 {
+                            self.fill(R::new(a0, y, (p0 - a0).min(a1 - a0), 1), self.shade);
+                        }
+                        if p1 < a1 {
+                            self.fill(R::new(p1.max(a0), y, a1 - p1.max(a0), 1), self.shade);
+                        }
+                    }
+                    None => self.fill(R::new(a0, y, a1 - a0, 1), self.shade),
+                }
+            }
+        }
+        for y in r.y..r.bottom() {
+            let Some((x0, x1)) = b.span(r, y) else { continue };
+            self.fill(R::new(x0, y, x1 - x0, 1), b.fill);
+            if b.outline.a() == 0 {
+                continue;
+            }
+            if y == r.y || y == r.bottom() - 1 {
+                self.fill(R::new(x0, y, x1 - x0, 1), b.outline);
+                continue;
+            }
+            // рамка ступеньками: край строки и то, что выступает за соседние строки
+            let (u, d) = (b.span(r, y - 1).unwrap_or((x0, x1)), b.span(r, y + 1).unwrap_or((x0, x1)));
+            let l = (x0 + 1).max(u.0).max(d.0).min(x1);
+            let rr = (x1 - 1).min(u.1).min(d.1).max(l);
+            self.fill(R::new(x0, y, l - x0, 1), b.outline);
+            self.fill(R::new(rr, y, x1 - rr, 1), b.outline);
+        }
+    }
+
     pub fn pxbox(&mut self, r: R, st: &BoxStyle) {
         let n = st.notch;
         // стеклянная панель с тенью — верхний уровень, под ней размытие
@@ -671,10 +720,24 @@ impl<'a> Canvas<'a> {
         }
     }
     pub fn text_center(&mut self, fonts: &mut Fonts, face: Face, r: R, s: &str, c: C) -> i32 {
+        // влезает — по середине нарисованного, а не шага: цифры в ячейках встают ровно
+        if fonts.width(face, s) <= r.w {
+            if let Some((lo, w)) = fonts.ink(face, s) {
+                let y = r.y + (r.h - fonts.line(face)) / 2;
+                return self.text(fonts, face, r.x + (r.w - w) / 2 - lo, y, s, c);
+            }
+        }
         let w = fonts.width(face, s).min(r.w);
         self.text_in(fonts, face, R::new(r.x + (r.w - w) / 2, r.y, w, r.h), s, c)
     }
     pub fn text_right(&mut self, fonts: &mut Fonts, face: Face, r: R, s: &str, c: C) -> i32 {
+        // правый край нарисованного — у края r, без пустого столбца после знака
+        if fonts.width(face, s) <= r.w {
+            if let Some((lo, w)) = fonts.ink(face, s) {
+                let y = r.y + (r.h - fonts.line(face)) / 2;
+                return self.text(fonts, face, r.right() - w - lo, y, s, c);
+            }
+        }
         let w = fonts.width(face, s).min(r.w);
         self.text_in(fonts, face, R::new(r.right() - w, r.y, w, r.h), s, c)
     }
@@ -973,5 +1036,44 @@ pub fn overlay_up(src: &[u32], w: i32, h: i32, dst: &mut [u32], pw: i32, ph: i32
                 out[x] = 0xff00_0000 | ch(16) | ch(8) | ch(0);
             }
         }
+    }
+}
+
+/// пиксельное скругление: насколько срезан угол в строке j от края (в клетках), радиус 1..8
+fn arc(rad: i32, j: i32) -> i32 {
+    const T: [&[i32]; 8] = [&[1], &[2, 1], &[3, 1, 1], &[4, 2, 1, 1], &[5, 3, 2, 1, 1], &[6, 4, 3, 2, 1, 1], &[7, 5, 3, 2, 2, 1, 1], &[8, 6, 4, 3, 2, 2, 1, 1]];
+    let t = T[(rad.clamp(1, 8) - 1) as usize];
+    t.get(j as usize).copied().unwrap_or(0)
+}
+
+/// плашка со скруглёнными ступеньками углами
+pub struct RoundBox {
+    /// клетка ступеньки, px
+    pub cell: i32,
+    /// радиус в клетках (1..8)
+    pub rad: i32,
+    /// какие углы скруглены: левый верх, правый верх, левый низ, правый низ
+    pub corners: [bool; 4],
+    pub fill: C,
+    pub outline: C,
+    pub shadow: i32,
+}
+
+impl RoundBox {
+    /// строка y плашки r: [от, до) по x, None — вне
+    fn span(&self, r: R, y: i32) -> Option<(i32, i32)> {
+        if y < r.y || y >= r.bottom() {
+            return None;
+        }
+        let (c, rad) = (self.cell.max(1), self.rad.min(r.h / (2 * self.cell.max(1))).max(0));
+        if rad == 0 {
+            return Some((r.x, r.right()));
+        }
+        let (top, bot) = ((y - r.y) / c, (r.bottom() - 1 - y) / c);
+        let cut = |on: bool, j: i32| if on && j < rad { arc(rad, j) * c } else { 0 };
+        let [tl, tr, bl, br] = self.corners;
+        let l = cut(tl, top).max(cut(bl, bot));
+        let rr = cut(tr, top).max(cut(br, bot));
+        Some((r.x + l, r.right() - rr))
     }
 }
