@@ -82,6 +82,9 @@ impl App {
 
     // ── всплывашки бара ─────────────────────────────────────────────────────
     pub fn open_popup(&mut self, kind: &'static str, out: &str, ax: i32) {
+        if !crate::features::popup_on(kind) {
+            return;
+        }
         let same = self.st.popup_is(kind);
         // панель уже открыта на другой вкладке: переключить на месте — размер у всех один
         if !same && crate::control::is_tab(kind) && self.st.popup.as_ref().is_some_and(|p| crate::control::is_tab(p.kind) && p.out == out) {

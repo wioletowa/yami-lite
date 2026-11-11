@@ -246,6 +246,13 @@ impl App {
                 let f = (frac * seg as f32).ceil() / seg as f32;
                 self.slider_set(key, from + f * (to - from));
             }
+            Act::TimerVol(id) => {
+                // громкость сигнала таймера — шагами по 5%
+                if let Some(w) = self.st.set.widget_mut(id) {
+                    w.volume = (frac * 20.0).round() / 20.0;
+                }
+                self.settings_changed();
+            }
             Act::VolSlider => audio::set_volume(frac as f64 * 1.0),
             Act::MicSlider => audio::set_mic(frac as f64),
             Act::AppVol(i) => audio::set_stream(i, frac as f64),
@@ -377,7 +384,11 @@ impl App {
             Some(SKind::Settings) => self.settings_key(e),
             Some(SKind::Popup) => self.popup_key(e),
             Some(SKind::Menu) => self.menu_key(e),
-            Some(SKind::Widget(_)) => self.widget_key(e),
+            Some(SKind::Widget(id)) => {
+                if !self.notes_key(id, e) {
+                    self.widget_key(e);
+                }
+            }
             Some(SKind::Desk) => self.desk_key(e),
             Some(SKind::Info) => {
                 if matches!(e.keysym, Keysym::Escape | Keysym::Return) {

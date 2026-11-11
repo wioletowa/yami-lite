@@ -67,7 +67,12 @@ pub const GROUPS: &[(&str, &[Tab])] = &[
 
 /// все вкладки подряд
 pub fn tabs() -> impl Iterator<Item = &'static Tab> {
-    GROUPS.iter().flat_map(|g| g.1.iter())
+    GROUPS.iter().flat_map(|g| g.1.iter()).filter(|t| tab_on(t.id))
+}
+
+/// вкладка модуля, что не собран (features.rs), — не показывать
+pub fn tab_on(id: &str) -> bool {
+    id != "desk" || crate::features::DESKTOP
 }
 
 /// вкладка по ключу (из IPC)
@@ -132,7 +137,7 @@ pub fn draw(ui: &mut Ui, st: &State, w: i32, h: i32) {
         ui.cv.fill(R::new(side.x + 12, y + 8, 4, 4), t.red.alpha(0.7));
         ui.text_in(PX, R::new(side.x + 22, y, side.w - 30, HEAD_H - 4), gname, t.text_faint);
         y += HEAD_H;
-        for tb in tabs.iter() {
+        for tb in tabs.iter().filter(|t| tab_on(t.id)) {
             let r = R::new(side.x + 8, y, side.w - 16, ROW_H - 2);
             ui.button(r, tb.name, tb.icon, Tone::Ghost, st.stab == tb.id, true, Act::STab(tb.id));
             if st.stab == tb.id {

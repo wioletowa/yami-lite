@@ -28,6 +28,16 @@ zbus = { version = "5", default-features = false, features = ["blocking-api", "a
 blocking = "=1.6.2"
 libc = "0.2"
 
+# модули по выбору (install.sh --fan --wallhaven …); без фич — только ядро
+[features]
+default = []
+fan = []
+wallhaven = []
+desktop = []
+recolor = []
+privacy = []
+full = ["fan", "wallhaven", "desktop", "recolor", "privacy"]
+
 [workspace]
 members = ["px"]
 

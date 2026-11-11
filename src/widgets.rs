@@ -13,7 +13,7 @@ use crate::ui::{Act, Cur, Tone, Ui};
 use smithay_client_toolkit::seat::keyboard::{KeyEvent, Keysym};
 use smithay_client_toolkit::shell::wlr_layer::{Anchor, KeyboardInteractivity, Layer};
 
-pub const KINDS: &[(&str, &str)] = &[("clock", "часы"), ("graph", "график"), ("net", "сеть"), ("media", "музыка"), ("cal", "календарь")];
+pub const KINDS: &[(&str, &str)] = &[("clock", "часы"), ("graph", "график"), ("net", "сеть"), ("media", "музыка"), ("cal", "календарь"), ("timer", "таймер"), ("notes", "заметки")];
 pub const SOURCES: &[(&str, &str)] = &[("cpu", "процессор"), ("ram", "память"), ("temp", "температура"), ("gpu", "видеокарта")];
 pub const STYLES: &[(&str, &str)] = &[("bars", "столбики"), ("line", "линия"), ("blocks", "клетки"), ("wave", "волна"), ("dots", "точки")];
 pub const ANIMS: &[(&str, &str)] = &[("scroll", "бегущий"), ("rise", "рост"), ("flicker", "мерцание"), ("none", "без анимации")];
@@ -111,6 +111,14 @@ pub fn size_of(w: &Widget, f: &mut crate::font::Fonts) -> (i32, i32) {
     }
     if w.kind == "media" && w.size == "sq" {
         return (280 + 4, 280 + 4);
+    }
+    if w.kind == "timer" {
+        let (a, b) = crate::timer::size(&w.size);
+        return (a + 4, b + 4);
+    }
+    if w.kind == "notes" {
+        let (a, b) = crate::notes::size(&w.size);
+        return (a + 4, b + 4);
     }
     let k = match w.size.as_str() {
         "s" => 0,
@@ -477,6 +485,16 @@ fn draw_widget(ui: &mut Ui, st: &State, w: &Widget, sw: i32, sh: i32) {
             panel(ui, w, r);
             let pad = if w.frame { 12 } else { 2 };
             calendar(ui, st, R::new(pad, pad, r.w - 2 * pad, r.h - 2 * pad), 0, c, false);
+        }
+        "timer" => {
+            panel(ui, w, r);
+            let pad = if w.frame { 12 } else { 4 };
+            crate::timer::draw(ui, st, id, &w.size, R::new(pad, pad, r.w - 2 * pad, r.h - 2 * pad), c);
+        }
+        "notes" => {
+            panel(ui, w, r);
+            let pad = if w.frame { 12 } else { 4 };
+            crate::notes::draw(ui, st, id, R::new(pad, pad, r.w - 2 * pad, r.h - 2 * pad), c);
         }
         _ => {}
     }
@@ -874,7 +892,8 @@ impl App {
             match sid {
                 None => {
                     // и при расстановке — под окнами: стол виден, когда окна убраны
-                    let kb = if self.st.editing { KeyboardInteractivity::OnDemand } else { KeyboardInteractivity::None };
+                    // заметкам клавиатура нужна всегда (правка), остальным — только при расстановке
+                    let kb = if self.st.editing || w.kind == "notes" { KeyboardInteractivity::OnDemand } else { KeyboardInteractivity::None };
                     let s = self.mk(SKind::Widget(w.id), &out, Layer::Bottom, "yami-widget", Anchor::TOP | Anchor::LEFT, (ww, wh), (y, 0, 0, x), -1, kb);
                     if let Some(s) = self.surfs.get_mut(&s) {
                         s.margin = (x, y);
@@ -933,9 +952,10 @@ impl App {
         }
         self.sync_widgets();
         // при расстановке щелчок по виджету даёт шеллу клавиатуру: Shift (без магнитов) виден
-        let kb = if on { KeyboardInteractivity::OnDemand } else { KeyboardInteractivity::None };
+        let notes: Vec<u32> = self.st.set.widgets.iter().filter(|w| w.kind == "notes").map(|w| w.id).collect();
         for s in self.surfs.values_mut().filter(|s| matches!(s.kind, SKind::Widget(_)) && !s.closing) {
-            s.layer.set_keyboard_interactivity(kb);
+            let keep = matches!(s.kind, SKind::Widget(id) if notes.contains(&id));
+            s.layer.set_keyboard_interactivity(if on || keep { KeyboardInteractivity::OnDemand } else { KeyboardInteractivity::None });
             s.layer.commit();
         }
         self.dirty_where(|k| matches!(k, SKind::Widget(_)));

@@ -644,6 +644,9 @@ fn module(ui: &mut Ui, st: &State, out: &str, m: &str, x: i32, measure: bool) ->
         }
         // выбор обоев и Wallhaven — под баром у курсора
         "walls" | "wallhaven" => {
+            if m == "wallhaven" && !crate::features::WALLHAVEN {
+                return 0;
+            }
             if !measure {
                 let r = R::new(x - 2, 0, 18, H - 1);
                 let open = if m == "walls" { st.modal == Some(crate::app::Modal::Walls) && st.walls_anchored } else { st.popup_is("wallhaven") };
@@ -673,6 +676,9 @@ fn module(ui: &mut Ui, st: &State, out: &str, m: &str, x: i32, measure: bool) ->
         // замок приватности (hide.rs): виден всегда — тусклый, пока ничего не спрятано из
         // трансляции, акцентом — когда спрятано
         "privacy_hidden" => {
+            if !crate::features::PRIVACY {
+                return 0;
+            }
             if !measure {
                 let r = R::new(x - 2, 0, 18, H - 1);
                 let c = if st.popup_is("hidden") || ui.hover(r) { t.text_hi } else if st.set.hide_apps.is_empty() { t.text_dim } else { t.red };

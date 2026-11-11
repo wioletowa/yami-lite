@@ -118,9 +118,10 @@ pub fn msg_ok(cmd: &str) -> bool {
     let head = w.next().unwrap_or("");
     let one = |w: &mut std::str::SplitWhitespace| w.next().is_none();
     match head {
-        "power" | "lock" | "hide" | "bar" | "edit" | "reload" | "quit" | "ping" | "restart" | "night" | "walls" => one(&mut w),
+        "hide" => crate::features::PRIVACY && one(&mut w),
+        "power" | "lock" | "bar" | "edit" | "reload" | "quit" | "ping" | "restart" | "night" | "walls" => one(&mut w),
         "settings" => w.next().is_none_or(|t| crate::settings::find(t).is_some()) && one(&mut w),
-        "popup" => w.next().is_some_and(|k| crate::popups::KINDS.contains(&k)) && one(&mut w),
+        "popup" => w.next().is_some_and(|k| crate::popups::KINDS.contains(&k) && crate::features::popup_on(k)) && one(&mut w),
         "media" => w.next().is_some_and(|a| matches!(a, "play-pause" | "play" | "pause" | "stop" | "next" | "previous" | "player")) && one(&mut w),
         // путь к картинке (с пробелами) или пусто — пиксельные из палитры
         "wallpaper" => true,
@@ -214,7 +215,8 @@ pub fn run(args: &[String]) -> i32 {
             0
         }
         Some("--version") | Some("-V") | Some("version") => {
-            println!("yami-lite {}", env!("CARGO_PKG_VERSION"));
+            let m = crate::features::list();
+            println!("yami-lite {} ({})", env!("CARGO_PKG_VERSION"), if m.is_empty() { "core".to_string() } else { m.join(", ") });
             0
         }
         Some("msg") => {

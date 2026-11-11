@@ -55,6 +55,8 @@ impl App {
         if now.duration_since(self.last_sample) >= Duration::from_millis(990) {
             self.last_sample = now;
             self.weather_tick();
+            self.timer_tick();
+            self.notes_sync();
             // игра на весь экран закрывает все бары: датчики видеокарты не нужны, а nvidia-smi раз в
             // 3 с под игрой — лишняя работа драйвера (рывки кадров)
             let fo = self.focus_out();
@@ -65,7 +67,7 @@ impl App {
                 self.st.procs.sample();
             }
             // вентилятор: история копится, пока модуль в баре, — открытая всплывашка видит прошлое
-            if self.st.set.on_bar("fan") || self.st.popup_is("fan") {
+            if crate::features::FAN && (self.st.set.on_bar("fan") || self.st.popup_is("fan")) {
                 self.st.fan.sample();
                 if self.st.popup_is("fan") {
                     self.dirty(&SKind::Popup);

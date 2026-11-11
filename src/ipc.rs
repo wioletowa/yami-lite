@@ -88,7 +88,7 @@ impl crate::app::App {
             "walls" => self.walls_open(false, false),
             "lock" => self.lock_now(),
             // приватность окна: прицел niri, щелчок прячет приложение из трансляции (или возвращает)
-            "hide" => self.hide_pick(),
+            "hide" if crate::features::PRIVACY => self.hide_pick(),
             "bar" => self.toggle_bar(),
             "edit" => {
                 self.close_all();

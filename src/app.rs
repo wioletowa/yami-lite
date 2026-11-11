@@ -291,6 +291,11 @@ pub struct State {
     pub procs: crate::sys::Procs,
     /// рабочий стол (desk.rs)
     pub desk: crate::desk::Desk,
+    /// виджеты-таймеры (timer.rs): состояние по id и когда крутили колесо (разгон шага)
+    pub timers: HashMap<u32, crate::timer::Timer>,
+    pub timer_wheel_at: HashMap<u32, Instant>,
+    /// виджеты-заметки (notes.rs): текст файла, прокрутка, правка
+    pub notes: HashMap<u32, crate::notes::Note>,
     /// о низком заряде уже сказали: 1 — на 10%, 2 — на 5%; сбрасывается на зарядке
     pub bat_warn: u8,
     pub tray: Vec<dbus::TrayItem>,
@@ -526,6 +531,9 @@ impl State {
             bt_scroll_max: Default::default(),
             procs: Default::default(),
             desk: Default::default(),
+            timers: crate::timer::load(),
+            timer_wheel_at: HashMap::new(),
+            notes: HashMap::new(),
             bat_warn: 0,
             tray: vec![],
             locked: false,
@@ -601,7 +609,8 @@ pub fn run() {
     let xdg = smithay_client_toolkit::shell::xdg::XdgShell::bind(&globals, &qh).ok();
     let shm = Shm::bind(&globals, &qh).expect("wl_shm");
     let cursor_mgr = CursorShapeManager::bind(&globals, &qh).ok();
-    let dd_mgr = smithay_client_toolkit::data_device_manager::DataDeviceManagerState::bind(&globals, &qh).ok();
+    // перетаскивание и буфер файлов — только у рабочего стола
+    let dd_mgr = if crate::features::DESKTOP { smithay_client_toolkit::data_device_manager::DataDeviceManagerState::bind(&globals, &qh).ok() } else { None };
     let viewporter: Option<wp_viewporter::WpViewporter> = globals.bind(&qh, 1..=1, ()).ok();
     let fx_mgr: Option<ext_background_effect_manager_v1::ExtBackgroundEffectManagerV1> = globals.bind(&qh, 1..=1, ()).ok();
     let idle: Option<ext_idle_notifier_v1::ExtIdleNotifierV1> = globals.bind(&qh, 1..=1, ()).ok();
@@ -694,7 +703,9 @@ pub fn run() {
     media::spawn(tx.clone());
     net::spawn_bt(tx.clone());
     app.sleep_ack = Some(crate::sleep::spawn(tx.clone()));
-    app.hide_init();
+    if crate::features::PRIVACY {
+        app.hide_init();
+    }
     crate::leds::spawn(tx.clone());
     crate::camera::spawn(tx.clone());
     app.write_palette();

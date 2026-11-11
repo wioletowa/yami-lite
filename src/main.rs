@@ -35,6 +35,7 @@ mod media;
 mod menu;
 mod msgs;
 mod net;
+mod notes;
 mod niri;
 mod notif;
 mod night;
@@ -55,12 +56,15 @@ mod settabs;
 mod shellsurf;
 mod settings;
 mod sleep;
+mod sound;
 mod sys;
 mod tick;
+mod timer;
 mod ui;
 mod wall;
 mod wallhaven;
 mod fan;
+mod features;
 mod fileops;
 mod hide;
 mod walls;
@@ -79,6 +83,10 @@ fn main() {
     }
     let args: Vec<String> = std::env::args().collect();
     if args.len() == 1 {
+        // один экземпляр: шелл уже работает — открыть его настройки (ярлык в лаунчере), иначе стартовать
+        if ipc::send("settings") {
+            return;
+        }
         app::run();
         return;
     }

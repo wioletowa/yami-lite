@@ -644,7 +644,7 @@ impl App {
     /// поверхность стола: есть, если включён (на мониторе с фокусом); пересчёт сетки
     pub fn sync_desk(&mut self) {
         let have = self.find(&SKind::Desk);
-        if !self.st.set.desk {
+        if !self.st.set.desk || !crate::features::DESKTOP {
             for id in have {
                 self.destroy(id);
             }

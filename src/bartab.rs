@@ -170,7 +170,7 @@ fn add_list(ui: &mut Ui, st: &State, b: R, at: R) {
     let t = ui.t;
     let s = &st.set;
     let all: Vec<&String> = s.bar_left.iter().chain(&s.bar_center).chain(&s.bar_right).collect();
-    let free: Vec<&str> = ALL_MODULES.iter().map(|m| m.0).filter(|id| *id == "sep" || !all.iter().any(|m| m == id)).collect();
+    let free: Vec<&str> = ALL_MODULES.iter().map(|m| m.0).filter(|id| crate::features::module_on(id)).filter(|id| *id == "sep" || !all.iter().any(|m| m == id)).collect();
     // клик мимо — закрыть
     ui.zone(R::new(b.x - 40, b.y - 40, b.w + 80, b.h + 400), Act::SBarClose, Cur::Default);
     let h = (free.len() as i32 * 26 + 8).min(b.bottom() - at.bottom() - 4).max(60);

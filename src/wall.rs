@@ -586,6 +586,9 @@ pub fn tab(ui: &mut Ui, st: &State, b: R) {
         y += 48;
     }
     // Wallhaven: модуль бара; ключ — для NSFW и большего числа запросов
+    if !crate::features::WALLHAVEN {
+        return;
+    }
     y = title(ui, b.x, y, b.w, "Wallhaven");
     let kf = st.field_focus == Some("wh_key");
     let kh = if s.wallhaven_key.is_empty() { "ключ API (wallhaven.cc → настройки аккаунта)" } else { "ключ сохранён" };

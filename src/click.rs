@@ -30,6 +30,21 @@ impl App {
             }
             return;
         }
+        match &a {
+            Act::TimerGo(id) => return self.timer_go(*id),
+            Act::TimerReset(id) => return self.timer_reset(*id),
+            Act::TimerTest(id) => {
+                let vol = self.st.set.widgets.iter().find(|w| w.id == *id).map_or(0.7, |w| w.volume);
+                crate::sound::chime(vol);
+                return;
+            }
+            Act::NotesCheck(id, line) => return self.notes_check(*id, *line),
+            Act::NotesBody(id) => {
+                let (x, y) = self.ptr.filter(|p| p.0 == sid).map(|p| (p.1 as i32, p.2 as i32)).unwrap_or((zone.x, zone.y));
+                return self.notes_click(*id, x, y);
+            }
+            _ => {}
+        }
         if a == Act::HidePick {
             self.close_popup();
             return self.hide_pick();
@@ -328,6 +343,11 @@ impl App {
                 self.st.niri.act(if up { serde_json::json!({"FocusWorkspaceUp": {}}) } else { serde_json::json!({"FocusWorkspaceDown": {}}) });
             }
             Act::DockItem(i) => self.dock_wheel(i, up),
+            Act::TimerWheel(id) => self.timer_wheel(id, up),
+            Act::NotesBody(id) => {
+                let h = self.surfs.values().find(|s| s.kind == SKind::Widget(id)).map_or(300, |s| s.h);
+                self.notes_scroll(id, up, h - 40);
+            }
             // колонки bluetooth: колесо над колонкой или её строкой листает её
             Act::BtList(_) | Act::BtOpen(_) | Act::BtDev(_) | Act::BtTrust(_) | Act::BtForget(_) => {
                 let mine = match &a {

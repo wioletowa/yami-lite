@@ -114,7 +114,7 @@ fn app_themes(ui: &mut Ui, st: &State, b: R, tw: i32) {
     let s = &st.set;
     let half = (b.w - 20) / 2;
     let mut y = title(ui, b.x, b.y, tw, "программы в цветах палитры");
-    for (i, (id, name, hint)) in crate::recolor::APPS.iter().enumerate() {
+    for (i, (id, name, hint)) in crate::recolor::apps().enumerate() {
         let on = s.theme_apps.iter().any(|a| a == id);
         let x = if i % 2 == 0 { b.x } else { b.x + half + 20 };
         ui.toggle(R::new(x, y, half, 40), name, hint, on, Act::SThemeApp(id));
@@ -122,7 +122,7 @@ fn app_themes(ui: &mut Ui, st: &State, b: R, tw: i32) {
             y += 46;
         }
     }
-    if crate::recolor::APPS.len() % 2 == 1 {
+    if crate::recolor::apps().count() % 2 == 1 {
         y += 46;
     }
     ui.wrap(PX, R::new(b.x, y, b.w, 60), "файл цветов — yami-lite-colors.* рядом с конфигом программы; выключил — строка подключения уходит. Темы, значки и курсоры не ставятся", t.text_faint, 3);
@@ -186,6 +186,13 @@ pub(crate) fn tab_widgets(ui: &mut Ui, st: &State, b: R) {
         }
         "media" => row(ui, &mut y, "эквалайзер", name_of(STYLES, &w.style), "style"),
         _ => {}
+    }
+    if w.kind == "timer" {
+        // громкость сигнала и «прослушать»
+        let v = format!("{:.0}%", w.volume * 100.0);
+        ui.slider(R::new(px, y, pw - 130, 40), "громкость сигнала", w.volume, &v, 20, Act::TimerVol(id));
+        ui.button(R::new(px + pw - 120, y + 12, 120, 26), "прослушать", "play", Tone::Plain, false, true, Act::TimerTest(id));
+        y += 48;
     }
     row(ui, &mut y, "размер", name_of(widgets::sizes_of(&w.kind), &w.size), "size");
     row(ui, &mut y, "цвет", name_of(COLORS, &w.color), "color");
@@ -422,7 +429,9 @@ pub(crate) fn tab_about(ui: &mut Ui, st: &State, b: R) {
     let face = crate::font::px(32);
     ui.text(face, b.x, y, "YAMI-LITE", t.red);
     y += ui.f.line(face) + 4;
-    ui.text_in(PX, R::new(b.x, y, b.w, 20), &format!("yami-lite {}", env!("CARGO_PKG_VERSION")), t.text_dim);
+    let mods = crate::features::list();
+    let mods = if mods.is_empty() { crate::i18n::tr("только ядро").to_string() } else { mods.join(", ") };
+    ui.text_in(PX, R::new(b.x, y, b.w, 20), &format!("yami-lite {} · {}", env!("CARGO_PKG_VERSION"), mods), t.text_dim);
     y += 34;
     let up = st.started.elapsed().as_secs();
     let rows = [

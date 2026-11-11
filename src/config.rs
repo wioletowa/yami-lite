@@ -36,6 +36,8 @@ pub struct Widget {
     pub seconds: bool,
     pub date: bool,
     pub text: String,
+    /// таймер: громкость сигнала 0..1
+    pub volume: f32,
 }
 
 impl Default for Widget {
@@ -56,6 +58,7 @@ impl Default for Widget {
             seconds: true,
             date: true,
             text: String::new(),
+            volume: 0.7,
         }
     }
 }
@@ -566,7 +569,8 @@ impl Settings {
         self.glass = self.glass.clamp(0.15, 1.0);
         // модули, которых больше нет (лаунчер, «стол», профиль, погода, скрипты)
         for l in [&mut self.bar_left, &mut self.bar_center, &mut self.bar_right] {
-            l.retain(|m| ALL_MODULES.iter().any(|(id, _)| id == m));
+            // модули, которых нет в каталоге или не собранных (features.rs), — убрать
+            l.retain(|m| ALL_MODULES.iter().any(|(id, _)| id == m) && crate::features::module_on(m));
         }
         self.widgets.retain(|w| crate::widgets::KINDS.iter().any(|(k, _)| *k == w.kind));
         if self.bar_center_align != "after-left" {
@@ -598,8 +602,8 @@ impl Settings {
         if self.temp_style != "compact" {
             self.temp_style = "full".into();
         }
-        self.theme_apps.retain(|a| crate::recolor::APPS.iter().any(|t| t.0 == a));
-        self.theme_apps.sort_by_key(|a| crate::recolor::APPS.iter().position(|t| t.0 == a));
+        self.theme_apps.retain(|a| crate::recolor::apps().any(|t| t.0 == a));
+        self.theme_apps.sort_by_key(|a| crate::recolor::apps().position(|t| t.0 == a));
         self.theme_apps.dedup();
         if !matches!(self.tray_mode.as_str(), "arrow" | "hybrid") {
             self.tray_mode = "icons".into();

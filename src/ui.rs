@@ -89,6 +89,16 @@ pub enum Act {
     DeskBg,
     /// закрыть окно «свойства»
     InfoClose,
+    /// таймер: колесо над кольцом, запустить/пауза, сбросить
+    TimerWheel(u32),
+    TimerGo(u32),
+    TimerReset(u32),
+    /// настройки виджета-таймера: громкость сигнала (ползунок) и «прослушать»
+    TimerVol(u32),
+    TimerTest(u32),
+    /// заметки: тело (двойной щелчок — правка, колесо — листать) и квадратик дела в строке
+    NotesBody(u32),
+    NotesCheck(u32, usize),
     /// приватность окон: выбрать окно прицелом, вернуть приложение в трансляцию
     HidePick,
     HideShow(String),
@@ -183,7 +193,7 @@ pub enum Act {
 
 impl Act {
     pub fn is_drag(&self) -> bool {
-        matches!(self, Act::SSlider(..) | Act::CtlVol | Act::CtlBright | Act::FanLevel | Act::VolSlider | Act::MicSlider | Act::AppVol(_) | Act::MediaSeek | Act::MDrag | Act::WDrag(_) | Act::SModDrag(..) | Act::SModNew(_) | Act::DeskItem(_) | Act::DeskBg)
+        matches!(self, Act::SSlider(..) | Act::CtlVol | Act::CtlBright | Act::FanLevel | Act::VolSlider | Act::MicSlider | Act::AppVol(_) | Act::MediaSeek | Act::MDrag | Act::WDrag(_) | Act::SModDrag(..) | Act::SModNew(_) | Act::DeskItem(_) | Act::DeskBg | Act::TimerVol(_))
     }
 }
 

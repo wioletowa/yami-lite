@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=yami-lite
+GenericName=Desktop shell
+GenericName[ru]=Шелл рабочего стола
+Comment=Pixel shell for niri: starts the shell, or opens its settings
+Comment[ru]=Пиксельный шелл для niri: запуск, а если уже работает — настройки
+Exec=yami-lite
+Icon=yami-lite
+Terminal=false
+Categories=Settings;DesktopSettings;
+StartupWMClass=yami-lite-settings

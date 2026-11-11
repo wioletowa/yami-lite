@@ -200,6 +200,8 @@ impl KeyboardHandler for App {
         }
         if let Some(sid) = sid {
             if let Some(SKind::Widget(_)) = self.surf_kind(sid) {
+                // фокус ушёл с виджета — правка заметки кончилась
+                self.notes_leave();
                 self.st.field_focus = None;
                 self.mark(sid);
             }
