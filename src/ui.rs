@@ -68,6 +68,8 @@ pub enum Act {
     ClipSettings,
     ClipList,
     ClipField,
+    /// полоса прокрутки буфера: щёлкнуть или тянуть
+    ClipBar,
     /// модуль бара во вкладке «бар»: тащить (сторона, индекс), новый, убрать
     SModDrag(usize, usize),
     SModNew(String),
@@ -208,7 +210,7 @@ pub enum Act {
 
 impl Act {
     pub fn is_drag(&self) -> bool {
-        matches!(self, Act::SSlider(..) | Act::CtlVol | Act::CtlBright | Act::FanLevel | Act::VolSlider | Act::MicSlider | Act::AppVol(_) | Act::MediaSeek | Act::MDrag | Act::WDrag(_) | Act::SModDrag(..) | Act::SModNew(_) | Act::DeskItem(_) | Act::DeskBg | Act::TimerVol(_))
+        matches!(self, Act::SSlider(..) | Act::CtlVol | Act::CtlBright | Act::FanLevel | Act::VolSlider | Act::MicSlider | Act::AppVol(_) | Act::MediaSeek | Act::MDrag | Act::WDrag(_) | Act::SModDrag(..) | Act::SModNew(_) | Act::DeskItem(_) | Act::DeskBg | Act::TimerVol(_) | Act::ClipBar)
     }
 }
 

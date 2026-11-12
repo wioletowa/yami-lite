@@ -253,6 +253,10 @@ impl App {
                 }
                 self.settings_changed();
             }
+            Act::ClipBar => {
+                self.clip_bar((y - zone.y as f64) / zone.h.max(1) as f64);
+                return;
+            }
             Act::VolSlider => audio::set_volume(frac as f64 * 1.0),
             Act::MicSlider => audio::set_mic(frac as f64),
             Act::AppVol(i) => audio::set_stream(i, frac as f64),

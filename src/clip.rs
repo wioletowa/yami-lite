@@ -95,6 +95,19 @@ pub fn card_h(it: &Item) -> i32 {
     8 + 20 + 6 + body + 10
 }
 
+/// самая нижняя первая карточка: с неё список доходит до конца без пустоты внизу
+fn last_top(c: &Clip) -> usize {
+    let lh = c.list_h.get().max(200);
+    let mut h = -8;
+    for (i, id) in c.view.iter().enumerate().rev() {
+        h += c.store.get(*id).map_or(0, card_h) + 8;
+        if h > lh {
+            return i + 1;
+        }
+    }
+    0
+}
+
 fn kind_name(k: Kind) -> (&'static str, &'static str) {
     match k {
         Kind::Text => ("text", "текст"),
@@ -196,14 +209,16 @@ pub fn draw(ui: &mut Ui, st: &State, w: i32, h: i32) {
     }
     ui.cv.pop_clip();
     c.shown.set(shown.max(1));
-    // полоса прокрутки: по записям
-    if c.view.len() > shown {
+    // полоса прокрутки по записям: щёлкнуть — туда, тянуть — листать
+    let last = last_top(c);
+    if last > 0 {
         let tr = R::new(list.right() + 4, list.y, 4, list.h);
+        let hov = ui.hover(R::new(tr.x - 4, tr.y, 12, tr.h));
         ui.cv.fill(tr, t.border.fade(0.5));
-        let th = (tr.h * shown as i32 / c.view.len() as i32).max(14);
-        let max = c.view.len().saturating_sub(shown).max(1);
-        let ty = tr.y + (tr.h - th) * c.top.min(max) as i32 / max as i32;
-        ui.cv.fill(R::new(tr.x, ty, 4, th), t.red);
+        let th = (tr.h * shown as i32 / c.view.len().max(1) as i32).max(14);
+        let ty = tr.y + (tr.h - th) * c.top.min(last) as i32 / last as i32;
+        ui.cv.fill(R::new(tr.x, ty, 4, th), if hov { t.ember } else { t.red });
+        ui.zone(R::new(tr.x - 4, tr.y, 12, tr.h), Act::ClipBar, Cur::Pointer);
     }
 }
 
@@ -517,6 +532,8 @@ impl App {
             }
             c.top = c.top.max(first);
         }
+        // записей стало меньше (удалили, нашлось меньше): без пустоты внизу
+        c.top = c.top.min(last_top(c));
         self.clip_want();
         self.dirty_panels();
     }
@@ -663,10 +680,26 @@ impl App {
     }
 
     pub fn clip_scroll(&mut self, d: i32) {
+        let top = self.st.clip.top as i32 + d;
+        self.clip_scroll_to(top.max(0) as usize);
+    }
+
+    /// полоса прокрутки: доля высоты, куда щёлкнули или дотянули
+    pub fn clip_bar(&mut self, f: f64) {
+        let last = last_top(&self.st.clip);
+        self.clip_scroll_to((f.clamp(0.0, 1.0) * last as f64).round() as usize);
+    }
+
+    fn clip_scroll_to(&mut self, top: usize) {
         let c = &mut self.st.clip;
-        let max = c.view.len().saturating_sub(c.shown.get());
-        c.top = (c.top as i32 + d).clamp(0, max as i32) as usize;
-        c.cur = c.cur.clamp(c.top, (c.top + c.shown.get()).saturating_sub(1).min(c.view.len().saturating_sub(1)));
+        let top = top.min(last_top(c));
+        if top == c.top {
+            return;
+        }
+        c.top = top;
+        // карточка под клавиатурой — среди видимых
+        let shown = c.shown.get().max(1);
+        c.cur = c.cur.clamp(c.top, (c.top + shown).saturating_sub(1).min(c.view.len().saturating_sub(1)));
         self.clip_want();
         self.dirty_panels();
     }

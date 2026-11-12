@@ -98,7 +98,7 @@ impl App {
                 self.close_modal();
                 self.open_settings_tab("clip");
             }
-            Act::ClipList | Act::ClipField => {}
+            Act::ClipList | Act::ClipField | Act::ClipBar => {}
             Act::WallsBack => self.walls_back(),
             Act::WallsUp => self.walls_up(),
             Act::WallsHere => self.walls_here(),
@@ -349,7 +349,7 @@ impl App {
                 self.dirty(&SKind::Bar);
             }
             Act::WallPick(_) | Act::WallsScroll => self.walls_scroll(if up { -1 } else { 1 }),
-            Act::ClipPick(_) | Act::ClipList => self.clip_scroll(if up { -1 } else { 1 }),
+            Act::ClipPick(_) | Act::ClipList | Act::ClipBar => self.clip_scroll(if up { -1 } else { 1 }),
             Act::DropPick(_) | Act::DropScroll => self.drop_scroll(if up { -1 } else { 1 }),
             Act::SFont(_) | Act::SFontScroll => self.font_scroll(if up { -1 } else { 1 }),
             Act::MicSlider | Act::MicMute => {

@@ -1,6 +1,6 @@
 # yami-lite
 
-Пиксельный шелл для niri в одном бинарнике, основан на [yami](https://github.com/Trendorin/yami).
+Пиксельный шелл для niri, основан на [yami](https://github.com/Trendorin/yami).
 
 ## Установка
 
