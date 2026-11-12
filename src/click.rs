@@ -241,6 +241,8 @@ impl App {
                 net::bt_toggle_dev(d, self.tx.clone(), self.st.bt.clone());
             }
             Act::BtOpen(path) => {
+                // свернул — список остаётся там, куда его докрутило раскрытое
+                self.st.bt_scroll = self.st.bt_shown.get();
                 self.st.bt_open = if self.st.bt_open == path { String::new() } else { path };
             }
             Act::BtTrust(path) => {
@@ -248,7 +250,10 @@ impl App {
                 let on = !d.trusted;
                 net::bt_trust(d, on, self.tx.clone());
             }
-            Act::BtList(_) => self.st.bt_open.clear(),
+            Act::BtList(_) => {
+                self.st.bt_scroll = self.st.bt_shown.get();
+                self.st.bt_open.clear();
+            }
             Act::BtConnectOn => {
                 self.st.set.bt_connect_on = !self.st.set.bt_connect_on;
                 self.settings_changed();
@@ -361,7 +366,8 @@ impl App {
                 };
                 let k = if mine { 0 } else { 1 };
                 let max = self.st.bt_scroll_max.get()[k];
-                self.st.bt_scroll[k] = (self.st.bt_scroll[k] + if up { -1 } else { 1 }).clamp(0, max);
+                // от того, что видно: раскрытое могло докрутить список в кадре
+                self.st.bt_scroll[k] = (self.st.bt_shown.get()[k] + if up { -1 } else { 1 }).clamp(0, max);
                 self.dirty(&SKind::Popup);
             }
             Act::CtlTab(_) => {

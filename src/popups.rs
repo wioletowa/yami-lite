@@ -707,7 +707,15 @@ fn bt(ui: &mut Ui, st: &State, b: R) {
         let fit = ((col.bottom() - top + 4) / 34).max(1);
         let extra = list.iter().any(|d| st.bt_open == d.path) as i32;
         max[k] = (list.len() as i32 + extra - fit).max(0);
-        let skip = st.bt_scroll[k].clamp(0, max[k]) as usize;
+        let mut skip = st.bt_scroll[k].clamp(0, max[k]);
+        // раскрытое не должно уйти за низ колонки: оно занимает две строки — докрутить, чтобы
+        // влезло целиком (и не выше его самого)
+        if let Some(i) = list.iter().position(|d| st.bt_open == d.path) {
+            let i = i as i32;
+            skip = skip.max(i + 2 - fit).min(i).clamp(0, max[k]);
+        }
+        shown[k] = skip;
+        let skip = skip as usize;
         let mut y = top;
         let rw = if max[k] > 0 { col.w - 8 } else { col.w };
         for d in list.iter().skip(skip) {
@@ -729,6 +737,7 @@ fn bt(ui: &mut Ui, st: &State, b: R) {
         }
     }
     st.bt_scroll_max.set(max);
+    st.bt_shown.set(shown);
 }
 
 /// строка устройства; раскрытая — с кнопками под ней

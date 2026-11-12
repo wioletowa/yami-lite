@@ -293,6 +293,8 @@ pub struct State {
     /// вкладка bluetooth: прокрутка колонок (мои, рядом) в строках и докуда можно (с прошлого кадра)
     pub bt_scroll: [i32; 2],
     pub bt_scroll_max: std::cell::Cell<[i32; 2]>,
+    /// сколько строк пропущено на деле: раскрытое у конца списка докручивается в кадре
+    pub bt_shown: std::cell::Cell<[i32; 2]>,
     /// вкладка «система»: топ процессов (опрашивается, пока она открыта)
     pub procs: crate::sys::Procs,
     /// рабочий стол (desk.rs)
@@ -539,6 +541,7 @@ impl State {
             bt_open: String::new(),
             bt_scroll: [0, 0],
             bt_scroll_max: Default::default(),
+            bt_shown: Default::default(),
             procs: Default::default(),
             desk: Default::default(),
             timers: crate::timer::load(),
