@@ -32,6 +32,11 @@ impl App {
             }
             Act::SNum(k, d) => {
                 s.step_num(k, *d);
+                if *k == "clip_limit" {
+                    let lim = s.num("clip_limit") as usize;
+                    self.st.clip.store.trim(lim);
+                    self.st.clip.store.save();
+                }
                 self.settings_changed();
                 // отступы уведомлений и OSD: поверхность создаётся заново на новом месте
                 match *k {
@@ -109,7 +114,11 @@ impl App {
                     "agent_notif" => s.agent_notif = !s.agent_notif,
                     "agent_tray" => s.agent_tray = !s.agent_tray,
                     "media_art_net" => s.media_art_net = !s.media_art_net,
+                    "clip_private" => s.clip_private = !s.clip_private,
                     _ => {}
+                }
+                if *k == "clip_private" {
+                    self.clip_sync_private();
                 }
                 self.settings_changed();
             }

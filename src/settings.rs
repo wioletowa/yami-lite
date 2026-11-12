@@ -59,6 +59,7 @@ pub const GROUPS: &[(&str, &[Tab])] = &[
         &[
             tab("system", "система", "gear", tab_system),
             tab("notif", "уведомления", "bell", tab_notif),
+            tab("clip", "буфер", "copy", crate::clip::tab),
             tab("games", "игры", "play", crate::games::tab),
             tab("about", "о шелле", "about", tab_about),
         ],
@@ -72,7 +73,11 @@ pub fn tabs() -> impl Iterator<Item = &'static Tab> {
 
 /// вкладка модуля, что не собран (features.rs), — не показывать
 pub fn tab_on(id: &str) -> bool {
-    id != "desk" || crate::features::DESKTOP || crate::features::VISUALIZER
+    match id {
+        "desk" => crate::features::DESKTOP || crate::features::VISUALIZER,
+        "clip" => crate::features::CLIPBOARD,
+        _ => true,
+    }
 }
 
 /// вкладка по ключу (из IPC)

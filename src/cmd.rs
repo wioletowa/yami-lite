@@ -99,6 +99,7 @@ fn help_msg(y: &Sty) {
         ("settings [tab]", "настройки (на вкладке)", "settings (on a tab)"),
         ("power | lock", "питание / заблокировать", "power menu / lock"),
         ("hide", "скрыть окно из трансляции (прицел niri)", "hide a window from screencasts (niri picker)"),
+        ("clip [private on|off|toggle | clear]", "буфер обмена / приват / очистить", "clipboard history / private mode / clear"),
         (&format!("popup {}", crate::popups::KINDS.join("|")), "всплывашка бара", "a bar popup"),
         ("calculator", "калькулятор поверх всего, цифры сразу с клавиатуры", "calculator on top of everything, type numbers right away"),
         ("bar | edit", "бар / правка виджетов", "bar / edit widgets"),
@@ -120,6 +121,15 @@ pub fn msg_ok(cmd: &str) -> bool {
     let one = |w: &mut std::str::SplitWhitespace| w.next().is_none();
     match head {
         "hide" => crate::features::PRIVACY && one(&mut w),
+        "clip" => {
+            crate::features::CLIPBOARD
+                && match w.next() {
+                    None => true,
+                    Some("clear") => one(&mut w),
+                    Some("private") => w.next().is_none_or(|a| matches!(a, "on" | "off" | "toggle")) && one(&mut w),
+                    _ => false,
+                }
+        }
         "power" | "lock" | "bar" | "edit" | "reload" | "quit" | "ping" | "restart" | "night" | "walls" | "calculator" => one(&mut w),
         "settings" => w.next().is_none_or(|t| crate::settings::find(t).is_some()) && one(&mut w),
         "popup" => w.next().is_some_and(|k| crate::popups::KINDS.contains(&k) && crate::features::popup_on(k)) && one(&mut w),

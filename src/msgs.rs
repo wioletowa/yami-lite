@@ -154,6 +154,9 @@ impl App {
             Msg::DeskInfo(s) => self.desk_info(s),
             Msg::PrepareSleep => self.prepare_sleep(),
             Msg::HidePicked(app) => self.hide_toggle(app),
+            Msg::Clip(e) => self.clip_event(e),
+            Msg::ClipThumb(b, img) => self.clip_thumb(b, img),
+            Msg::ClipFiles(id, v) => self.clip_files(id, v),
             Msg::IconsRecolored => {
                 self.res.icons.drop_cache();
                 self.dirty_all();

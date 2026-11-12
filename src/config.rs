@@ -316,6 +316,12 @@ pub struct Settings {
     pub media_viz: String,
     /// свои имена звуковых устройств: имя PipeWire (`pactl list sinks`) → как показывать
     pub audio_names: std::collections::BTreeMap<String, String>,
+    /// буфер обмена: right — справа во всю высоту, center — окном по центру
+    pub clip_pos: String,
+    /// сколько незакреплённых записей хранить
+    pub clip_limit: i32,
+    /// приват: копии не записываются, превью мозаикой
+    pub clip_private: bool,
 
 }
 
@@ -390,6 +396,7 @@ pub const NUMS: &[(&str, i32, i32, i32)] = &[
     ("wall_fade_cell", 2, 48, 2),
     ("edge_viz_cell", 2, 16, 1),
     ("edge_viz_steps", 1, 12, 1),
+    ("clip_limit", 10, 1000, 10),
 ];
 
 impl Default for Settings {
@@ -528,6 +535,9 @@ impl Default for Settings {
             media_art_net: true,
             media_viz: "bars".into(),
             audio_names: Default::default(),
+            clip_pos: "right".into(),
+            clip_limit: 100,
+            clip_private: false,
         }
     }
 }
@@ -710,6 +720,7 @@ impl Settings {
             "wall_fade_cell" => self.wall_fade_cell,
             "edge_viz_cell" => self.edge_viz_cell,
             "edge_viz_steps" => self.edge_viz_steps,
+            "clip_limit" => self.clip_limit,
             _ => 0,
         };
         NUMS.iter().find(|n| n.0 == k).map(|n| v.clamp(n.1, n.2)).unwrap_or(v)
@@ -740,6 +751,7 @@ impl Settings {
             "wall_fade_cell" => self.wall_fade_cell = v,
             "edge_viz_cell" => self.edge_viz_cell = v,
             "edge_viz_steps" => self.edge_viz_steps = v,
+            "clip_limit" => self.clip_limit = v,
             _ => {}
         }
     }

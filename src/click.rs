@@ -25,7 +25,7 @@ impl App {
         if kind == Some(SKind::Catcher) {
             self.close_popup();
             self.close_menu();
-            if self.st.walls_anchored {
+            if self.st.modal_anchored {
                 self.close_modal();
             }
             return;
@@ -88,6 +88,17 @@ impl App {
             Act::CloseModal => self.close_modal(),
             // ── выбор обоев ─────────────────────────────────────────────────
             Act::WallPick(i) => self.walls_pick(i),
+            // ── буфер обмена ────────────────────────────────────────────────
+            Act::ClipPick(id) => self.clip_pick(id),
+            Act::ClipPin(id) => self.clip_pin(id),
+            Act::ClipDel(id) => self.clip_del(id),
+            Act::ClipPrivate => self.clip_private(None),
+            Act::ClipClear => self.clip_clear(),
+            Act::ClipSettings => {
+                self.close_modal();
+                self.open_settings_tab("clip");
+            }
+            Act::ClipList | Act::ClipField => {}
             Act::WallsBack => self.walls_back(),
             Act::WallsUp => self.walls_up(),
             Act::WallsHere => self.walls_here(),
@@ -338,6 +349,7 @@ impl App {
                 self.dirty(&SKind::Bar);
             }
             Act::WallPick(_) | Act::WallsScroll => self.walls_scroll(if up { -1 } else { 1 }),
+            Act::ClipPick(_) | Act::ClipList => self.clip_scroll(if up { -1 } else { 1 }),
             Act::DropPick(_) | Act::DropScroll => self.drop_scroll(if up { -1 } else { 1 }),
             Act::SFont(_) | Act::SFontScroll => self.font_scroll(if up { -1 } else { 1 }),
             Act::MicSlider | Act::MicMute => {

@@ -34,6 +34,7 @@ cd yami-lite
 | `--recolor` | `recolor` | значки папок цвета акцента (Papirus, Neuwaita) |
 | `--privacy` | `privacy` | Приватность окон при демонстрации экрана |
 | `--visualizer` | `visualizer` | пиксельный визуализатор звука по краям экрана |
+| `--clipboard` | `clipboard` | история буфера обмена: поиск, закрепление, приват |
 
 Что собрано — `yami-lite version` и настройки → «о шелле».
 
@@ -46,6 +47,7 @@ binds {
     Mod+S      { spawn "yami-lite" "msg" "settings"; }
     Mod+Escape { spawn "yami-lite" "msg" "power"; }
     Mod+L      { spawn "yami-lite" "msg" "lock"; }
+    Mod+V      { spawn "yami-lite" "msg" "clip"; }   // с --clipboard
 }
 ```
 

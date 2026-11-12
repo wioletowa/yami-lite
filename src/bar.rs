@@ -657,7 +657,7 @@ fn module(ui: &mut Ui, st: &State, out: &str, m: &str, x: i32, measure: bool) ->
             }
             if !measure {
                 let r = R::new(x - 2, 0, 18, H - 1);
-                let open = if m == "walls" { st.modal == Some(crate::app::Modal::Walls) && st.walls_anchored } else { st.popup_is("wallhaven") };
+                let open = if m == "walls" { st.modal == Some(crate::app::Modal::Walls) && st.modal_anchored } else { st.popup_is("wallhaven") };
                 let c = if open { t.red } else if ui.hover(r) { t.text_hi } else { t.text_dim };
                 ui.cv.icon(if m == "walls" { "image" } else { "cloud" }, x, cy - 7, 2, c);
                 ui.zone(r, if m == "walls" { Act::BarWalls } else { Act::Popup("wallhaven") }, Cur::Pointer);

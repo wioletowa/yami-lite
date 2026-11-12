@@ -10,6 +10,9 @@ use smithay_client_toolkit::shell::wlr_layer::{Anchor, KeyboardInteractivity, La
 impl App {
     // ── модальные панели: питание, ответ, выбор обоев ───────────────────────
     pub fn toggle_modal(&mut self, m: Modal) {
+        if m == Modal::Clip {
+            return self.clip_toggle();
+        }
         if self.st.locked {
             return;
         }
@@ -22,18 +25,19 @@ impl App {
         let (w, h) = match m {
             Modal::Power => crate::power::SIZE,
             Modal::Reply => crate::reply::SIZE,
-            Modal::Walls => crate::walls::SIZE,
+            Modal::Walls | Modal::Clip => crate::walls::SIZE,
         };
         self.st.modal = Some(m);
         match m {
             Modal::Power => self.st.power_cur = 0,
-            Modal::Reply | Modal::Walls => {}
+            Modal::Reply | Modal::Walls | Modal::Clip => {}
         }
         self.mk(SKind::Dim, &out, Layer::Overlay, "yami-dim", Anchor::all(), (0, 0), (0, 0, 0, 0), -1, KeyboardInteractivity::None);
         self.mk(SKind::Modal, &out, Layer::Overlay, match m {
             Modal::Power => "yami-power",
             Modal::Reply => "yami-reply",
             Modal::Walls => "yami-walls",
+            Modal::Clip => "yami-clip",
         }, Anchor::empty(), (w, h + 12), (0, 0, 0, 0), -1, KeyboardInteractivity::Exclusive);
     }
 
@@ -65,7 +69,10 @@ impl App {
         if self.st.modal == Some(Modal::Walls) {
             self.walls_free();
         }
-        if std::mem::take(&mut self.st.walls_anchored) && self.st.menu.is_none() && self.st.popup.is_none() {
+        if self.st.modal == Some(Modal::Clip) {
+            self.clip_closed();
+        }
+        if std::mem::take(&mut self.st.modal_anchored) && self.st.menu.is_none() && self.st.popup.is_none() {
             self.close_kind(&SKind::Catcher);
         }
         // код выбора обоев велик, а нужен изредка: через полминуты — из памяти. После

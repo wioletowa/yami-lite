@@ -53,6 +53,8 @@ pub enum Modal {
     Reply,
     /// выбор обоев (walls.rs)
     Walls,
+    /// буфер обмена (clip.rs)
+    Clip,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -195,6 +197,11 @@ pub enum Msg {
     IconsRecolored,
     /// прицелом niri выбрали окно: app-id (hide.rs)
     HidePicked(String),
+    /// буфер обмена (clipwl.rs): копия, выбор опустел, нить умерла
+    Clip(crate::clipwl::Ev),
+    /// миниатюра картинки из истории (имя в blobs) и сведения о файлах записи
+    ClipThumb(String, Option<crate::gfx::Img>),
+    ClipFiles(u64, Vec<crate::clip::FileInfo>),
 }
 
 pub struct Res {
@@ -246,8 +253,9 @@ pub struct State {
     pub edit_reopen: bool,
     /// окно настроек открыто (бар подсвечивает шестерёнку)
     pub settings_shown: bool,
-    /// выбор обоев открыт из модуля бара: под баром у курсора, без затемнения (закрывается ловцом)
-    pub walls_anchored: bool,
+    /// окно без затемнения, закрывается ловцом: выбор обоев из модуля бара (под баром у курсора),
+    /// буфер обмена у правого края
+    pub modal_anchored: bool,
     pub notifs: notif::Notifs,
     pub osd: Option<(&'static str, Instant)>,
     pub leds: crate::leds::Leds,
@@ -367,6 +375,8 @@ pub struct State {
     pub ws_anim: std::cell::Cell<(u64, u64, Instant)>,
     /// выбор обоев: папка, клетки, миниатюры видимых строк
     pub walls: crate::walls::Walls,
+    /// буфер обмена: история, запрос, миниатюры (clip.rs)
+    pub clip: crate::clip::Clip,
 }
 
 pub struct Press {
@@ -509,7 +519,7 @@ impl State {
             snap_cross: (false, false),
             edit_reopen: false,
             settings_shown: false,
-            walls_anchored: false,
+            modal_anchored: false,
             notifs: notif::Notifs::default(),
             osd: None,
             leds: Default::default(),
@@ -591,6 +601,7 @@ impl State {
             trash_full: false,
             ws_anim: std::cell::Cell::new((0, 0, Instant::now())),
             walls: Default::default(),
+            clip: Default::default(),
             set,
         }
     }
@@ -719,6 +730,9 @@ pub fn run() {
     app.sleep_ack = Some(crate::sleep::spawn(tx.clone()));
     if crate::features::PRIVACY {
         app.hide_init();
+    }
+    if crate::features::CLIPBOARD {
+        app.clip_init();
     }
     crate::leds::spawn(tx.clone());
     crate::camera::spawn(tx.clone());

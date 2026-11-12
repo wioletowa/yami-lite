@@ -95,6 +95,19 @@ impl crate::app::App {
             "lock" => self.lock_now(),
             // приватность окна: прицел niri, щелчок прячет приложение из трансляции (или возвращает)
             "hide" if crate::features::PRIVACY => self.hide_pick(),
+            // буфер обмена: панель; private on|off|toggle; clear — всё незакреплённое
+            "clip" if crate::features::CLIPBOARD => self.clip_toggle(),
+            c if crate::features::CLIPBOARD && c.starts_with("clip ") => match c[5..].trim() {
+                "private" | "private toggle" => self.clip_private(None),
+                "private on" => self.clip_private(Some(true)),
+                "private off" => self.clip_private(Some(false)),
+                "clear" => {
+                    self.st.clip.store.clear(false);
+                    self.st.clip.store.save();
+                    self.dirty_panels();
+                }
+                _ => {}
+            },
             "bar" => self.toggle_bar(),
             "edit" => {
                 self.close_all();

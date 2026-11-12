@@ -476,7 +476,7 @@ impl App {
         let low = self.bar_reserve_bottom(out);
         let (anchor, margin) = if low > 0 { (Anchor::BOTTOM | Anchor::LEFT, (0, 0, low + 6, x)) } else { (Anchor::TOP | Anchor::LEFT, (self.bar_bottom(out) + 6, 0, 0, x)) };
         self.st.modal = Some(Modal::Walls);
-        self.st.walls_anchored = true;
+        self.st.modal_anchored = true;
         self.mk_catcher(out);
         self.mk(SKind::Modal, out, Layer::Overlay, "yami-walls", anchor, (w, h + 12), margin, -1, KeyboardInteractivity::Exclusive);
         self.walls_start(false, false, None);

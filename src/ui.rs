@@ -58,6 +58,16 @@ pub enum Act {
     WallsUp,
     WallsHere,
     WallsSort,
+    /// буфер обмена (clip.rs): карточка (копировать), закрепить, удалить, приват, очистить,
+    /// настройки, колесо над списком, поле поиска
+    ClipPick(u64),
+    ClipPin(u64),
+    ClipDel(u64),
+    ClipPrivate,
+    ClipClear,
+    ClipSettings,
+    ClipList,
+    ClipField,
     /// модуль бара во вкладке «бар»: тащить (сторона, индекс), новый, убрать
     SModDrag(usize, usize),
     SModNew(String),

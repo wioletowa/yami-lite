@@ -154,7 +154,7 @@ impl App {
                         Some(SKind::Catcher) => {
                             self.close_popup();
                             self.close_menu();
-                            if self.st.walls_anchored {
+                            if self.st.modal_anchored {
                                 self.close_modal();
                             }
                         }
@@ -379,6 +379,7 @@ impl App {
                 Some(Modal::Power) => self.power_key(e),
                 Some(Modal::Reply) => self.reply_key(e),
                 Some(Modal::Walls) => self.walls_key(e),
+                Some(Modal::Clip) => self.clip_key(e),
                 None => {}
             },
             Some(SKind::Settings) => self.settings_key(e),

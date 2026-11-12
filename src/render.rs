@@ -161,6 +161,7 @@ impl App {
                     Some(Modal::Power) => crate::power::draw(&mut ui, st, w, h),
                     Some(Modal::Reply) => crate::reply::draw(&mut ui, st, w, h),
                     Some(Modal::Walls) => crate::walls::draw(&mut ui, st, w, h),
+                    Some(Modal::Clip) => crate::clip::draw(&mut ui, st, w, h),
                     None => {}
                 },
                 SKind::Settings => crate::settings::draw(&mut ui, st, w, h),

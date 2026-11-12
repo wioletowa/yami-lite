@@ -1443,6 +1443,7 @@ dependencies = [
  "smithay-client-toolkit",
  "wayland-client",
  "wayland-protocols",
+ "wayland-protocols-wlr",
  "yami-px",
  "zbus",
 ]

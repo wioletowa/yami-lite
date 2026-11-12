@@ -20,7 +20,7 @@ const ROW: i32 = 26;
 
 /// всего два варианта: кнопка просто переключает, без списка
 pub fn pair(key: &str) -> bool {
-    matches!(key, "bar_center_align" | "bar_pos" | "ws_style" | "temp_style" | "wall_fit")
+    matches!(key, "bar_center_align" | "bar_pos" | "clip_pos" | "ws_style" | "temp_style" | "wall_fit")
 }
 const SHOWN: usize = 10;
 
@@ -52,6 +52,7 @@ pub fn spec(st: &State, key: &str) -> Option<(Opts, String)> {
         "dock_anim" => (list(&[("grow", "рост и подъём"), ("wave", "волна — соседи тоже растут"), ("lift", "подъём без роста"), ("none", "нет")]), s.dock_anim.clone()),
         "bar_center_align" => (list(&[("center", "по центру"), ("after-left", "за началом")]), s.bar_center_align.clone()),
         "bar_pos" => (list(&[("top", "сверху"), ("bottom", "снизу")]), s.bar_pos.clone()),
+        "clip_pos" => (list(&[("right", "справа во всю высоту"), ("center", "окном по центру")]), s.clip_pos.clone()),
         "wall_fit" => (list(crate::wall::FITS), s.wall_fit.clone()),
         "wall_tone" => (list(crate::wall::TONES), s.wall_tone.clone()),
         "wall_fade" => (list(crate::wall::FADES), s.wall_fade.clone()),
@@ -161,6 +162,7 @@ impl App {
             "dock_anim" => s.dock_anim = v,
             "bar_center_align" => s.bar_center_align = v,
             "bar_pos" => s.bar_pos = v,
+            "clip_pos" => s.clip_pos = v,
             "wall_fit" => s.wall_fit = v,
             "wall_tone" => s.wall_tone = v,
             "wall_fade" => s.wall_fade = v,
