@@ -48,6 +48,9 @@ impl App {
             self.flush();
         }
         self.st.game.game = game;
+        if was != full {
+            self.viz_sync();
+        }
     }
 
     /// уведомления сейчас только в историю: «не беспокоить», игра на весь экран или показ экрана

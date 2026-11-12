@@ -15,6 +15,7 @@ yami-lite installer
   --desktop     desktop icons from ~/Desktop, drag and drop, file clipboard
   --recolor     recolor folder icons to the accent (Papirus, Neuwaita)
   --privacy     hide app windows from screencasts (bar lock)
+  --visualizer  pixel sound visualizer along the screen edges
   --all         every module above
 
   --prefix DIR  install into DIR (default ~/.local/bin)
@@ -35,6 +36,7 @@ while [ $# -gt 0 ]; do
         --desktop) add desktop ;;
         --recolor) add recolor ;;
         --privacy) add privacy ;;
+        --visualizer) add visualizer ;;
         --all) add full ;;
         --prefix) shift; prefix="$1" ;;
         --no-install) install=0 ;;

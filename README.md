@@ -33,6 +33,7 @@ cd yami-lite
 | `--desktop` | `desktop` | рабочий стол |
 | `--recolor` | `recolor` | значки папок цвета акцента (Papirus, Neuwaita) |
 | `--privacy` | `privacy` | Приватность окон при демонстрации экрана |
+| `--visualizer` | `visualizer` | пиксельный визуализатор звука по краям экрана |
 
 Что собрано — `yami-lite version` и настройки → «о шелле».
 
@@ -45,6 +46,19 @@ binds {
     Mod+S      { spawn "yami-lite" "msg" "settings"; }
     Mod+Escape { spawn "yami-lite" "msg" "power"; }
     Mod+L      { spawn "yami-lite" "msg" "lock"; }
+}
+```
+
+С `--visualizer` кайма по краям лежит над обоями, и в обзоре обе остаются на месте во весь экран —
+если пустить их в фон обзора (столы при этом прозрачные):
+
+```kdl
+layout {
+    background-color "transparent"
+}
+layer-rule {
+    match namespace="^yami-(wall|edge)$"
+    place-within-backdrop true
 }
 ```
 

@@ -21,6 +21,7 @@ mod dbus;
 mod dnd;
 mod desk;
 mod dock;
+mod edge;
 mod dropdown;
 mod fonttab;
 mod games;

@@ -80,6 +80,8 @@ pub enum SKind {
     Info,
     Dock,
     DockEdge,
+    /// визуализатор по краям экрана: одна поверхность на монитор, на слое обоев (edge.rs)
+    Edge,
 }
 
 pub struct Surf {
@@ -276,6 +278,10 @@ pub struct State {
     pub themes: Vec<crate::bundle::Card>,
     pub theme_note: String,
     pub viz: Vec<f32>,
+    /// визуализатор по краям: уровни вдоль кольца (edge.rs)
+    pub edge: crate::edge::Edge,
+    /// когда эквалайзеры плеера перерисованы последний раз: спектр идёт 60 fps, им хватит 30
+    pub viz_at: Instant,
     /// куда тянут полосу позиции (доля трека); перемотка — когда отпустят
     pub seek: Option<f32>,
     pub net: net::NetState,
@@ -521,6 +527,8 @@ impl State {
             themes: vec![],
             theme_note: String::new(),
             viz: vec![],
+            edge: Default::default(),
+            viz_at: Instant::now(),
             seek: None,
             net: net::NetState::default(),
             bt: net::BtState::default(),
@@ -951,6 +959,11 @@ impl App {
                 for id in self.find(&SKind::Desk) {
                     self.destroy(id);
                 }
+                // кайма по краям — над обоями: тоже после них (sync_edge ниже)
+                let edges: Vec<u32> = self.surfs.iter().filter(|(_, s)| s.output == n && s.kind == SKind::Edge).map(|(i, _)| *i).collect();
+                for id in edges {
+                    self.destroy(id);
+                }
                 let id = self.mk(SKind::Wall, &n, Layer::Background, "yami-wall", Anchor::all(), (0, 0), (0, 0, 0, 0), -1, KeyboardInteractivity::None);
                 // мышь сквозь обои: щёлкать на них нечего, а вход и выход курсора перерисовывали
                 // бы всю картинку
@@ -964,6 +977,7 @@ impl App {
         self.sync_bar_outputs();
         // монитор сменил размер: ширина бара в процентах — от новой
         self.sync_bar();
+        self.sync_edge();
         self.sync_widgets();
         self.sync_desk();
         self.sync_dock();

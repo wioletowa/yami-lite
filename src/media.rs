@@ -311,9 +311,11 @@ impl App {
         self.st.set.viz_placed() || crate::popups::shows_viz(&self.st)
     }
 
-    /// захват звука для эквалайзера — пока тот где-то виден и музыка играет
+    /// захват звука для эквалайзера — пока тот где-то виден и музыка играет; для каймы по краям —
+    /// всегда, кроме окна на весь экран (она под ним не видна, пока не открыт обзор)
     pub fn viz_sync(&self) {
-        viz_wanted(self.media_visible() && self.st.media.playing());
+        let edge = crate::edge::on(&self.st) && (!self.st.game.fullscreen || self.st.niri.overview);
+        viz_wanted((self.media_visible() && self.st.media.playing()) || edge);
     }
 
     /// поправить показанный плеер и его запись в списке плееров

@@ -76,6 +76,7 @@ impl App {
                     "animations" => s.animations = !s.animations,
                     "anim_close" => s.anim_close = !s.anim_close,
                     "scanlines" => s.scanlines = !s.scanlines,
+                    "edge_viz" => s.edge_viz = !s.edge_viz,
                     "icon_pixel" => s.icon_pixel = !s.icon_pixel,
                     "icon_tint" => s.icon_tint = !s.icon_tint,
                     "bar_float" => s.bar_float = !s.bar_float,

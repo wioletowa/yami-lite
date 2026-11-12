@@ -72,7 +72,7 @@ pub fn tabs() -> impl Iterator<Item = &'static Tab> {
 
 /// вкладка модуля, что не собран (features.rs), — не показывать
 pub fn tab_on(id: &str) -> bool {
-    id != "desk" || crate::features::DESKTOP
+    id != "desk" || crate::features::DESKTOP || crate::features::VISUALIZER
 }
 
 /// вкладка по ключу (из IPC)

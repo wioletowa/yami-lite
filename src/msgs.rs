@@ -11,7 +11,12 @@ impl App {
         match m {
             Msg::Niri(v) => {
                 let layout_only = v.get("WindowLayoutsChanged").is_some();
+                let overview = self.st.niri.overview;
                 let evs = self.st.niri.handle(v);
+                if self.st.niri.overview != overview {
+                    // поверх игры кайма видна только в обзоре: захват звука — тоже
+                    self.viz_sync();
+                }
                 for e in evs {
                     match e {
                         niri::Ev::KbSwitched => self.show_osd("layout"),
@@ -50,14 +55,22 @@ impl App {
             Msg::Viz(v) => {
                 // ~30 раз в секунду: перерисовать только то, где эквалайзер (всплывашка с плеером,
                 // виджет музыки, бар с модулем media), а не все бары и виджеты на всех мониторах
+                // кайма по краям — от любого звука; эквалайзеры плеера — пока он играет
+                let edge = crate::edge::on(&self.st) && self.st.edge.feed(&v, self.st.set.edge_viz_smooth);
                 self.st.viz = v;
                 let (s, pop) = (&self.st.set, crate::popups::shows_viz(&self.st));
-                let bar = s.on_bar("media") && s.media_viz != "off";
-                let ws: Vec<u32> = s.widgets.iter().filter(|w| w.on && w.kind == "media").map(|w| w.id).collect();
+                // эквалайзерам плеера хватит ~30 fps: каждый второй кадр
+                let playing = self.st.media.playing() && self.st.viz_at.elapsed().as_millis() >= 30;
+                if playing {
+                    self.st.viz_at = std::time::Instant::now();
+                }
+                let bar = playing && s.on_bar("media") && s.media_viz != "off";
+                let ws: Vec<u32> = if playing { s.widgets.iter().filter(|w| w.on && w.kind == "media").map(|w| w.id).collect() } else { vec![] };
                 self.dirty_where(|k| match k {
-                    SKind::Popup => pop,
+                    SKind::Popup => pop && playing,
                     SKind::Bar => bar,
                     SKind::Widget(id) => ws.contains(id),
+                    SKind::Edge => edge,
                     _ => false,
                 });
             }

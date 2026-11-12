@@ -317,6 +317,15 @@ impl<'a> Canvas<'a> {
         let v = c.premul();
         self.buf.fill(v);
     }
+    /// clear только в прямоугольнике (координаты буфера): цвет как есть, без смешивания
+    pub fn clear_rect(&mut self, r: R, c: C) {
+        let r = r.inter(&R::new(0, 0, self.w, self.h));
+        let (v, w) = (c.premul(), self.w as usize);
+        for y in r.y..r.y + r.h {
+            let row = y as usize * w;
+            self.buf[row + r.x as usize..row + (r.x + r.w) as usize].fill(v);
+        }
+    }
 
     pub fn push_clip(&mut self, r: R) {
         self.clips.push(self.clip);

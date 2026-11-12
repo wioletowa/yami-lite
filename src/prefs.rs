@@ -34,6 +34,7 @@ impl App {
         self.sync_wall();
         self.setup_idle();
         self.sync_bar_outputs();
+        self.sync_edge();
         self.sync_widgets();
         self.sync_desk();
         self.sync_dock();
@@ -155,6 +156,9 @@ pub fn settings_set_f32(s: &mut Settings, key: &str, v: f32) {
         "dim" => s.dim = (v * 100.0).round() / 100.0,
         "anim_speed" => s.anim_speed = (v * 10.0).round() / 10.0,
         "dock_size" => s.dock_size = ((v / 4.0).round() * 4.0) as i32,
+        "edge_viz_h" => s.edge_viz_h = ((v / 4.0).round() * 4.0) as i32,
+        "edge_viz_alpha" => s.edge_viz_alpha = (v * 100.0).round() / 100.0,
+        "edge_viz_smooth" => s.edge_viz_smooth = (v * 100.0).round() / 100.0,
         "lock_after" => s.lock_after = v.round() as u32,
         "screen_off_after" => s.screen_off_after = v.round() as u32,
         "notif_timeout" => s.notif_timeout = v.round().max(2.0) as u32,
@@ -176,6 +180,9 @@ pub fn settings_get_f32(s: &Settings, key: &str) -> f32 {
         "dim" => s.dim,
         "anim_speed" => s.anim_speed,
         "dock_size" => s.dock_size as f32,
+        "edge_viz_h" => s.edge_viz_h as f32,
+        "edge_viz_alpha" => s.edge_viz_alpha,
+        "edge_viz_smooth" => s.edge_viz_smooth,
         "lock_after" => s.lock_after as f32,
         "screen_off_after" => s.screen_off_after as f32,
         "notif_timeout" => s.notif_timeout as f32,

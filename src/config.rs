@@ -105,6 +105,14 @@ pub struct Settings {
     pub anim_close: bool,
     /// строки развёртки поверх панелей шелла
     pub scanlines: bool,
+    /// визуализатор звука по краям экрана (edge.rs): толщина каймы и размер клетки в пикселях,
+    /// ступеней цвета от края к верхушке, прозрачность у края, плавность спада
+    pub edge_viz: bool,
+    pub edge_viz_h: i32,
+    pub edge_viz_cell: i32,
+    pub edge_viz_steps: i32,
+    pub edge_viz_alpha: f32,
+    pub edge_viz_smooth: f32,
     /// значки программ пиксельными: чистая сетка 16–30 клеток (yami-px pixelate)
     pub icon_pixel: bool,
     /// пиксельные значки — в 4 тонах палитры, а не в своих цветах
@@ -380,6 +388,8 @@ pub const NUMS: &[(&str, i32, i32, i32)] = &[
     ("notif_offset_x", 0, 800, 2),
     ("osd_offset", 0, 400, 4),
     ("wall_fade_cell", 2, 48, 2),
+    ("edge_viz_cell", 2, 16, 1),
+    ("edge_viz_steps", 1, 12, 1),
 ];
 
 impl Default for Settings {
@@ -402,6 +412,12 @@ impl Default for Settings {
             reveal_grain: 1,
             anim_close: true,
             scanlines: false,
+            edge_viz: true,
+            edge_viz_h: 72,
+            edge_viz_cell: 6,
+            edge_viz_steps: 5,
+            edge_viz_alpha: 0.9,
+            edge_viz_smooth: 0.5,
             icon_pixel: true,
             icon_tint: false,
             wallpaper: String::new(),
@@ -692,6 +708,8 @@ impl Settings {
             "notif_offset_x" => self.notif_offset_x,
             "osd_offset" => self.osd_offset,
             "wall_fade_cell" => self.wall_fade_cell,
+            "edge_viz_cell" => self.edge_viz_cell,
+            "edge_viz_steps" => self.edge_viz_steps,
             _ => 0,
         };
         NUMS.iter().find(|n| n.0 == k).map(|n| v.clamp(n.1, n.2)).unwrap_or(v)
@@ -720,6 +738,8 @@ impl Settings {
             "notif_offset_x" => self.notif_offset_x = v,
             "osd_offset" => self.osd_offset = v,
             "wall_fade_cell" => self.wall_fade_cell = v,
+            "edge_viz_cell" => self.edge_viz_cell = v,
+            "edge_viz_steps" => self.edge_viz_steps = v,
             _ => {}
         }
     }

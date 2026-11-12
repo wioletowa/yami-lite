@@ -15,7 +15,9 @@ impl App {
     pub fn flush(&mut self) {
         // окно на весь экран (игра): что под ним, не рисуем — останется грязным до выхода из него
         let covered = if self.st.game.fullscreen { Some(self.focus_out()) } else { None };
-        let under = |s: &Surf| covered.as_deref() == Some(s.output.as_str()) && matches!(s.kind, SKind::Bar | SKind::Widget(_) | SKind::Dock | SKind::Wall);
+        // в обзоре окно уже не на весь экран: кайма в его фоне видна
+        let overview = self.st.niri.overview;
+        let under = |s: &Surf| covered.as_deref() == Some(s.output.as_str()) && (matches!(s.kind, SKind::Bar | SKind::Widget(_) | SKind::Dock | SKind::Wall) || (matches!(s.kind, SKind::Edge) && !overview));
         // всплывашка перерисовывается — значит, её данные поменялись, и размер (строки сетей, устройств,
         // программ трея, время трека) мог тоже; resize_popup ничего не делает, если он тот же
         if self.surfs.values().any(|s| s.kind == SKind::Popup && s.dirty && !s.closing) {
@@ -80,6 +82,7 @@ impl App {
         let ptr = self.ptr.filter(|p| p.0 == id).map(|p| (p.1, p.2));
         let down = self.press.as_ref().map(|p| p.sid == id && p.button == 0x110).unwrap_or(false);
         let mut done_closing = false;
+        let band = (s.kind == SKind::Edge).then(|| crate::edge::thick(&self.st).min(bh / 2));
         let blur: Vec<R>;
         {
             let mut ui = Ui {
@@ -95,7 +98,15 @@ impl App {
                 blink: self.st.blink,
                 tr: crate::i18n::tr,
             };
-            ui.cv.clear(CLEAR);
+            // кайма по краям (edge.rs): середина не рисуется никогда — чистить только кайму
+            match band {
+                Some(t) => {
+                    for q in band_rects(bw, bh, t) {
+                        ui.cv.clear_rect(q, CLEAR);
+                    }
+                }
+                None => ui.cv.clear(CLEAR),
+            }
             let st = &self.st;
             // появление: пиксельное проявление по Байеру + плавное всплытие
             let (k, finished) = match s.kind {
@@ -165,11 +176,12 @@ impl App {
                 SKind::EditGrid => crate::widgets::draw_grid(&mut ui, st, w, h),
                 SKind::Dock => crate::dock::draw(&mut ui, st, w, h),
                 SKind::DockEdge => {}
+                SKind::Edge => crate::edge::draw(&mut ui, st, w, h),
             }
             // готовый кадр панели — для анимации закрытия (без проявления: оно наложится заново)
             let keep = !s.closing && finished && matches!(s.kind, SKind::Modal | SKind::Popup | SKind::Menu | SKind::Osd | SKind::EditBar | SKind::Widget(_) | SKind::Dock);
             // развёртка — только панели, не обои; у снимка она уже есть
-            if st.set.scanlines && snap.is_none() && !matches!(s.kind, SKind::Dim | SKind::Catcher | SKind::Wall | SKind::EditGrid | SKind::DockEdge) {
+            if st.set.scanlines && snap.is_none() && !matches!(s.kind, SKind::Dim | SKind::Catcher | SKind::Wall | SKind::EditGrid | SKind::DockEdge | SKind::Edge) {
                 ui.cv.scanlines(if st.t.light { 0.06 } else { 0.22 });
             }
             if keep {
@@ -203,7 +215,8 @@ impl App {
         }
         // тот же кадр, что уже у композитора (часы без секунд, датчики не сдвинулись): не отдавать —
         // композитору нечего пересобирать. Обои рисуются один раз и так
-        let hash = if s.anim || done_closing || s.kind == SKind::Wall { 0 } else { frame_hash(buf, [s.w, s.h, pw, ph]) };
+        // кайму будят только новые уровни (Edge::feed): кадр всегда новый, весь экран не считаем
+        let hash = if s.anim || done_closing || s.kind == SKind::Wall || band.is_some() { 0 } else { frame_hash(buf, [s.w, s.h, pw, ph]) };
         if hash != 0 && hash == s.drawn && s.input == s.input_set && blur == s.blur_set {
             drop(buffer);
             self.scratch = if scratch.capacity() > 1 << 20 { Vec::new() } else { scratch };
@@ -221,7 +234,14 @@ impl App {
         if let Some(vp) = &s.viewport {
             vp.set_destination(s.w.max(1), s.h.max(1));
         }
-        surf.damage_buffer(0, 0, pw, ph);
+        match band {
+            Some(t) if !up => {
+                for q in band_rects(bw, bh, t) {
+                    surf.damage_buffer(q.x, q.y, q.w, q.h);
+                }
+            }
+            _ => surf.damage_buffer(0, 0, pw, ph),
+        }
         // поверхность ввода (заголовки окон: только видимые куски)
         if s.input != s.input_set {
             if let Ok(r) = Region::new(&self.compositor) {
@@ -267,6 +287,11 @@ impl App {
         }
         self.surfs.insert(id, s);
     }
+}
+
+/// кайма толщиной t по краям холста: верх и низ во всю ширину, бока между ними
+fn band_rects(w: i32, h: i32, t: i32) -> [R; 4] {
+    [R::new(0, 0, w, t), R::new(0, h - t, w, t), R::new(0, t, t, h - 2 * t), R::new(w - t, t, t, h - 2 * t)]
 }
 
 /// отпечаток кадра: размер и пиксели (FNV по 64-битным словам — на бар ~30 мкс)

@@ -1492,6 +1492,17 @@ fn video_thumb(it: &Item) -> Option<PathBuf> {
 
 // ── вкладка настроек ────────────────────────────────────────────────────────
 pub fn tab(ui: &mut Ui, st: &State, b: R) {
+    let mut y = b.y;
+    if crate::features::DESKTOP {
+        y = tab_icons(ui, st, b) + 46;
+    }
+    if crate::features::VISUALIZER {
+        crate::edge::tab(ui, st, R::new(b.x, y, b.w, b.h));
+    }
+}
+
+/// значки файлов; возвращает низ
+fn tab_icons(ui: &mut Ui, st: &State, b: R) -> i32 {
     let s = &st.set;
     let half = (b.w - 20) / 2;
     let (lx, rx) = (b.x, b.x + half + 20);
@@ -1507,6 +1518,7 @@ pub fn tab(ui: &mut Ui, st: &State, b: R) {
     y += 34;
     ui.button(R::new(lx, y, half, 26), "открыть папку", "folder", Tone::Plain, false, true, Act::SCycle("desk_folder"));
     ui.text_in(PX, R::new(rx, y, half, 26), &yami_px::paths::pretty(&desktop_dir()), ui.t.text_faint);
+    y
 }
 
 // ── свойства ────────────────────────────────────────────────────────────────

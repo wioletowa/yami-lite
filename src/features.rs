@@ -12,6 +12,8 @@ pub const DESKTOP: bool = cfg!(feature = "desktop");
 pub const RECOLOR: bool = cfg!(feature = "recolor");
 /// приватность окон: скрытие из трансляции экрана
 pub const PRIVACY: bool = cfg!(feature = "privacy");
+/// визуализатор звука по краям экрана (edge.rs)
+pub const VISUALIZER: bool = cfg!(feature = "visualizer");
 
 /// модуль бара собран
 pub fn module_on(id: &str) -> bool {
@@ -35,5 +37,5 @@ pub fn popup_on(kind: &str) -> bool {
 
 /// собранные модули — для «о шелле» и `yami-lite version`
 pub fn list() -> Vec<&'static str> {
-    [("fan", FAN), ("wallhaven", WALLHAVEN), ("desktop", DESKTOP), ("recolor", RECOLOR), ("privacy", PRIVACY)].into_iter().filter(|m| m.1).map(|m| m.0).collect()
+    [("fan", FAN), ("wallhaven", WALLHAVEN), ("desktop", DESKTOP), ("recolor", RECOLOR), ("privacy", PRIVACY), ("visualizer", VISUALIZER)].into_iter().filter(|m| m.1).map(|m| m.0).collect()
 }

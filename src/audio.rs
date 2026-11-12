@@ -344,7 +344,8 @@ fn viz_thread(tx: Sender<Msg>) {
             // границы полос: логарифмически от 40 Гц до 14 кГц
             let edges: Vec<usize> = (0..=BANDS).map(|i| ((40.0f32 * (14000.0f32 / 40.0).powf(i as f32 / BANDS as f32)) / RATE * N as f32).round() as usize).collect();
             let win: Vec<f32> = (0..N).map(|i| 0.5 - 0.5 * (2.0 * std::f32::consts::PI * i as f32 / (N - 1) as f32).cos()).collect();
-            const CHUNK: usize = 512;
+            // кусок ~6 мс: кадр каймы по краям — каждые ~16 мс (60 fps)
+            const CHUNK: usize = 256;
             let (mut ring, mut re, mut im) = (vec![0f32; N], vec![0f32; N], vec![0f32; N]);
             let mut buf = vec![0u8; CHUNK * 2];
             loop {
@@ -381,8 +382,8 @@ fn viz_thread(tx: Sender<Msg>) {
                     for (d, b) in ring[N - CHUNK..].iter_mut().zip(buf.chunks_exact(2)) {
                         *d = i16::from_le_bytes([b[0], b[1]]) as f32 / 32768.0;
                     }
-                    // спектр — раз в кадр (~30 мс), а не на каждый кусок: втрое меньше работы
-                    if last_send.elapsed().as_millis() < 30 {
+                    // спектр — раз в кадр (~16 мс, 60 fps), а не на каждый кусок
+                    if last_send.elapsed().as_millis() < 16 {
                         continue;
                     }
                     last_send = std::time::Instant::now();
@@ -401,11 +402,11 @@ fn viz_thread(tx: Sender<Msg>) {
                         bands[b] = m.sqrt() * (1.0 + b as f32 * 0.12);
                     }
                     let mx = bands.iter().copied().fold(0.0, f32::max);
-                    peak = (peak * 0.987).max(mx).max(1e-3);
+                    peak = (peak * 0.993).max(mx).max(1e-3);
                     for b in 0..BANDS {
                         let v = (bands[b] / peak).sqrt().min(1.0);
                         // быстро вверх, медленно вниз — как стрелочные индикаторы
-                        smooth[b] = if v > smooth[b] { v } else { smooth[b] * 0.6 + v * 0.4 };
+                        smooth[b] = if v > smooth[b] { v } else { smooth[b] * 0.76 + v * 0.24 };
                     }
                     let _ = tx.send(Msg::Viz(smooth.clone()));
                 }
