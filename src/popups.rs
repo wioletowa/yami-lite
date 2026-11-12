@@ -692,6 +692,7 @@ fn bt(ui: &mut Ui, st: &State, b: R) {
     let bottom = b.bottom() - 36;
     ui.cv.fill(R::new(b.x + cw + 8, y, 1, bottom - y), t.border);
     let mut max = [0, 0];
+    let mut shown = [0, 0];
     for (k, (col, mine)) in [(R::new(b.x, y, cw, bottom - y), true), (R::new(b.x + cw + 17, y, cw, bottom - y), false)].into_iter().enumerate() {
         // пустое место колонки: щелчок сворачивает раскрытое, колесо листает (строки — поверх)
         ui.zone(col, Act::BtList(mine), Cur::Default);

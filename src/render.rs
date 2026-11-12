@@ -169,7 +169,8 @@ impl App {
                 SKind::Info => crate::desk::draw_info(&mut ui, st, w, h),
                 SKind::Popup => crate::popups::draw(&mut ui, st, w, h),
                 SKind::Menu => crate::menu::draw(&mut ui, st, w, h),
-                SKind::Notifs => crate::notif::draw(&mut ui, st, w, h),
+                // ввод — только над живыми карточками: поля под въезд и распадающиеся — насквозь
+                SKind::Notifs => s.input = Some(crate::notif::draw(&mut ui, st, w, h).into_iter().collect()),
                 SKind::Osd => crate::notif::draw_osd(&mut ui, st, w, h),
                 SKind::Widget(wid) => crate::widgets::draw(&mut ui, st, *wid, w, h),
                 SKind::EditBar => crate::widgets::draw_editbar(&mut ui, st, w, h),
@@ -313,13 +314,18 @@ fn frame_hash(px: &[u32], dims: [i32; 4]) -> u64 {
 }
 
 pub fn reveal_of(st: &State, s: &Surf, dur_ms: f32) -> (f32, bool) {
-    if !st.set.anim() {
-        return (if s.closing { 0.0 } else { 1.0 }, true);
+    reveal_at(&st.set, s.born, s.closing, dur_ms)
+}
+
+/// то же по времени начала: и для частей поверхности (карточки уведомлений)
+pub fn reveal_at(set: &crate::config::Settings, born: Instant, closing: bool, dur_ms: f32) -> (f32, bool) {
+    if !set.anim() {
+        return (if closing { 0.0 } else { 1.0 }, true);
     }
     // закрытие быстрее открытия
-    let dur = dur_ms * st.set.anim_speed.max(0.1) * if s.closing { 0.7 } else { 1.0 };
-    let t = (s.born.elapsed().as_secs_f32() * 1000.0 / dur).min(1.0);
+    let dur = dur_ms * set.anim_speed.max(0.1) * if closing { 0.7 } else { 1.0 };
+    let t = (born.elapsed().as_secs_f32() * 1000.0 / dur).min(1.0);
     // открытие: быстро и мягко садится (ease-out cubic); закрытие: разгоняется (ease-in)
-    let k = if s.closing { 1.0 - t * t } else { 1.0 - (1.0 - t).powi(3) };
+    let k = if closing { 1.0 - t * t } else { 1.0 - (1.0 - t).powi(3) };
     (k, t >= 1.0)
 }

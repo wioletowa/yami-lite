@@ -1,4 +1,5 @@
-// Уведомления: карточки справа под баром, лентой. ЛКМ — действие по
+// Уведомления: карточки лентой у своего края (notifPos), новые — ближе к краю: въезжают с его
+// стороны, уходят пиксельным распадом, как закрываются панели. ЛКМ — действие по
 // умолчанию, × — убрать, наведение — не гаснет, срочные висят. Все — в истории (календарь).
 // Тут же всплывашка громкости и раскладки (OSD).
 
@@ -14,6 +15,10 @@ use std::time::Instant;
 pub use crate::dbus::Incoming;
 
 pub const W: i32 = 370;
+/// поле вокруг ленты: на столько карточка въезжает со своего края (отступы места его вычитают)
+const PAD: i32 = 12;
+/// появление карточки, мс (как у всплывашек); уход — 0.7 от него
+const DUR: f32 = 190.0;
 /// самая большая картинка в карточке (превью скриншота); больше — уменьшается при отрисовке
 pub const IMG_W: i32 = 112;
 pub const IMG_H: i32 = 72;
@@ -28,6 +33,7 @@ fn img_size(img: &Img) -> (i32, i32) {
     (((w as f32 * k).round() as i32).max(1), ((h as f32 * k).round() as i32).max(1))
 }
 
+#[derive(Clone)]
 pub struct Note {
     pub id: u32,
     pub app: String,
@@ -43,9 +49,17 @@ pub struct Note {
     pub left: f32,
 }
 
+/// карточка, которая распадается: копия (из истории её могли уже стереть) и место в ленте
+pub struct Leaving {
+    note: Note,
+    at: Instant,
+    slot: usize,
+}
+
 #[derive(Default)]
 pub struct Notifs {
     pub popups: Vec<u32>,
+    pub leaving: Vec<Leaving>,
     pub history: Vec<Note>,
     pub hover: bool,
     last: Option<Instant>,
@@ -58,7 +72,7 @@ impl Notifs {
         self.history.iter().find(|n| n.id == id)
     }
     pub fn remove(&mut self, id: u32, from_history: bool) {
-        self.popups.retain(|x| *x != id);
+        self.leave(id);
         if from_history {
             self.history.retain(|n| n.id != id);
         }
@@ -66,6 +80,14 @@ impl Notifs {
     /// есть уведомления, пришедшие после того, как историю смотрели
     pub fn unread(&self) -> bool {
         self.history.iter().any(|n| self.seen.is_none_or(|s| n.born > s))
+    }
+    /// карточку — с экрана: распадается на своём месте (sync_notifs убирает дошедшие)
+    pub fn leave(&mut self, id: u32) {
+        let Some(slot) = self.popups.iter().position(|x| *x == id) else { return };
+        self.popups.remove(slot);
+        if let Some(n) = self.get(id) {
+            self.leaving.push(Leaving { note: n.clone(), at: Instant::now(), slot });
+        }
     }
     pub fn resume(&mut self) {
         self.last = Some(Instant::now());
@@ -88,35 +110,66 @@ fn card_h(ui_f: &mut font::Fonts, n: &Note) -> i32 {
     h + 22
 }
 
-pub fn size(st: &State, f: &mut font::Fonts) -> (i32, i32) {
-    let mut h = 0;
-    for id in &st.notifs.popups {
-        if let Some(n) = st.notifs.get(*id) {
-            h += card_h(f, n) + 8;
-        }
-    }
-    (W + 56, h.max(1) + 8)
+/// откуда въезжает карточка: (-1 слева, 1 справа, 0 — по центру; -1 сверху, 1 снизу)
+fn side(pos: &str) -> (i32, i32) {
+    let dx = if pos.ends_with("left") { -1 } else if pos.ends_with("right") { 1 } else { 0 };
+    (dx, if pos.starts_with("bottom") { 1 } else { -1 })
 }
 
-pub fn draw(ui: &mut Ui, st: &State, _w: i32, _h: i32) {
+/// карточки сверху вниз и когда начали уходить (None — живая); новые — у края: снизу — внизу
+fn cards(st: &State) -> Vec<(&Note, Option<Instant>)> {
+    let ns = &st.notifs;
+    let mut v: Vec<(&Note, Option<Instant>)> = ns.popups.iter().filter_map(|id| ns.get(*id)).map(|n| (n, None)).collect();
+    // места уходящих записаны по ленте без тех, что ушли до них: вставлять с последнего
+    for l in ns.leaving.iter().rev() {
+        v.insert(l.slot.min(v.len()), (&l.note, Some(l.at)));
+    }
+    if side(&st.set.notif_pos).1 > 0 {
+        v.reverse();
+    }
+    v
+}
+
+pub fn size(st: &State, f: &mut font::Fonts) -> (i32, i32) {
+    let c = cards(st);
+    let h: i32 = c.iter().map(|(n, _)| card_h(f, n) + 8).sum();
+    // тень карточки — 4 px вправо и вниз
+    (W + 2 * PAD + 4, (h - 8).max(1) + 2 * PAD + 4)
+}
+
+/// ввод — прямоугольник живых карточек (None — все уходят)
+pub fn draw(ui: &mut Ui, st: &State, _w: i32, _h: i32) -> Option<R> {
     let t = ui.t;
-    let mut y = 0;
-    for id in &st.notifs.popups {
-        let Some(n) = st.notifs.get(*id) else { continue };
+    let (dx, dy) = side(&st.set.notif_pos);
+    let mut y = PAD;
+    let mut slots = vec![];
+    for (n, gone) in cards(st) {
         let ch = card_h(ui.f, n);
-        // въезд справа ступенями по 8 px
-        let k = if st.set.anim() { (n.born.elapsed().as_secs_f32() / (0.16 * st.set.anim_speed.max(0.1))).min(1.0) } else { 1.0 };
-        let step = (k * 4.0).ceil() / 4.0;
-        if k < 1.0 {
+        let (k, fin) = match gone {
+            Some(at) => crate::render::reveal_at(&st.set, at, true, DUR),
+            None => crate::render::reveal_at(&st.set, n.born, false, DUR),
+        };
+        slots.push((n, gone.is_some(), R::new(PAD, y, W, ch), k, fin));
+        y += ch + 8;
+    }
+    // с промежутками: курсор, переходящий с карточки на карточку, не уходит с поверхности
+    let live = slots.iter().filter(|s| !s.1).map(|s| s.2).reduce(|a, b| R::new(a.x, a.y, a.w, b.bottom() - a.y));
+    // анимированные — первыми: въезжающая заходит на соседнюю, а распад стёр бы её пиксели
+    slots.sort_by_key(|s| s.4);
+    for (n, gone, r, k, fin) in slots {
+        if !fin {
             ui.anim = true;
         }
-        let x0 = 48 - ((step * 48.0 / 8.0).round() as i32) * 8 + 4;
-        ui.cv.opacity = step;
-        let r = R::new(x0, y, W, ch);
-        let hov = ui.hover(r);
+        // появление — как у панелей (проявление и всплытие), но со своего края и угла;
+        // уход — распад на месте
+        let off = if gone { 0 } else { ((1.0 - k) * PAD as f32).round() as i32 };
+        (ui.cv.ox, ui.cv.oy) = (dx * off, dy * off);
+        ui.cv.opacity = (0.35 + 0.65 * k).min(1.0);
+        let (z, b) = (ui.zones.len(), ui.cv.blur.len());
+        let hov = !gone && ui.hover(r);
         ui.cv.pxbox(r, &BoxStyle::new(t.glass_panel(), if n.critical { t.ember } else if hov { t.red } else { t.border }).shadow(4));
         ui.cv.fill(R::new(r.x + 2, r.y + 2, 3, r.h - 4), if n.critical { t.ember } else { t.red });
-        if (!n.critical || !st.set.notif_critical_stay) && n.life > 0.0 {
+        if !gone && (!n.critical || !st.set.notif_critical_stay) && n.life > 0.0 {
             // остаток — по часам, а не по тику (100 мс): полоса идёт шагами по 2 px каждый кадр;
             // под курсором время стоит, и перерисовывать нечего
             let ticking = !(st.set.notif_hover_pause && st.notifs.hover);
@@ -129,9 +182,18 @@ pub fn draw(ui: &mut Ui, st: &State, _w: i32, _h: i32) {
         }
         ui.zone(r, Act::NotifClick(n.id), Cur::Pointer);
         draw_card(ui, n, R::new(r.x + 14, r.y + 8, r.w - 24, r.h - 16), true);
-        y += ch + 8;
+        if gone {
+            ui.zones.truncate(z);
+        }
+        // размытие под карточкой — как у панелей: с трети проявления, при уходе гаснет там же
+        if k < 0.35 {
+            ui.cv.blur.truncate(b);
+        }
+        ui.cv.dissolve_rect(R::new(r.x, r.y, r.w + 4, r.h + 4), k, 2);
     }
+    (ui.cv.ox, ui.cv.oy) = (0, 0);
     ui.cv.opacity = 1.0;
+    live
 }
 
 /// содержимое карточки (и в истории внутри календаря)
@@ -258,6 +320,7 @@ impl App {
         let id = note.id;
         let quiet = self.quiet();
         let ns = &mut self.st.notifs;
+        ns.leaving.retain(|l| l.note.id != id);
         if let Some(x) = ns.history.iter_mut().find(|x| x.id == id) {
             // замена (replaces_id): обновить на месте, без нового въезда
             let born = x.born;
@@ -270,8 +333,15 @@ impl App {
         if (!quiet || critical) && !self.st.locked {
             ns.popups.retain(|x| *x != id);
             ns.popups.insert(0, id);
+            // уходящие — на место дальше от края, вслед за своими соседями
+            for l in ns.leaving.iter_mut() {
+                l.slot += 1;
+            }
             // лишние уходят в историю
-            ns.popups.truncate(self.st.set.notif_max.clamp(1, 8) as usize);
+            while ns.popups.len() > self.st.set.notif_max.clamp(1, 8) as usize {
+                let last = ns.popups[ns.popups.len() - 1];
+                ns.leave(last);
+            }
             ns.resume();
         }
         self.sync_notifs();
@@ -281,6 +351,10 @@ impl App {
 
     /// таймер: жизнь карточек; true — что-то истекло
     pub fn notif_tick(&mut self) -> bool {
+        // распавшиеся — из ленты
+        if !self.st.notifs.leaving.is_empty() {
+            self.sync_notifs();
+        }
         let ns = &mut self.st.notifs;
         if ns.popups.is_empty() {
             ns.last = None;
@@ -310,7 +384,7 @@ impl App {
             }
         }
         for id in &gone {
-            ns.popups.retain(|x| x != id);
+            ns.leave(*id);
             crate::dbus::notif_closed(*id, 1);
         }
         self.dirty(&SKind::Notifs);
@@ -321,15 +395,17 @@ impl App {
     /// niri учитывает сам (exclusive 0), поэтому сверху — под баром, снизу — над доком
     fn notif_place(&self) -> (Anchor, (i32, i32, i32, i32)) {
         // сверху или снизу — notifOffset (бар niri вычитает сам: исключительная зона), от боковой
-        // кромки экрана — notifOffsetX
+        // кромки экрана — notifOffsetX и 4; поле PAD (и тень справа и снизу) — за счёт отступа:
+        // он может уйти в минус, поле прозрачно и ввод пропускает
         let (o, x) = (self.st.set.num("notif_offset"), self.st.set.num("notif_offset_x"));
+        let (t, b, l, r) = (o - PAD, o - PAD - 4, x + 4 - PAD, x - PAD);
         match self.st.set.notif_pos.as_str() {
-            "top-left" => (Anchor::TOP | Anchor::LEFT, (o, 0, 0, x)),
-            "top" => (Anchor::TOP, (o, 0, 0, 0)),
-            "bottom-right" => (Anchor::BOTTOM | Anchor::RIGHT, (0, x, o, 0)),
-            "bottom-left" => (Anchor::BOTTOM | Anchor::LEFT, (0, 0, o, x)),
-            "bottom" => (Anchor::BOTTOM, (0, 0, o, 0)),
-            _ => (Anchor::TOP | Anchor::RIGHT, (o, x, 0, 0)),
+            "top-left" => (Anchor::TOP | Anchor::LEFT, (t, 0, 0, l)),
+            "top" => (Anchor::TOP, (t, 0, 0, 0)),
+            "bottom-right" => (Anchor::BOTTOM | Anchor::RIGHT, (0, r, b, 0)),
+            "bottom-left" => (Anchor::BOTTOM | Anchor::LEFT, (0, 0, b, l)),
+            "bottom" => (Anchor::BOTTOM, (0, 0, b, 0)),
+            _ => (Anchor::TOP | Anchor::RIGHT, (t, r, 0, 0)),
         }
     }
 
@@ -345,7 +421,11 @@ impl App {
     }
 
     pub fn sync_notifs(&mut self) {
-        let empty = self.st.notifs.popups.is_empty() || self.st.locked;
+        // распад дошёл до конца (или закрытие без анимации) — карточки больше нет
+        let close = self.st.set.anim() && self.st.set.anim_close && !self.st.locked;
+        let (set, ns) = (&self.st.set, &mut self.st.notifs);
+        ns.leaving.retain(|l| close && !crate::render::reveal_at(set, l.at, true, DUR).1);
+        let empty = (ns.popups.is_empty() && ns.leaving.is_empty()) || self.st.locked;
         let ids = self.find(&SKind::Notifs);
         if empty {
             for id in ids {

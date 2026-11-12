@@ -273,7 +273,9 @@ impl App {
                     crate::dbus::notif_closed(id, 2);
                 }
                 self.st.notifs.history.clear();
-                self.st.notifs.popups.clear();
+                for id in self.st.notifs.popups.clone() {
+                    self.st.notifs.leave(id);
+                }
                 self.sync_notifs();
                 self.resize_popup();
             }

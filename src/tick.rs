@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 impl App {
     // ── тик: часы, датчики, файл настроек ───────────────────────────────────
     pub(crate) fn tick_interval(&self) -> Duration {
-        let fast = !self.st.notifs.popups.is_empty() || self.st.osd.is_some() || self.st.field_focus.is_some() || self.st.locked;
+        let fast = !self.st.notifs.popups.is_empty() || !self.st.notifs.leaving.is_empty() || self.st.osd.is_some() || self.st.field_focus.is_some() || self.st.locked;
         let fast = fast || self.st.wall_fade.is_some() || self.st.dock_leave.is_some() || !self.st.dock_bounce.is_empty();
         // смена обоев: свой темп кадров (обои под окнами niri будит редко)
         let ms = if self.st.wall_fade.is_some() { 33 } else if fast { 100 } else { 1000 };
