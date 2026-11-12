@@ -102,6 +102,9 @@ impl App {
             Act::BarWalls => self.walls_at(&out, ax),
             Act::CtlTile(k) => self.control_tile(&k),
             Act::CtlTab(k) => self.switch_tab(k),
+            Act::CalcKey(k) => self.calc_key(k),
+            Act::CalcHist(i) => self.calc_hist(i),
+            Act::CalcClear => self.st.calc.clear_history(),
             Act::CtlViz => {
                 // стили по кругу, после последнего — «выкл» (захват звука не нужен), затем снова первый
                 let st = crate::widgets::STYLES;
@@ -344,6 +347,7 @@ impl App {
             }
             Act::DockItem(i) => self.dock_wheel(i, up),
             Act::TimerWheel(id) => self.timer_wheel(id, up),
+            Act::CalcList | Act::CalcHist(_) => self.calc_scroll(up),
             Act::NotesBody(id) => {
                 let h = self.surfs.values().find(|s| s.kind == SKind::Widget(id)).map_or(300, |s| s.h);
                 self.notes_scroll(id, up, h - 40);

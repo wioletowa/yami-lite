@@ -102,7 +102,10 @@ impl App {
         let (w, h) = popups::size(kind, &self.st);
         let (ow, _) = self.output_size(out);
         let x = (ax - w / 2).clamp(6, (ow - w - 6).max(6));
-        self.mk_catcher(out);
+        // калькулятор зовут и хоткеем поверх игры или видео: слой выше полноэкранных окон, и
+        // клавиатура сразу его — цифры без щелчка
+        let over = kind == "calc";
+        self.mk_catcher_on(out, if over { Layer::Overlay } else { Layer::Top });
         // видимый верх — на 6 px ниже бара (где бы он ни был); содержимое всплывашки внутри
         // поверхности опущено на высоту подъёма (12), поэтому сама поверхность — выше.
         // Бар снизу — всплывашка над ним: низ содержимого и есть низ поверхности
@@ -112,7 +115,8 @@ impl App {
         } else {
             (Anchor::TOP | Anchor::LEFT, ((self.bar_bottom(out) + 6 - 12).max(0), 0, 0, x))
         };
-        let id = self.mk(SKind::Popup, out, Layer::Top, "yami-popup", anchor, (w, h + 12), margin, -1, KeyboardInteractivity::OnDemand);
+        let (layer, kb) = if over { (Layer::Overlay, KeyboardInteractivity::Exclusive) } else { (Layer::Top, KeyboardInteractivity::OnDemand) };
+        let id = self.mk(SKind::Popup, out, layer, "yami-popup", anchor, (w, h + 12), margin, -1, kb);
         if low > 0 {
             // верх поверхности на мониторе: от него меню трея во всплывашке ищет свою строку
             let (_, oh) = self.output_size(out);
@@ -151,6 +155,12 @@ impl App {
             return;
         }
         p.kind = kind;
+        // на калькуляторе клавиатура — его сразу, на остальных — по щелчку
+        let kb = if kind == "calc" { KeyboardInteractivity::Exclusive } else { KeyboardInteractivity::OnDemand };
+        for s in self.surfs.values_mut().filter(|s| s.kind == SKind::Popup && !s.closing) {
+            s.layer.set_keyboard_interactivity(kb);
+            s.layer.commit();
+        }
         self.st.drop = None;
         self.st.field_focus = None;
         self.popup_opened(kind);
@@ -183,8 +193,13 @@ impl App {
 
     /// прозрачный ловец кликов мимо всплывашки (бар остаётся живым)
     pub fn mk_catcher(&mut self, out: &str) {
+        self.mk_catcher_on(out, Layer::Top);
+    }
+
+    /// ловец на своём слое: над полноэкранным окном — Overlay, как и всплывашка
+    pub fn mk_catcher_on(&mut self, out: &str, layer: Layer) {
         if self.find(&SKind::Catcher).is_empty() {
-            let id = self.mk(SKind::Catcher, out, Layer::Top, "yami-catch", Anchor::all(), (0, 0), (0, 0, 0, 0), -1, KeyboardInteractivity::None);
+            let id = self.mk(SKind::Catcher, out, layer, "yami-catch", Anchor::all(), (0, 0), (0, 0, 0, 0), -1, KeyboardInteractivity::None);
             // ловит всё, кроме самого бара: бар живой, а поля вокруг плавающего — нет
             let (w, h) = self.output_size(out);
             let mut rs = vec![R::new(0, 0, w, h)];

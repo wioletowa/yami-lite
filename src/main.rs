@@ -12,6 +12,7 @@ mod audio;
 mod bar;
 mod bartab;
 mod bundle;
+mod calc;
 mod camera;
 mod cli;
 mod click;

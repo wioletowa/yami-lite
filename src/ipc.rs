@@ -86,6 +86,12 @@ impl crate::app::App {
             "power" => self.toggle_modal(Modal::Power),
             "settings" => self.toggle_settings(),
             "walls" => self.walls_open(false, false),
+            // калькулятор: под баром посередине экрана; открыт — закрыть
+            "calculator" => {
+                let out = self.focus_out();
+                let (ow, _) = self.output_size(&out);
+                self.open_popup("calc", &out, ow / 2);
+            }
             "lock" => self.lock_now(),
             // приватность окна: прицел niri, щелчок прячет приложение из трансляции (или возвращает)
             "hide" if crate::features::PRIVACY => self.hide_pick(),

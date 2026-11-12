@@ -299,6 +299,8 @@ pub struct State {
     pub desk: crate::desk::Desk,
     /// виджеты-таймеры (timer.rs): состояние по id и когда крутили колесо (разгон шага)
     pub timers: HashMap<u32, crate::timer::Timer>,
+    /// вкладка калькулятора (calc.rs): выражение и история
+    pub calc: crate::calc::Calc,
     pub timer_wheel_at: HashMap<u32, Instant>,
     /// виджеты-заметки (notes.rs): текст файла, прокрутка, правка
     pub notes: HashMap<u32, crate::notes::Note>,
@@ -540,6 +542,7 @@ impl State {
             procs: Default::default(),
             desk: Default::default(),
             timers: crate::timer::load(),
+            calc: crate::calc::Calc::load(),
             timer_wheel_at: HashMap::new(),
             notes: HashMap::new(),
             bat_warn: 0,
