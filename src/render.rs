@@ -17,7 +17,9 @@ impl App {
         let covered = if self.st.game.fullscreen { Some(self.focus_out()) } else { None };
         // в обзоре окно уже не на весь экран: кайма в его фоне видна
         let overview = self.st.niri.overview;
-        let under = |s: &Surf| covered.as_deref() == Some(s.output.as_str()) && (matches!(s.kind, SKind::Bar | SKind::Widget(_) | SKind::Dock | SKind::Wall) || (matches!(s.kind, SKind::Edge) && !overview));
+        // бар поднят поверх полноэкранного (peek.rs) — виден, рисуется
+        let peek = self.st.peek.on;
+        let under = |s: &Surf| covered.as_deref() == Some(s.output.as_str()) && ((s.kind == SKind::Bar && !peek) || matches!(s.kind, SKind::Widget(_) | SKind::Dock | SKind::Wall) || (matches!(s.kind, SKind::Edge) && !overview));
         // всплывашка перерисовывается — значит, её данные поменялись, и размер (строки сетей, устройств,
         // программ трея, время трека) мог тоже; resize_popup ничего не делает, если он тот же
         if self.surfs.values().any(|s| s.kind == SKind::Popup && s.dirty && !s.closing) {
@@ -110,8 +112,10 @@ impl App {
             let st = &self.st;
             // появление: пиксельное проявление по Байеру + плавное всплытие
             let (k, finished) = match s.kind {
-                SKind::Modal | SKind::Popup | SKind::Menu | SKind::Dim | SKind::Catcher | SKind::Osd | SKind::EditBar | SKind::Widget(_) | SKind::Dock => {
+                // бар тоже проявляется и рассыпается: смена бар ↔ островок, автоскрытие
+                SKind::Modal | SKind::Popup | SKind::Menu | SKind::Dim | SKind::Catcher | SKind::Osd | SKind::EditBar | SKind::Widget(_) | SKind::Dock | SKind::Bar => {
                     let dur = match s.kind {
+                        SKind::Bar => 200.0,
                         SKind::Dock => 200.0,
                         SKind::Widget(_) => 320.0,
                         SKind::Menu => 140.0,
@@ -123,20 +127,25 @@ impl App {
                 }
                 _ => (1.0, true),
             };
+            // островок свернулся сам (island::draw_panel): поверхность уходит без своего растворения
+            let (k, finished) = if s.closing && s.kind == SKind::Popup && s.anchor_side == "island" { (0.0, true) } else { (k, finished) };
             if !finished {
                 ui.anim = true;
             }
             if s.closing && finished {
                 done_closing = true;
             }
+            // раскрытый островок собирается сам (island::draw_panel): без всплытия и проявления
+            let island = s.kind == SKind::Popup && s.anchor_side == "island";
             let rise = match s.kind {
+                _ if island => 0,
                 SKind::Modal | SKind::Popup => 12,
                 SKind::Widget(_) => 16,
                 SKind::Osd | SKind::EditBar | SKind::Dock => 8,
                 SKind::Menu => 4,
                 _ => 0,
             };
-            ui.cv.opacity = (0.35 + 0.65 * k).min(1.0);
+            ui.cv.opacity = if island && !s.closing { 1.0 } else { (0.35 + 0.65 * k).min(1.0) };
             ui.cv.oy = rise - ((1.0 - k) * rise as f32).round() as i32;
             let (w, h) = (s.w, s.h - rise);
             // закрывается: последний кадр (снят со всплытием rise) — с тем же погружением
@@ -148,7 +157,7 @@ impl App {
                     }
                 }
                 SKind::Wall => crate::wall::draw(&mut ui, st, w, h),
-                SKind::Bar => crate::bar::draw(&mut ui, st, &s.output, w),
+                SKind::Bar => s.input = crate::bar::draw(&mut ui, st, &s.output, w, h).map(|r| vec![r]),
                 SKind::Dim => {
                     // затемнение цветом фона темы, а не чёрным: стол остаётся виден
                     let a = if st.modal == Some(crate::app::Modal::Walls) { st.set.dim * 0.7 } else { st.set.dim };
@@ -168,7 +177,7 @@ impl App {
                 SKind::Desk => crate::desk::draw(&mut ui, st, w, h),
                 SKind::Info => crate::desk::draw_info(&mut ui, st, w, h),
                 SKind::Popup => crate::popups::draw(&mut ui, st, w, h),
-                SKind::Menu => crate::menu::draw(&mut ui, st, w, h),
+                SKind::Menu => s.input = crate::menu::draw(&mut ui, st, w, h).map(|r| vec![r]),
                 // ввод — только над живыми карточками: поля под въезд и распадающиеся — насквозь
                 SKind::Notifs => s.input = Some(crate::notif::draw(&mut ui, st, w, h).into_iter().collect()),
                 SKind::Osd => crate::notif::draw_osd(&mut ui, st, w, h),
@@ -176,13 +185,13 @@ impl App {
                 SKind::EditBar => crate::widgets::draw_editbar(&mut ui, st, w, h),
                 SKind::EditGrid => crate::widgets::draw_grid(&mut ui, st, w, h),
                 SKind::Dock => crate::dock::draw(&mut ui, st, w, h),
-                SKind::DockEdge => {}
+                SKind::DockEdge | SKind::PeekEdge => {}
                 SKind::Edge => crate::edge::draw(&mut ui, st, w, h),
             }
             // готовый кадр панели — для анимации закрытия (без проявления: оно наложится заново)
-            let keep = !s.closing && finished && matches!(s.kind, SKind::Modal | SKind::Popup | SKind::Menu | SKind::Osd | SKind::EditBar | SKind::Widget(_) | SKind::Dock);
+            let keep = !s.closing && finished && matches!(s.kind, SKind::Modal | SKind::Popup | SKind::Menu | SKind::Osd | SKind::EditBar | SKind::Widget(_) | SKind::Dock | SKind::Bar);
             // развёртка — только панели, не обои; у снимка она уже есть
-            if st.set.scanlines && snap.is_none() && !matches!(s.kind, SKind::Dim | SKind::Catcher | SKind::Wall | SKind::EditGrid | SKind::DockEdge | SKind::Edge) {
+            if st.set.scanlines && snap.is_none() && !matches!(s.kind, SKind::Dim | SKind::Catcher | SKind::Wall | SKind::EditGrid | SKind::DockEdge | SKind::PeekEdge | SKind::Edge) {
                 ui.cv.scanlines(if st.t.light { 0.06 } else { 0.22 });
             }
             if keep {
@@ -197,7 +206,7 @@ impl App {
             if let Some(img) = snap {
                 s.last = Some(img);
             }
-            if k < 1.0 && !matches!(s.kind, SKind::Dim | SKind::Catcher) {
+            if k < 1.0 && !matches!(s.kind, SKind::Dim | SKind::Catcher) && !(island && !s.closing) {
                 ui.cv.dissolve(k, 2);
             }
             // размытие — с первой трети проявления (#18: раньше ждало конца анимации и появлялось

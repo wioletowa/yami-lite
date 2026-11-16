@@ -301,14 +301,15 @@ impl App {
             self.st.art.insert(cur.art.clone(), None);
             fetch_art(cur.art.clone(), self.st.set.media_art_net, self.tx.clone());
         }
-        self.st.media = cur;
+        let old = std::mem::replace(&mut self.st.media, cur);
+        self.island_track(&old.title);
         self.viz_sync();
         self.dirty_where(|k| matches!(k, SKind::Bar | SKind::Popup | SKind::Widget(_)));
     }
 
     /// эквалайзер где-то виден: захвату звука (parec) есть для кого работать
     pub fn media_visible(&self) -> bool {
-        self.st.set.viz_placed() || crate::popups::shows_viz(&self.st)
+        self.st.set.viz_placed() || crate::popups::shows_viz(&self.st) || crate::island::shows_viz(&self.st)
     }
 
     /// захват звука для эквалайзера — пока тот где-то виден и музыка играет; для каймы по краям —

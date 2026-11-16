@@ -10,6 +10,7 @@ impl App {
     // ── тик: часы, датчики, файл настроек ───────────────────────────────────
     pub(crate) fn tick_interval(&self) -> Duration {
         let fast = !self.st.notifs.popups.is_empty() || !self.st.notifs.leaving.is_empty() || self.st.osd.is_some() || self.st.field_focus.is_some() || self.st.locked;
+        let fast = fast || self.st.island.live.is_some() || self.st.island.leave.is_some() || self.st.island.held.is_some() || self.st.island.closing.is_some() || self.st.peek.at.is_some() || self.st.peek.on;
         let fast = fast || self.st.wall_fade.is_some() || self.st.dock_leave.is_some() || !self.st.dock_bounce.is_empty();
         // смена обоев: свой темп кадров (обои под окнами niri будит редко)
         let ms = if self.st.wall_fade.is_some() { 33 } else if fast { 100 } else { 1000 };
@@ -63,13 +64,13 @@ impl App {
             let hidden = self.st.game.fullscreen && self.output_names().iter().all(|n| *n == fo || !self.bar_on(n));
             self.st.sys.want_gpu = self.st.sys.has_gpu && self.uses("gpu") && !hidden;
             self.st.sys.sample();
-            if self.st.popup_is("sys") {
+            if self.st.popup_is("sys") || crate::island::shows_sys(&self.st) {
                 self.st.procs.sample();
             }
             // вентилятор: история копится, пока модуль в баре, — открытая всплывашка видит прошлое
-            if crate::features::FAN && (self.st.set.on_bar("fan") || self.st.popup_is("fan")) {
+            if crate::features::FAN && (self.st.set.on_bar("fan") || self.st.popup_is("fan") || crate::island::shows_fan(&self.st)) {
                 self.st.fan.sample();
-                if self.st.popup_is("fan") {
+                if self.st.popup_is("fan") || crate::island::shows_fan(&self.st) {
                     self.dirty(&SKind::Popup);
                 }
             }
@@ -131,6 +132,8 @@ impl App {
             self.sync_notifs();
         }
         self.dock_tick();
+        self.island_tick();
+        self.peek_tick();
         if let Some((_, t)) = self.st.osd {
             if t.elapsed().as_secs_f32() > self.st.set.osd_time {
                 self.st.osd = None;
@@ -141,7 +144,7 @@ impl App {
 
     pub(crate) fn uses(&self, src: &str) -> bool {
         let s = &self.st.set;
-        s.widgets.iter().any(|w| w.on && w.kind == "graph" && w.source == src) || (src == "gpu" && (self.st.popup_is("sys") || s.on_bar("gpu")))
+        s.widgets.iter().any(|w| w.on && w.kind == "graph" && w.source == src) || (src == "gpu" && (self.st.popup_is("sys") || crate::island::shows_sys(&self.st) || s.on_bar("gpu")))
     }
 
     // ── простой: замок и гашение экрана ─────────────────────────────────────

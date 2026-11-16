@@ -22,6 +22,41 @@ pub enum Act {
     Popup(&'static str),
     // питание
     PowerDo(usize),
+    /// замок, сон из плитки островка (power.rs sys_action)
+    ISys(&'static str),
+    // островок (island.rs): режим бара и вид; редактор — плитки, фишки свёрнутого, события
+    SIsland(bool),
+    /// шестерёнка раскрытого островка: настройки на вкладке «бар»
+    IslSettings,
+    /// плитка на весь островок и обратно
+    IslBig(&'static str),
+    IslBack,
+    /// окно из значка полосы раскрытого (обои, Wallhaven, скрытые окна) — посередине
+    IslOpen(&'static str),
+    /// стрелка трея в полосе раскрытого: список программ меню
+    IslTray,
+    /// большой вид нагрузки: система ↔ вентилятор
+    IslFanView,
+    /// ползунки островка в ширину: громкость и яркость
+    IslVol,
+    IslBright,
+    IslHang(bool),
+    IslTile(usize),
+    IslSize(usize),
+    IslNew(&'static str),
+    IslDel(usize),
+    IslGear(usize),
+    IslOpt(usize, &'static str),
+    IslClose,
+    IslMod(usize),
+    IslModNew(&'static str),
+    IslModDel(usize),
+    IslModAdd,
+    IslEvent(&'static str),
+    /// слоты полосы раскрытого: сторона (0 — слева, 1 — справа), что поставить, какой убрать
+    IslSlotAdd(usize),
+    IslSlotNew(usize, &'static str),
+    IslSlotDel(usize, usize),
     // настройки
     STab(&'static str),
     /// колесо над содержимым вкладки и над списком вкладок
@@ -198,7 +233,7 @@ pub enum Act {
 
 impl Act {
     pub fn is_drag(&self) -> bool {
-        matches!(self, Act::SSlider(..) | Act::CtlVol | Act::CtlBright | Act::FanLevel | Act::VolSlider | Act::MicSlider | Act::AppVol(_) | Act::MediaSeek | Act::MDrag | Act::WDrag(_) | Act::SModDrag(..) | Act::SModNew(_) | Act::DeskItem(_) | Act::DeskBg | Act::TimerVol(_))
+        matches!(self, Act::SSlider(..) | Act::CtlVol | Act::CtlBright | Act::FanLevel | Act::VolSlider | Act::MicSlider | Act::AppVol(_) | Act::MediaSeek | Act::MDrag | Act::WDrag(_) | Act::SModDrag(..) | Act::SModNew(_) | Act::IslVol | Act::IslBright | Act::IslTile(_) | Act::IslSize(_) | Act::IslNew(_) | Act::IslMod(_) | Act::DeskItem(_) | Act::DeskBg | Act::TimerVol(_))
     }
 }
 

@@ -80,6 +80,7 @@ impl App {
                     "icon_pixel" => s.icon_pixel = !s.icon_pixel,
                     "icon_tint" => s.icon_tint = !s.icon_tint,
                     "bar_float" => s.bar_float = !s.bar_float,
+                    "bar_peek" => s.bar_peek = !s.bar_peek,
                     "widget_contrast" => s.widget_contrast = !s.widget_contrast,
                     "blur_shell" => s.blur_shell = !s.blur_shell,
                     "clock_seconds" => s.clock_seconds = !s.clock_seconds,

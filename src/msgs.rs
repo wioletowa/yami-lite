@@ -12,7 +12,12 @@ impl App {
             Msg::Niri(v) => {
                 let layout_only = v.get("WindowLayoutsChanged").is_some();
                 let overview = self.st.niri.overview;
+                let ws_before = self.st.niri.ws.iter().find(|w| w.focused).map(|w| w.id);
                 let evs = self.st.niri.handle(v);
+                self.island_ws(ws_before);
+                self.tuck_sync();
+                // фокус мог уйти на другой монитор: полоса у края — за ним
+                self.peek_sync();
                 if self.st.niri.overview != overview {
                     // поверх игры кайма видна только в обзоре: захват звука — тоже
                     self.viz_sync();
@@ -58,13 +63,15 @@ impl App {
                 // кайма по краям — от любого звука; эквалайзеры плеера — пока он играет
                 let edge = crate::edge::on(&self.st) && self.st.edge.feed(&v, self.st.set.edge_viz_smooth);
                 self.st.viz = v;
-                let (s, pop) = (&self.st.set, crate::popups::shows_viz(&self.st));
+                let isl = crate::island::shows_viz(&self.st);
+                let (s, pop) = (&self.st.set, crate::popups::shows_viz(&self.st) || (isl && self.st.popup_is("island")));
                 // эквалайзерам плеера хватит ~30 fps: каждый второй кадр
                 let playing = self.st.media.playing() && self.st.viz_at.elapsed().as_millis() >= 30;
                 if playing {
                     self.st.viz_at = std::time::Instant::now();
                 }
-                let bar = playing && s.on_bar("media") && s.media_viz != "off";
+                // островок раздвинут на смену трека — его эквалайзер в баре
+                let bar = playing && ((s.on_bar("media") && s.media_viz != "off") || (isl && !self.st.popup_is("island")));
                 let ws: Vec<u32> = if playing { s.widgets.iter().filter(|w| w.on && w.kind == "media").map(|w| w.id).collect() } else { vec![] };
                 self.dirty_where(|k| match k {
                     SKind::Popup => pop && playing,
@@ -115,6 +122,7 @@ impl App {
                 // адаптер включился (или шелл запустился с включённым): доверенные — подключить
                 let came_up = b.present && b.powered && !(self.st.bt.present && self.st.bt.powered);
                 self.st.bt = b;
+                self.island_bt();
                 if came_up && self.st.set.bt_connect_on {
                     crate::net::bt_connect_pass(self.tx.clone());
                 }

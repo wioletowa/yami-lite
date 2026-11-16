@@ -76,7 +76,12 @@ pub(crate) fn tab_bar(ui: &mut Ui, st: &State, b: R) {
     let s = &st.set;
     let ed = &st.bar_ed;
     let drag = ed.drag.as_ref();
-    let y0 = title(ui, b.x, b.y, b.w, "модули бара");
+    let y = crate::island::mode_row(ui, st, b, b.y);
+    if crate::island::on(s) {
+        crate::island::tab(ui, st, b, y);
+        return;
+    }
+    let y0 = title(ui, b.x, y, b.w, "модули бара");
     let sides = [&s.bar_left, &s.bar_center, &s.bar_right];
     let cw = (b.w - 24) / 3;
     let mut areas = [R::new(0, 0, 0, 0); 3];
@@ -304,6 +309,10 @@ fn bar_layout(ui: &mut Ui, st: &State, b: R, y: i32) -> i32 {
     } else {
         num_btn(ui, R::new(col(2), y, cw, 26), "скругление", s.num("bar_radius"), "bar_radius");
     }
+    y += 34;
+    ui.toggle(R::new(b.x, y, b.w, 40), "поверх полноэкранного", "подержать курсор у верхнего края секунду", s.bar_peek, Act::SBool("bar_peek"));
+    y += 50;
+    opt_btn(ui, R::new(b.x, y, b.w, 26), "автоскрытие", crate::island::hide_name(&s.bar_hide), Act::Drop("bar_hide"));
     y += 40;
     y = title(ui, b.x, y, b.w, "отступы");
     for (i, (k, label)) in [("bar_pad_l", "край в начале"), ("bar_pad_r", "край в конце"), ("bar_gap", "между модулями")].into_iter().enumerate() {

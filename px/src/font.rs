@@ -380,7 +380,12 @@ impl Fonts {
             }
             pen += adv;
         }
-        (lo < hi).then_some((lo, hi - lo))
+        // then_some посчитал бы hi - lo и у строки без точек (MIN - MAX)
+        if lo < hi {
+            Some((lo, hi - lo))
+        } else {
+            None
+        }
     }
 
     /// строка, урезанная до max px с многоточием; влезает — как есть

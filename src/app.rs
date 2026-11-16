@@ -80,6 +80,8 @@ pub enum SKind {
     Info,
     Dock,
     DockEdge,
+    /// полоса у верхнего края над полноэкранным окном: подержать курсор — бар поверх (peek.rs)
+    PeekEdge,
     /// визуализатор по краям экрана: одна поверхность на монитор, на слое обоев (edge.rs)
     Edge,
 }
@@ -367,6 +369,11 @@ pub struct State {
     pub ws_anim: std::cell::Cell<(u64, u64, Instant)>,
     /// выбор обоев: папка, клетки, миниатюры видимых строк
     pub walls: crate::walls::Walls,
+    /// островок (island.rs): живое событие, ширина, раскрытие; его редактор во вкладке «бар»
+    pub island: crate::island::Isl,
+    pub isl_ed: crate::island::IslEd,
+    /// бар поверх полноэкранного окна (peek.rs)
+    pub peek: crate::peek::Peek,
 }
 
 pub struct Press {
@@ -460,6 +467,10 @@ pub struct App {
     /// где открыть меню программы трея: монитор, x, y
     /// где открыть меню программы трея: монитор, x, y и вверх ли от y (из списка трея — над курсором)
     pub tray_anchor: Option<(String, i32, i32, bool)>,
+    /// меню программы запрошено из списка трея (островок): придёт — встанет подуровнем списка
+    pub tray_sub: Option<String>,
+    /// тема и размер курсора, что уже разосланы по системе (cursor.rs)
+    pub cursor_applied: Option<(String, i32)>,
     /// окно настроек сдвинуто за заголовок: его поверхность и левый верхний угол; mdrag —
     /// угол в начале текущего перетаскивания
     pub modal_at: Option<(u32, (i32, i32))>,
@@ -591,6 +602,9 @@ impl State {
             trash_full: false,
             ws_anim: std::cell::Cell::new((0, 0, Instant::now())),
             walls: Default::default(),
+            island: Default::default(),
+            isl_ed: Default::default(),
+            peek: Default::default(),
             set,
         }
     }
@@ -700,6 +714,8 @@ pub fn run() {
         quit: false,
         restart: false,
         tray_anchor: None,
+        tray_sub: None,
+        cursor_applied: None,
         modal_at: None,
         mdrag: None,
     };
@@ -936,6 +952,11 @@ impl App {
                 let r = Region::new(&self.compositor).ok();
                 if let Some(r) = r {
                     s.layer.wl_surface().set_input_region(Some(r.wl_region()));
+                }
+                // уходящий бар места больше не держит: новый (поднятый над полноэкранным, островок
+                // вместо бара) встаёт у края, а не над ним
+                if s.kind == SKind::Bar {
+                    s.layer.set_exclusive_zone(-1);
                 }
                 s.layer.commit();
             }

@@ -73,6 +73,20 @@ impl Widget {
     }
 }
 
+/// плитка раскрытого островка: что, где и сколько клеток занимает
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
+#[serde(default, rename_all = "camelCase")]
+pub struct ITile {
+    /// island::TILES
+    pub kind: String,
+    pub x: i32,
+    pub y: i32,
+    pub w: i32,
+    pub h: i32,
+    /// свои настройки плитки: у «нагрузки» — счётчики (cpu, fan, ram…) и вид
+    pub opts: Vec<String>,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Settings {
@@ -207,6 +221,31 @@ pub struct Settings {
     pub bar_center_align: String,
     /// край экрана с баром: "top" или "bottom"
     pub bar_pos: String,
+    /// бар островком посередине верхнего края (island.rs): узкий, раздвигается на события,
+    /// по щелчку раскрывается вниз плитками
+    pub bar_island: bool,
+    /// островок висит от края с ушками; иначе — плавает плашкой с тенью
+    pub island_hang: bool,
+    /// у какого края островок: top, bottom, left, right
+    pub island_edge: String,
+    /// модули свёрнутого островка, по порядку
+    pub island_mods: Vec<String>,
+    /// значки в полосе раскрытого слева и справа от часов (island::SLOTS, до island::SLOT_MAX;
+    /// трей занимает всю сторону)
+    pub island_left: Vec<String>,
+    pub island_right: Vec<String>,
+    /// плитки раскрытого островка: сетка в island::COLS клеток шириной
+    pub island_tiles: Vec<ITile>,
+    /// на что островок раздвигается (island::EVENTS)
+    pub island_events: Vec<String>,
+    /// бар поверх полноэкранного: подержать курсор 2 с у верхнего края (peek.rs)
+    pub bar_peek: bool,
+    /// автоскрытие бара (peek.rs): never — всегда виден и занимает место; smart — виден на пустом
+    /// столе; always — спрятан, выезжает у верхнего края. Спрятанный места у окон не занимает
+    pub bar_hide: String,
+    /// тема курсора на всю систему (cursor.rs): "" — не трогать, какая стоит
+    pub cursor_theme: String,
+    pub cursor_size: i32,
 
 
     // система
@@ -380,6 +419,7 @@ pub const NUMS: &[(&str, i32, i32, i32)] = &[
     ("bar_width_pc", 30, 100, 5),
     ("bar_margin", 0, 32, 2),
     ("bar_radius", 0, 8, 1),
+    ("cursor_size", 8, 96, 4),
     ("reveal_grain", 1, 4, 1),
     ("night_temp", 2500, 6000, 250),
     ("night_on_h", 0, 23, 1),
@@ -468,6 +508,18 @@ impl Default for Settings {
             bar_radius: 0,
             bar_center_align: "center".into(),
             bar_pos: "top".into(),
+            bar_island: false,
+            island_hang: true,
+            island_mods: v(&["workspaces", "clock", "privacy_mic", "privacy_screen", "privacy_cam", "bat"]),
+            island_edge: "top".into(),
+            island_left: vec![],
+            island_right: vec![],
+            island_tiles: crate::island::default_tiles(),
+            island_events: crate::island::EVENTS.iter().map(|e| e.0.to_string()).collect(),
+            bar_peek: false,
+            bar_hide: "never".into(),
+            cursor_theme: String::new(),
+            cursor_size: 24,
             lock_after: 10,
             screen_off_after: 15,
             dnd: false,
@@ -599,6 +651,10 @@ impl Settings {
         if self.bar_pos != "bottom" {
             self.bar_pos = "top".into();
         }
+        crate::island::validate(self);
+        if !matches!(self.bar_hide.as_str(), "smart" | "always") {
+            self.bar_hide = "never".into();
+        }
         self.control_tiles.retain(|k| crate::control::TILES.iter().any(|t| t.0 == k));
         self.control_tiles.dedup();
         self.control_tiles.truncate(crate::control::MAX_TILES);
@@ -704,6 +760,7 @@ impl Settings {
             "bar_width_pc" => self.bar_width_pc,
             "bar_margin" => self.bar_margin,
             "bar_radius" => self.bar_radius,
+            "cursor_size" => self.cursor_size,
             "notif_offset" => self.notif_offset,
             "notif_offset_x" => self.notif_offset_x,
             "osd_offset" => self.osd_offset,
@@ -734,6 +791,7 @@ impl Settings {
             "bar_width_pc" => self.bar_width_pc = v,
             "bar_margin" => self.bar_margin = v,
             "bar_radius" => self.bar_radius = v,
+            "cursor_size" => self.cursor_size = v,
             "notif_offset" => self.notif_offset = v,
             "notif_offset_x" => self.notif_offset_x = v,
             "osd_offset" => self.osd_offset = v,

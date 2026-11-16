@@ -484,11 +484,18 @@ pub const OSD_KINDS: &[(&str, &str)] = &[("volume", "громкость"), ("mic
 impl App {
     /// OSD громкости, микрофона, яркости, раскладки, Caps и Num Lock — если включён (osdKinds, osdPos)
     pub fn show_osd(&mut self, kind: &'static str) {
-        if self.st.locked || !self.st.set.osd_kinds.iter().any(|k| k == kind) {
+        if self.st.locked {
             return;
         }
         // громкость и яркость меняют в панели управления: она сама их показывает
         if matches!(kind, "volume" | "bright") && (self.ctl_holding() || self.st.popup_is("control")) {
+            return;
+        }
+        // островок показывает это сам, раздвигаясь (свои события — island_events)
+        if self.island_live(crate::island::Live::Osd(kind)) {
+            return;
+        }
+        if !self.st.set.osd_kinds.iter().any(|k| k == kind) {
             return;
         }
         let fresh = self.st.osd.is_none();

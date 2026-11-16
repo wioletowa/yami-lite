@@ -235,6 +235,11 @@ pub(crate) fn tab_look(ui: &mut Ui, st: &State, b: R) {
     ui.toggle(R::new(b.x, y, half, 40), "пиксельные значки", "значки программ — 16×16 в тонах палитры", s.icon_pixel, Act::SBool("icon_pixel"));
     ui.toggle(R::new(b.x + half + 20, y, half, 40), "значки в цвет палитры", "", s.icon_tint, Act::SBool("icon_tint"));
     y += 50;
+    // курсор: тема и размер на всю систему (niri, GTK, X11, Flatpak — cursor.rs)
+    let (ct, cs) = if s.cursor_theme.is_empty() { crate::cursor::current() } else { (s.cursor_theme.clone(), s.cursor_size) };
+    opt_btn(ui, R::new(b.x, y, half, 26), "курсор", if ct.is_empty() { "—" } else { &ct }, Act::Drop("cursor_theme"));
+    num_btn(ui, R::new(b.x + half + 20, y, half, 26), "размер курсора", cs, "cursor_size");
+    y += 38;
     // размытие рисует niri (ext-background-effect), если оно включено в его конфиге
     ui.toggle(R::new(b.x, y, b.w, 26), "размытие под панелями (если включено в niri)", "", s.blur_shell, Act::SBool("blur_shell"));
     y += 38;

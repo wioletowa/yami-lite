@@ -48,6 +48,8 @@ pub fn spec(st: &State, key: &str) -> Option<(Opts, String)> {
         "reveal" => (list(&[("dither", "дизеринг"), ("scan", "развёртка"), ("noise", "шум"), ("wipe", "диагональ"), ("blocks", "блоки")]), s.reveal.clone()),
         "lang" => (vec![(String::new(), crate::i18n::tr("авто").to_string()), ("ru".into(), "Русский".into()), ("en".into(), "English".into())], s.lang.clone()), // i18n-ok: language names
         "dock_side" => (list(&[("bottom", "снизу"), ("left", "слева"), ("right", "справа"), ("top", "сверху")]), s.dock_side.clone()),
+        "island_edge" => (list(crate::island::EDGES), s.island_edge.clone()),
+        "bar_hide" => (list(&[("never", "никогда (занимает место)"), ("smart", "умно — виден на пустом столе"), ("always", "всегда — выезжает у края")]), s.bar_hide.clone()),
         "dock_hide" => (list(&[("smart", "умно — виден на пустом столе"), ("always", "всегда — выезжает у края"), ("never", "никогда (занимает место)")]), s.dock_hide.clone()),
         "dock_anim" => (list(&[("grow", "рост и подъём"), ("wave", "волна — соседи тоже растут"), ("lift", "подъём без роста"), ("none", "нет")]), s.dock_anim.clone()),
         "bar_center_align" => (list(&[("center", "по центру"), ("after-left", "за началом")]), s.bar_center_align.clone()),
@@ -55,6 +57,10 @@ pub fn spec(st: &State, key: &str) -> Option<(Opts, String)> {
         "wall_fit" => (list(crate::wall::FITS), s.wall_fit.clone()),
         "wall_tone" => (list(crate::wall::TONES), s.wall_tone.clone()),
         "wall_fade" => (list(crate::wall::FADES), s.wall_fade.clone()),
+        "cursor_theme" => {
+            let cur = if s.cursor_theme.is_empty() { crate::cursor::current().0 } else { s.cursor_theme.clone() };
+            (crate::cursor::themes().into_iter().map(|t| (t.clone(), t)).collect(), cur)
+        }
         "ws_style" => (list(&[("boxes", "квадраты с номером"), ("dots", "точки")]), s.ws_style.clone()),
         "cpu_style" => (list(&[("gauge", "шкала"), ("graph", "график"), ("number", "число")]), s.cpu_style.clone()),
         "fan_style" => (list(&[("gauge", "шкала"), ("graph", "график"), ("number", "число"), ("rpm", "значок и обороты")]), s.fan_style.clone()),
@@ -158,12 +164,15 @@ impl App {
             "lang" => s.lang = v,
             "dock_side" => s.dock_side = v,
             "dock_hide" => s.dock_hide = v,
+            "bar_hide" => s.bar_hide = v,
+            "island_edge" => s.island_edge = v,
             "dock_anim" => s.dock_anim = v,
             "bar_center_align" => s.bar_center_align = v,
             "bar_pos" => s.bar_pos = v,
             "wall_fit" => s.wall_fit = v,
             "wall_tone" => s.wall_tone = v,
             "wall_fade" => s.wall_fade = v,
+            "cursor_theme" => s.cursor_theme = v,
             "ws_style" => s.ws_style = v,
             "cpu_style" => s.cpu_style = v,
             "fan_style" => s.fan_style = v,

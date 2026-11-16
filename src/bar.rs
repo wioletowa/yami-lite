@@ -20,6 +20,12 @@ pub const SHADE: i32 = 3;
 /// сужается чужими исключёнными зонами. Полоса во всю ширину — вплотную к краю, как раньше;
 /// плашка (плавает или уже экрана) — с тенью, поверхность выше на её размер
 pub fn geo(s: &Settings, ow: i32) -> (i32, i32, i32) {
+    // островок: поверхность посередине, шире самого широкого события; плашка внутри по содержимому
+    if crate::island::on(s) {
+        let m = if s.island_hang { 0 } else { s.num("bar_margin") };
+        let w = crate::island::MAX_W.min(ow);
+        return (m, (ow - w) / 2, H + SHADE);
+    }
     let m = if s.bar_float { s.num("bar_margin") } else { 0 };
     let pc = s.num("bar_width_pc");
     if strip(s) {
@@ -66,17 +72,26 @@ mod tests {
 
 /// бар у нижнего края экрана
 pub fn low(s: &Settings) -> bool {
-    s.bar_pos == "bottom"
+    if crate::island::on(s) {
+        crate::island::edge(s) == crate::island::Edge::Bottom
+    } else {
+        s.bar_pos == "bottom"
+    }
 }
+
 
 /// бар — полоса во всю ширину вплотную к краю (не плашка)
 pub fn strip(s: &Settings) -> bool {
-    !s.bar_float && s.num("bar_width_pc") >= 100
+    !crate::island::on(s) && !s.bar_float && s.num("bar_width_pc") >= 100
 }
 
-pub fn draw(ui: &mut Ui, st: &State, out: &str, w: i32) {
+/// бар; у островка — где ловить мышь (вне плашки клики идут насквозь)
+pub fn draw(ui: &mut Ui, st: &State, out: &str, w: i32, h: i32) -> Option<R> {
     let t = ui.t;
     let set = &st.set;
+    if crate::island::on(set) {
+        return Some(crate::island::draw_bar(ui, st, out, w, h));
+    }
     let w = if strip(set) {
         ui.cv.blur_rect(R::new(0, 0, w, H), 0);
         ui.cv.fill(R::new(0, 0, w, H), t.glass_panel());
@@ -143,12 +158,13 @@ pub fn draw(ui: &mut Ui, st: &State, out: &str, w: i32) {
     for z in ui.zones.iter_mut().filter(|z| z.act != Act::BarBg) {
         z.r = R::new(z.r.x, 0, z.r.w, H + SHADE);
     }
+    None
 }
 
 /// ряд модулей от x0 в сторону dir (1 — вправо, -1 — влево). Разделитель — только между двумя
 /// видимыми модулями: без пар и висячих по краям. Возвращает внешний край последнего модуля (x0,
 /// если модулей нет); draw = false — только меряет; tw — ширина окон стола в этом ряду (0 — их нет)
-fn row(ui: &mut Ui, st: &State, out: &str, list: &mut dyn Iterator<Item = &String>, x0: i32, dir: i32, draw: bool, tw: i32) -> i32 {
+pub(crate) fn row(ui: &mut Ui, st: &State, out: &str, list: &mut dyn Iterator<Item = &String>, x0: i32, dir: i32, draw: bool, tw: i32) -> i32 {
     let (gap, sw) = (st.set.num("bar_gap"), st.set.num("bar_sep_w"));
     let mut x = x0;
     let (mut pending, mut any) = (false, false);
@@ -239,7 +255,7 @@ fn attention(ui: &mut Ui, x: i32, y: i32) {
 
 /// столы точками: пустой — тусклая точка, с окнами — светлая, активный — квадрат цвета акцента,
 /// в который точка вырастает ступенями по 2 px (и обратно у прошлого); в обзоре — тире
-fn workspace_dots(ui: &mut Ui, st: &State, list: &[crate::niri::Ws], x: i32, cy: i32) {
+pub(crate) fn workspace_dots(ui: &mut Ui, st: &State, list: &[crate::niri::Ws], x: i32, cy: i32) {
     let t = ui.t;
     let active = list.iter().find(|w| w.active).map_or(0, |w| w.id);
     let (mut cur, mut prev, mut at) = st.ws_anim.get();
@@ -280,7 +296,7 @@ fn workspace_dots(ui: &mut Ui, st: &State, list: &[crate::niri::Ws], x: i32, cy:
 }
 
 /// модуль бара: рисует (или только меряет) с левого края x, возвращает ширину
-fn module(ui: &mut Ui, st: &State, out: &str, m: &str, x: i32, measure: bool) -> i32 {
+pub(crate) fn module(ui: &mut Ui, st: &State, out: &str, m: &str, x: i32, measure: bool) -> i32 {
     let t = ui.t;
     let cy = (H - 1) / 2;
     match m {
@@ -577,7 +593,9 @@ fn module(ui: &mut Ui, st: &State, out: &str, m: &str, x: i32, measure: bool) ->
                 let r = R::new(x - 4, 0, w + 8, H - 1);
                 let hov = ui.hover(r) || st.popup_is("cal");
                 if hov {
-                    ui.cv.fill(R::new(x - 4, H - 3, w + 8, 2), t.red);
+                    // у островка снизу — вплотную к краю экрана: там у плашки нет рамки
+                    let uy = if crate::island::on(&st.set) && low(&st.set) { H - 2 } else { H - 3 };
+                    ui.cv.fill(R::new(x - 4, uy, w + 8, 2), t.red);
                 }
                 // непрочитанные уведомления: акцентом, при «не беспокоить» — красной
                 if st.notifs.unread() && !st.popup_is("cal") {
@@ -797,9 +815,9 @@ fn tasks(ui: &mut Ui, st: &State, out: &str, area: R) {
 impl App {
     /// поверхность бара на мониторе
     pub fn mk_bar(&mut self, out: &str) {
-        use smithay_client_toolkit::shell::wlr_layer::{KeyboardInteractivity, Layer};
+        use smithay_client_toolkit::shell::wlr_layer::KeyboardInteractivity;
         let p = self.bar_place(out);
-        let id = self.mk(SKind::Bar, out, Layer::Top, "yami-bar", p.anchor, (0, p.h), p.margin, H, KeyboardInteractivity::None);
+        let id = self.mk(SKind::Bar, out, self.bar_layer(), "yami-bar", p.anchor, p.size, p.margin, self.bar_excl(out), KeyboardInteractivity::None);
         if let Some(s) = self.surfs.get_mut(&id) {
             s.anchor_side = p.key;
             // mk считает верх по отступу сверху, а у нижнего бара он снизу
@@ -813,11 +831,12 @@ impl App {
         use smithay_client_toolkit::shell::wlr_layer::Anchor;
         let (ow, oh) = self.output_size(out);
         let (m, side, h) = geo(&self.st.set, ow);
-        let key = format!("{} {m} {side} {h} {oh}", self.st.set.bar_pos);
+        let edge = if crate::island::on(&self.st.set) { self.st.set.island_edge.as_str() } else { self.st.set.bar_pos.as_str() };
+        let key = format!("{} {edge} {m} {side} {h} {oh}", if crate::island::on(&self.st.set) { "island" } else { "bar" });
         if low(&self.st.set) {
-            BarPlace { anchor: Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT, margin: (0, side, m, side), h, origin: (side, oh - m - h), key }
+            BarPlace { anchor: Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT, margin: (0, side, m, side), size: (0, h), origin: (side, oh - m - h), key }
         } else {
-            BarPlace { anchor: Anchor::TOP | Anchor::LEFT | Anchor::RIGHT, margin: (m, side, 0, side), h, origin: (side, m), key }
+            BarPlace { anchor: Anchor::TOP | Anchor::LEFT | Anchor::RIGHT, margin: (m, side, 0, side), size: (0, h), origin: (side, m), key }
         }
     }
 
@@ -828,15 +847,23 @@ impl App {
         for id in self.find(&SKind::Bar) {
             let out = self.surfs.get(&id).map(|s| s.output.clone()).unwrap_or_default();
             let p = self.bar_place(&out);
+            let excl = self.bar_excl(&out);
             let Some(s) = self.surfs.get_mut(&id) else { continue };
             if s.anchor_side == p.key {
                 continue;
             }
+            // бар ↔ островок: прежний рассыпается, новый проявляется (ниже, sync_bar_outputs) —
+            // а не перекраивается на месте рывком
+            if s.anchor_side.split(' ').next() != p.key.split(' ').next() {
+                self.close(id);
+                moved = true;
+                continue;
+            }
             s.anchor_side = p.key;
             s.layer.set_anchor(p.anchor);
-            s.layer.set_size(0, p.h as u32);
+            s.layer.set_size(p.size.0 as u32, p.size.1 as u32);
             s.layer.set_margin(p.margin.0, p.margin.1, p.margin.2, p.margin.3);
-            s.layer.set_exclusive_zone(H);
+            s.layer.set_exclusive_zone(excl);
             s.layer.commit();
             s.margin = p.origin;
             s.applied = p.origin;
@@ -844,6 +871,7 @@ impl App {
             moved = true;
         }
         if moved {
+            self.sync_bar_outputs();
             // всё, что встаёт под баром, — на новое место
             self.close_popup();
             self.close_menu();
@@ -861,16 +889,27 @@ impl App {
         let names = self.output_names();
         for n in names {
             let have = self.find_on(&SKind::Bar, &n);
-            let want = !self.st.bar_hidden && self.bar_on(&n);
+            // автоскрытие: спрятанного нет вовсе, у края ждёт полоса (peek.rs)
+            let want = !self.st.bar_hidden && self.bar_on(&n) && !(self.bar_tucked(&n) && !self.st.peek.on);
             match (have, want) {
                 (Some(id), false) => {
-                    self.destroy(id);
+                    self.close(id);
                     self.close_popup();
                     self.close_menu();
                 }
                 (None, true) => self.mk_bar(&n),
                 _ => {}
             }
+        }
+    }
+
+    /// место, что бар держит у окон: выехавший из автоскрытия — поверх окон, места не занимает,
+    /// и поднятый над полноэкранным — тоже: он поверх, а не рядом
+    fn bar_excl(&self, out: &str) -> i32 {
+        if self.bar_tucked(out) || self.st.peek.on {
+            0
+        } else {
+            H
         }
     }
 
@@ -893,7 +932,8 @@ impl App {
 
     /// от своего края экрана до дальнего края бара (0 — бара на мониторе нет)
     fn bar_span(&self, out: &str) -> i32 {
-        if self.st.bar_hidden || !self.bar_on(out) {
+        // спрятан автоскрытием — места нет (выехал — всплывашки всё равно под ним)
+        if self.st.bar_hidden || !self.bar_on(out) || (self.bar_tucked(out) && !self.st.peek.on) {
             return 0;
         }
         let (ow, _) = self.output_size(out);
@@ -905,7 +945,8 @@ struct BarPlace {
     anchor: smithay_client_toolkit::shell::wlr_layer::Anchor,
     /// сверху, справа, снизу, слева — как у set_margin
     margin: (i32, i32, i32, i32),
-    h: i32,
+    /// размер поверхности (0 — по якорям)
+    size: (i32, i32),
     origin: (i32, i32),
     key: String,
 }

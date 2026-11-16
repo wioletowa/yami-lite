@@ -72,7 +72,16 @@ impl App {
                 if matches!(self.surf_kind(sid), Some(SKind::Dock | SKind::DockEdge)) {
                     self.dock_hover(true);
                 }
+                match self.surf_kind(sid) {
+                    Some(SKind::PeekEdge) => self.peek_edge(true),
+                    Some(SKind::Bar | SKind::Popup | SKind::Menu) => self.peek_bar(true),
+                    _ => {}
+                }
                 self.enter_serial = serial;
+                // вернулись на раскрытый островок, бар или меню трея из островка — не сворачивать
+                if self.surfs.get(&sid).is_some_and(|s| s.anchor_side == "island" || s.kind == SKind::Bar || s.kind == SKind::Menu) {
+                    self.st.island.leave = None;
+                }
                 self.cursor_now = None;
                 self.ptr = Some((sid, x, y));
                 let c = self.zone_at(sid, x, y).map(|z| z.cur).unwrap_or(Cur::Default);
@@ -88,6 +97,16 @@ impl App {
                 }
                 if self.surf_kind(sid) == Some(SKind::Dock) {
                     self.dock_hover(false);
+                }
+                match self.surf_kind(sid) {
+                    Some(SKind::PeekEdge) => self.peek_edge(false),
+                    Some(SKind::Bar | SKind::Popup | SKind::Menu) => self.peek_bar(false),
+                    _ => {}
+                }
+                // курсор ушёл с раскрытого островка: свернуть чуть погодя (island_tick)
+                let from_menu = self.surf_kind(sid) == Some(SKind::Menu) && self.st.popup_is("island");
+                if (from_menu || self.surfs.get(&sid).is_some_and(|s| s.anchor_side == "island" && !s.closing)) && self.press.is_none() {
+                    self.st.island.leave = Some(std::time::Instant::now());
                 }
                 if self.ptr.map(|p| p.0) == Some(sid) {
                     self.ptr = None;
@@ -254,6 +273,16 @@ impl App {
                 self.settings_changed();
             }
             Act::VolSlider => audio::set_volume(frac as f64 * 1.0),
+            Act::IslVol => {
+                self.st.island.held = Some((false, Instant::now()));
+                self.ctl_volume(frac as f64);
+                return;
+            }
+            Act::IslBright => {
+                self.st.island.held = Some((true, Instant::now()));
+                self.ctl_brightness(frac);
+                return;
+            }
             Act::MicSlider => audio::set_mic(frac as f64),
             Act::AppVol(i) => audio::set_stream(i, frac as f64),
             Act::MediaSeek => {
@@ -273,6 +302,13 @@ impl App {
                 if p.moved {
                     let press = (p.x, p.y);
                     self.bar_drag(&act, zone, press, x, y);
+                }
+                return;
+            }
+            Act::IslTile(_) | Act::IslSize(_) | Act::IslNew(_) | Act::IslMod(_) => {
+                if p.moved {
+                    let press = (p.x, p.y);
+                    self.island_drag(&act, zone, press, x, y);
                 }
                 return;
             }
@@ -330,6 +366,9 @@ impl App {
         }
         if matches!(p.act, Act::SModDrag(..) | Act::SModNew(_)) {
             self.bar_drop();
+        }
+        if matches!(p.act, Act::IslTile(_) | Act::IslSize(_) | Act::IslNew(_) | Act::IslMod(_)) {
+            self.island_drop();
         }
         if let (Act::MediaSeek, Some(f)) = (&p.act, self.st.seek.take()) {
             // одна перемотка на отпускание, а не процесс playerctl на каждое движение

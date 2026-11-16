@@ -330,7 +330,7 @@ fn qt(p: &Pal, on: bool) {
 }
 
 /// ключи в секции ini: заменить или дописать; секции нет — добавить
-fn set_ini(conf: &Path, sec: &str, kv: &[(&str, String)]) {
+pub(crate) fn set_ini(conf: &Path, sec: &str, kv: &[(&str, String)]) {
     let t = std::fs::read_to_string(conf).unwrap_or_default();
     let mut lines: Vec<String> = t.lines().map(String::from).collect();
     let head = format!("[{sec}]");

@@ -3,7 +3,7 @@
 // Безопасность: сокет 0600, говорим только с процессами своего пользователя (SO_PEERCRED),
 // строка не длиннее 4 КБ и ждём её не дольше 2 с — зависший клиент не заткнёт шелл.
 
-use crate::app::{Modal, Msg};
+use crate::app::{Modal, Msg, SKind};
 use crate::config::Settings;
 use calloop::channel::Sender;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -96,6 +96,30 @@ impl crate::app::App {
             // приватность окна: прицел niri, щелчок прячет приложение из трансляции (или возвращает)
             "hide" if crate::features::PRIVACY => self.hide_pick(),
             "bar" => self.toggle_bar(),
+            // проверка без мыши: как будто курсор продержали у края над полноэкранным (peek.rs)
+            "peek" => self.peek_edge(true),
+            // проверка без мыши (nest.sh): щелчок в точку экрана — по верхней поверхности шелла там
+            c if c.starts_with("click ") => {
+                let v: Vec<i32> = c[6..].split_whitespace().filter_map(|x| x.parse().ok()).collect();
+                if let [x, y, ..] = v[..] {
+                    let button = if v.get(2) == Some(&3) { crate::click::RMB } else { 0x110 };
+                    self.test_click(x, y, button);
+                }
+            }
+            // раскрыть или свернуть островок (бар островком)
+            "island" if crate::island::on(&self.st.set) => {
+                let out = self.focus_out();
+                self.open_popup("island", &out, 0);
+            }
+            // сразу большой вид плитки: календарь, музыка, нагрузка
+            c if c.starts_with("island ") && crate::island::on(&self.st.set) => {
+                let Some(k) = crate::island::big_kind(c[7..].trim()) else { return };
+                if !self.st.popup_is("island") {
+                    let out = self.focus_out();
+                    self.open_popup("island", &out, 0);
+                }
+                self.island_click(&crate::ui::Act::IslBig(k));
+            }
             "edit" => {
                 self.close_all();
                 self.set_editing(!self.st.editing);
@@ -127,6 +151,27 @@ impl crate::app::App {
             // свои обои: путь; без пути — пиксельные из палитры
             c if c == "wallpaper" || c.starts_with("wallpaper ") => self.set_wall(&c["wallpaper".len()..]),
             _ => {}
+        }
+    }
+
+    /// щелчок в точку экрана (msg click): поверхность сверху (всплывашка, меню, бар), её зона
+    fn test_click(&mut self, x: i32, y: i32, button: u32) {
+        let out = self.focus_out();
+        let order = [SKind::Menu, SKind::Popup, SKind::Bar, SKind::Catcher];
+        let hit = order.iter().find_map(|k| {
+            self.surfs.iter().filter(|(_, s)| &s.kind == k && !s.closing && s.output == out).find_map(|(id, s)| {
+                let (lx, ly) = ((x - s.margin.0) as f64, (y - s.margin.1) as f64);
+                (lx >= 0.0 && ly >= 0.0 && lx < s.w as f64 && ly < s.h as f64).then_some((*id, lx, ly))
+            })
+        });
+        let Some((sid, lx, ly)) = hit else { return };
+        // настоящий курсор сперва входит на поверхность — как если бы он там был
+        if matches!(self.surf_kind(sid), Some(SKind::Bar | SKind::Popup | SKind::Menu)) {
+            self.peek_bar(true);
+        }
+        self.ptr = Some((sid, lx, ly));
+        if let Some(z) = self.zone_at(sid, lx, ly) {
+            self.on_click(z.act.clone(), button, sid, z.r);
         }
     }
 

@@ -65,13 +65,14 @@ impl App {
             Act::DropClose | Act::DropScroll => return self.drop_close(),
             _ => {}
         }
-        if self.settings_click(&a) || self.wh_click(&a) {
+        if self.settings_click(&a) || self.island_click(&a) || self.wh_click(&a) {
             return;
         }
         let (out, ax, ay) = self.anchor(sid, zone);
         // ПКМ по бару: окна, трей и замок приватности — свои меню, в остальном месте — панель
         // управления
-        if kind == Some(SKind::Bar) && button == RMB && !matches!(a, Act::Task(_) | Act::Tray(_) | Act::Popup("hidden")) {
+        // у островка правый щелчок — как левый (раскрыть), без старой панели
+        if kind == Some(SKind::Bar) && button == RMB && !crate::island::on(&self.st.set) && !matches!(a, Act::Task(_) | Act::Tray(_) | Act::Popup("hidden") | Act::Popup("tray")) {
             let (mx, _) = self.surfs.get(&sid).map(|s| s.margin).unwrap_or((0, 0));
             let px = self.ptr.filter(|p| p.0 == sid).map_or(zone.x + zone.w / 2, |p| p.1 as i32);
             let py = if crate::bar::low(&self.st.set) { ay } else { self.bar_bottom(&out) + 2 };
@@ -142,7 +143,8 @@ impl App {
                 let Some(it) = self.st.tray.iter().find(|t| t.service == svc) else { return };
                 let (bus, path, menu, is_menu) = (it.bus.clone(), it.path.clone(), it.menu.clone(), it.is_menu);
                 // меню программы: под значком в баре или под её строкой во всплывашке трея
-                let in_popup = kind == Some(SKind::Popup);
+                // раскрытый островок — тоже всплывашка, но меню у него под полосой, как у бара
+                let in_popup = kind == Some(SKind::Popup) && !self.st.popup_is("island");
                 // из списка трея — меню над курсором; из бара — под баром (над нижним)
                 let at_ptr = self.ptr.filter(|p| p.0 == sid).zip(self.surfs.get(&sid)).map(|(p, s)| (s.margin.0 + p.1 as i32, s.margin.1 + p.2 as i32));
                 self.tray_anchor = Some(match (in_popup, at_ptr) {
@@ -179,11 +181,36 @@ impl App {
                 ("sys", RMB) => self.open_sysmon(),
                 // замок приватности: ЛКМ — выбрать окно, ПКМ — список скрытых
                 ("hidden", LMB) => self.hide_pick(),
-                _ => self.open_popup(k, &out, ax),
+                _ => {
+                    // сбоку всплывашка встаёт на высоте значка
+                    self.open_popup(k, &out, ax)
+                }
             },
             // ── питание ─────────────────────────────────────────────────────
             Act::PowerDo(i) => self.power_do(i),
+            Act::ISys(a) => {
+                self.close_popup();
+                self.sys_action(a);
+            }
             // ── меню ────────────────────────────────────────────────────────
+            // ПКМ по программе в списке трея (из островка) — её меню, как ПКМ по значку
+            Act::Menu(i) if button == RMB && self.menu_tray_svc(i).is_some() => {
+                let Some(svc) = self.menu_tray_svc(i) else { return };
+                let Some(it) = self.st.tray.iter().find(|t| t.service == svc) else { return };
+                let (bus, path, menu) = (it.bus.clone(), it.path.clone(), it.menu.clone());
+                let at = self.ptr.filter(|p| p.0 == sid).zip(self.surfs.get(&sid)).map_or((ax, ay), |(p, s)| (s.margin.0 + p.1 as i32, s.margin.1 + p.2 as i32));
+                // меню программы — под курсором, на месте строки: курсор сразу на нём
+                self.tray_anchor = Some((out.clone(), at.0 - 12, at.1 - 10, false));
+                // меню программы встанет подуровнем списка («назад» — к списку); без своего меню у
+                // программы — её собственное, список закрыть
+                if !menu.is_empty() {
+                    crate::dbus::tray_menu(&svc, &bus, &menu, self.tx.clone());
+                    self.tray_sub = Some(svc);
+                } else {
+                    self.close_menu();
+                    crate::dbus::tray_call(&bus, &path, "ContextMenu", at.0, at.1);
+                }
+            }
             Act::Menu(i) => self.menu_pick(i),
             Act::MenuBack => self.menu_pick(0),
             // ── всплывашки ──────────────────────────────────────────────────
@@ -328,6 +355,14 @@ impl App {
 
     pub fn on_wheel(&mut self, a: Act, d: i32) {
         let up = d < 0;
+        // большой вид уведомлений островка: колесо листает карточки
+        if self.st.popup_is("island") && self.st.island.big.as_ref().is_some_and(|b| b.kind == "notifs" && !b.back) {
+            let n = self.st.notifs.history.len();
+            let s = &mut self.st.island.notif_skip;
+            *s = if up { s.saturating_sub(1) } else { (*s + 1).min(n.saturating_sub(1)) };
+            self.dirty(&SKind::Popup);
+            return;
+        }
         match a {
             Act::Popup("sound" | "media") | Act::VolSlider | Act::VolMute => audio::step_volume(if up { 1 } else { -1 }),
             Act::CtlBright => self.ctl_brightness(self.st.leds.bright.unwrap_or(0.5) + if up { 0.05 } else { -0.05 }),

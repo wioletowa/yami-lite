@@ -39,7 +39,33 @@ impl App {
         self.sync_desk();
         self.sync_dock();
         self.sync_bar();
+        self.cursor_sync();
+        self.peek_sync();
         self.dirty_all();
+    }
+
+    /// тема курсора сменилась — разослать по системе (в нити: gsettings, flatpak). Размер тронули,
+    /// а тему ещё не выбирали — берётся та, что стоит
+    fn cursor_sync(&mut self) {
+        let first = self.cursor_applied.is_none();
+        let cur = self.cursor_applied.get_or_insert_with(crate::cursor::current).clone();
+        let s = &mut self.st.set;
+        // тема не выбрана: размер в настройках — тот, что стоит (стрелки шагают от него)
+        if first && s.cursor_theme.is_empty() {
+            s.cursor_size = cur.1;
+        }
+        if s.cursor_theme.is_empty() {
+            if s.cursor_size == cur.1 || cur.0.is_empty() {
+                return;
+            }
+            s.cursor_theme = cur.0.clone();
+        }
+        let want = (s.cursor_theme.clone(), s.cursor_size);
+        if want == cur {
+            return;
+        }
+        self.cursor_applied = Some(want.clone());
+        crate::cursor::apply_bg(want.0, want.1);
     }
 
     /// записать настройки сейчас (перед перезапуском), даже посреди перетаскивания

@@ -33,8 +33,12 @@ pub fn shows_viz(st: &State) -> bool {
 
 /// размер всплывашки; вкладки панели управления — все одного размера, со столбиком вкладок
 pub fn size(kind: &str, st: &State) -> (i32, i32) {
-    if crate::control::is_tab(kind) {
-        (crate::control::TAB_SIZE.0 + 38 + crate::control::RAIL, crate::control::TAB_SIZE.1 + 30)
+    if kind == "island" {
+        crate::island::panel_size(st)
+    } else if crate::control::is_tab(kind) {
+        // у островка панели управления нет: вкладка (сеть, bluetooth) — одна, без столбика вкладок
+        let rail = if crate::island::on(&st.set) { 0 } else { crate::control::RAIL };
+        (crate::control::TAB_SIZE.0 + 38 + rail, crate::control::TAB_SIZE.1 + 30)
     } else {
         base_size(kind, st)
     }
@@ -62,12 +66,16 @@ fn base_size(kind: &str, st: &State) -> (i32, i32) {
 
 pub fn draw(ui: &mut Ui, st: &State, w: i32, h: i32) {
     let Some(p) = &st.popup else { return };
+    if p.kind == "island" {
+        crate::island::draw_panel(ui, st, &p.out, w, h);
+        return;
+    }
     let fr = R::new(0, 0, w - 6, h - 6);
     ui.frame(fr, true);
     // «язычок» к модулю бара
     let t = ui.t;
     ui.cv.fill(R::new(2, 0, fr.w - 4, 2), t.red);
-    let tab = crate::control::is_tab(p.kind);
+    let tab = crate::control::is_tab(p.kind) && !crate::island::on(&st.set);
     let rail = if tab { crate::control::RAIL } else { 0 };
     if tab {
         crate::control::rail(ui, p.kind, R::new(12, 12, rail - 8, h - 30));
@@ -106,7 +114,7 @@ fn head(ui: &mut Ui, r: R, icon: &str, title: &str, sub: &str) -> i32 {
 
 
 // ── календарь ───────────────────────────────────────────────────────────────
-fn cal(ui: &mut Ui, st: &State, b: R) {
+pub(crate) fn cal(ui: &mut Ui, st: &State, b: R) {
     let t = ui.t;
     let now = crate::clock::local_now();
     let face = font::px(32);
@@ -139,7 +147,7 @@ fn cal(ui: &mut Ui, st: &State, b: R) {
     ui.button(R::new(nr.right() - 58, nr.y - 2, 26, 24), "", if st.set.dnd { "bellx" } else { "bell" }, Tone::Ghost, st.set.dnd, true, Act::Dnd);
     ui.button(R::new(nr.right() - 26, nr.y - 2, 26, 24), "", "trash", Tone::Ghost, false, n > 0, Act::NotifClear);
     ui.cv.fill(R::new(nr.x, nr.y + 26, nr.w, 1), t.border);
-    let mut y = nr.y + 34;
+    let y = nr.y + 34;
     if n == 0 {
         // пусто: значок и подпись посередине свободного места
         let free = R::new(nr.x, y, nr.w, nr.bottom() - y);
@@ -151,9 +159,16 @@ fn cal(ui: &mut Ui, st: &State, b: R) {
         }
         return;
     }
+    notif_cards(ui, st, nr, y, 0);
+}
+
+/// история уведомлений карточками от y до низа nr: щелчок — действие, × — убрать; при «тихо
+/// само» текст под пиксельным шумом (календарь во всплывашке, большой вид островка)
+pub(crate) fn notif_cards(ui: &mut Ui, st: &State, nr: R, mut y: i32, skip: usize) {
+    let t = ui.t;
     ui.cv.push_clip(R::new(nr.x, y, nr.w, nr.bottom() - y));
     let hide = st.auto_quiet();
-    for note in &st.notifs.history {
+    for note in st.notifs.history.iter().skip(skip) {
         if y > nr.bottom() {
             break;
         }
@@ -362,7 +377,7 @@ fn media(ui: &mut Ui, st: &State, b: R) {
 }
 
 /// карточка плеера: обложка, название, исполнитель, альбом, перемотка и кнопки внизу
-fn now_card(ui: &mut Ui, st: &State, r: R) {
+pub(crate) fn now_card(ui: &mut Ui, st: &State, r: R) {
     let t = ui.t;
     let m = &st.media;
     ui.cv.pxbox(r, &BoxStyle::new(t.surface, t.border));
@@ -895,6 +910,11 @@ impl App {
             return;
         }
         if e.keysym == Keysym::Escape {
+            // большой вид островка: Esc — сперва обратно к плиткам
+            if self.st.popup_is("island") && self.st.island.big.as_ref().is_some_and(|b| !b.back) {
+                self.island_click(&Act::IslBack);
+                return;
+            }
             self.close_popup();
         }
     }

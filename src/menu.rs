@@ -16,6 +16,8 @@ pub enum MAct {
     Dock(&'static str, &'static str),
     /// смешанный трей: закрепить или открепить программу (ключ — popups::tray_key)
     TrayPin(String),
+    /// список трея из островка: открыть программу, как щелчком по значку
+    TrayOpen(String),
     /// рабочий стол: действие и его довесок (команда «открыть в»)
     Desk(&'static str, String),
 }
@@ -60,11 +62,15 @@ pub struct MenuState {
     pub above: bool,
     pub stack: Vec<(String, Vec<MItem>)>,
     pub cur: Option<usize>,
+    /// смена уровня (список трея ↔ меню программы): рамка тянется от прежнего размера к новому
+    pub from: Option<(i32, i32, std::time::Instant)>,
+    /// размер последнего уровня — от него начнётся следующая смена
+    pub last: Option<(i32, i32)>,
 }
 
 impl MenuState {
     pub fn new(output: &str, x: i32, y: i32, title: &str, items: Vec<MItem>) -> MenuState {
-        MenuState { output: output.into(), x, y, above: false, stack: vec![(title.into(), items)], cur: None }
+        MenuState { output: output.into(), x, y, above: false, stack: vec![(title.into(), items)], cur: None, from: None, last: None }
     }
     fn top(&self) -> &(String, Vec<MItem>) {
         self.stack.last().unwrap()
@@ -95,12 +101,29 @@ pub fn size(m: &MenuState, f: &mut Fonts) -> (i32, i32) {
     (w.min(420) + 4, h + 4)
 }
 
-pub fn draw(ui: &mut Ui, st: &State, w: i32, h: i32) {
+/// меню; возвращает, где ловить мышь (рамка во время смены уровня меньше поверхности)
+pub fn draw(ui: &mut Ui, st: &State, w: i32, h: i32) -> Option<R> {
     let t = ui.t;
-    let Some(m) = &st.menu else { return };
+    let Some(m) = &st.menu else { return None };
+    // смена уровня: рамка тянется к размеру нового уровня, содержимое — по рамке
+    let (w, h) = match m.from {
+        Some((fw, fh, at)) => {
+            let (tw, th) = size(m, ui.f);
+            let dur = if st.set.anim() { 170.0 * st.set.anim_speed.max(0.1) } else { 0.0 };
+            let k = if dur == 0.0 { 1.0 } else { (at.elapsed().as_secs_f32() * 1000.0 / dur).min(1.0) };
+            if k < 1.0 {
+                ui.anim = true;
+            }
+            let e = 1.0 - (1.0 - k).powi(3);
+            let lerp = |a: i32, b: i32| a + ((b - a) as f32 * e).round() as i32;
+            (lerp(fw, tw).min(w), (lerp(fh, th) + 4).min(h))
+        }
+        None => (w, h),
+    };
     let fr = R::new(0, 0, w - 4, h - 8);
     ui.cv.pxbox(fr, &BoxStyle::new(t.panel, t.red).shadow(4));
     ui.zone(fr, Act::Block, Cur::Default);
+    ui.cv.push_clip(fr.inset(1));
     let mut y = 4;
     let title = &m.top().0;
     if !title.is_empty() {
@@ -126,6 +149,12 @@ pub fn draw(ui: &mut Ui, st: &State, w: i32, h: i32) {
             if on {
                 ui.cv.fill(R::new(b.x + 3, b.y + 3, 6, 6), t.ember);
             }
+        } else if let Some(t) = match &it.act {
+            // программа из списка трея — её же значок, что в баре (файл, тема или картинка)
+            Some(MAct::TrayOpen(svc)) => st.tray.iter().find(|t| t.service == *svc),
+            _ => None,
+        } {
+            crate::bar::tray_icon(ui, t, ic.x - 1, r.cy() - 8, st.set.tray_pixel);
         } else if !it.icon.is_empty() {
             if crate::gfx::icon7(&it.icon).is_some() {
                 ui.cv.icon_in(&it.icon, ic, 2, if it.danger { t.ember } else { t.text_dim });
@@ -144,6 +173,8 @@ pub fn draw(ui: &mut Ui, st: &State, w: i32, h: i32) {
         }
         y += 22;
     }
+    ui.cv.pop_clip();
+    Some(R::new(0, 0, w, h + 4))
 }
 
 impl App {
@@ -171,10 +202,18 @@ impl App {
     }
 
     fn resize_menu(&mut self) {
-        let Some(m) = &self.st.menu else { return };
+        let anim = self.st.set.anim();
+        let Some(m) = self.st.menu.as_mut() else { return };
         let (w, h) = size(m, &mut self.res.fonts);
+        // плавно — только вниз и вправо (меню над точкой растёт вверх: ему пришлось бы ехать)
+        let smooth = anim && !m.above;
+        let prev = m.last.unwrap_or((w, h));
+        m.last = Some((w, h));
+        m.from = smooth.then(|| (prev.0, prev.1, std::time::Instant::now()));
         for s in self.surfs.values_mut() {
             if s.kind == SKind::Menu && !s.closing {
+                // поверхность — под больший из двух: рамка тянется внутри, без пересоздания
+                let (w, h) = if smooth { (w.max(s.w), h.max(s.h - 4)) } else { (w, h) };
                 s.layer.set_size(w as u32, (h + 4) as u32);
                 s.layer.commit();
                 s.dirty = true;
@@ -201,6 +240,11 @@ impl App {
             }
             MAct::Dock(id, op) => self.dock_op(id, op),
             MAct::Desk(op, arg) => self.desk_op(op, arg),
+            MAct::TrayOpen(svc) => {
+                if let Some(it) = self.st.tray.iter().find(|t| t.service == svc) {
+                    crate::dbus::tray_call(&it.bus.clone(), &it.path.clone(), "Activate", 0, 0);
+                }
+            }
             MAct::TrayPin(key) => {
                 let p = &mut self.st.set.tray_pinned;
                 match p.iter().position(|x| *x == key) {
@@ -319,9 +363,37 @@ impl App {
         }
     }
 
+    /// строка i открытого меню — программа из списка трея (островок): её служба
+    pub fn menu_tray_svc(&self, i: usize) -> Option<String> {
+        match self.st.menu.as_ref()?.rows().get(i)?.act.as_ref()? {
+            MAct::TrayOpen(svc) => Some(svc.clone()),
+            _ => None,
+        }
+    }
+
     pub fn open_tray_menu(&mut self, svc: &str, items: Vec<MItem>) {
         if items.is_empty() {
             return;
+        }
+        // из списка трея: подуровнем того же меню
+        if self.tray_sub.take().as_deref() == Some(svc) && self.st.menu.is_some() {
+            let it = self.st.tray.iter().find(|t| t.service == svc);
+            let title = it.map(|t| crate::popups::tray_name(&self.st, t)).unwrap_or_default();
+            let mut sub = items.clone();
+            // смешанный трей: «Закрепить» — сразу под «назад», программа встанет в полосу значком
+            if let (Some(t), "hybrid") = (it, self.st.set.tray_mode.as_str()) {
+                let key = crate::popups::tray_key(t);
+                let pinned = self.st.set.tray_pinned.contains(&key);
+                sub.insert(0, MItem::new(if pinned { "Открепить" } else { "Закрепить" }, "pin", MAct::TrayPin(key)));
+                sub.insert(1, MItem::sep());
+            }
+            if let Some(m) = self.st.menu.as_mut() {
+                m.stack.push((title, sub));
+                m.cur = None;
+                self.resize_menu();
+                self.dirty(&SKind::Menu);
+                return;
+            }
         }
         let (out, x, y, above) = self.tray_anchor.clone().unwrap_or_else(|| {
             let out = self.focus_out();
@@ -337,7 +409,7 @@ impl App {
             let key = crate::popups::tray_key(t);
             let pinned = self.st.set.tray_pinned.contains(&key);
             items.push(MItem::sep());
-            items.push(MItem::new(if pinned { "убрать под стрелку" } else { "закрепить в баре" }, "pin", MAct::TrayPin(key)));
+            items.push(MItem::new(if pinned { "Открепить" } else { "Закрепить" }, "pin", MAct::TrayPin(key)));
         }
         let mut m = MenuState::new(&out, x, y, &title, items);
         m.above = above;
