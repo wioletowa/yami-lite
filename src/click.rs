@@ -30,12 +30,18 @@ impl App {
             }
             return;
         }
+        // вписывали время таймера вкладки и щёлкнули мимо — поставить набранное
+        if self.st.watch.edit.is_some() && a != Act::WatchTime {
+            self.watch_edit_done(true);
+        }
         match &a {
+            Act::WatchTime => return self.watch_time_click(),
+            Act::SwGo => return self.sw_go(),
+            Act::SwLap => return self.sw_lap(),
             Act::TimerGo(id) => return self.timer_go(*id),
             Act::TimerReset(id) => return self.timer_reset(*id),
             Act::TimerTest(id) => {
-                let vol = self.st.set.widgets.iter().find(|w| w.id == *id).map_or(0.7, |w| w.volume);
-                crate::sound::chime(vol);
+                crate::sound::chime(self.timer_volume(*id));
                 return;
             }
             Act::NotesCheck(id, line) => return self.notes_check(*id, *line),
@@ -106,6 +112,7 @@ impl App {
             Act::CalcKey(k) => self.calc_key(k),
             Act::CalcHist(i) => self.calc_hist(i),
             Act::CalcClear => self.st.calc.clear_history(),
+            Act::CalcCaret(n) => self.calc_caret(n),
             Act::CtlViz => {
                 // стили по кругу, после последнего — «выкл» (захват звука не нужен), затем снова первый
                 let st = crate::widgets::STYLES;
@@ -389,6 +396,7 @@ impl App {
             }
             Act::DockItem(i) => self.dock_wheel(i, up),
             Act::TimerWheel(id) => self.timer_wheel(id, up),
+            Act::WatchTime => self.timer_wheel(crate::timer::TAB, up),
             Act::CalcList | Act::CalcHist(_) => self.calc_scroll(up),
             Act::NotesBody(id) => {
                 let h = self.surfs.values().find(|s| s.kind == SKind::Widget(id)).map_or(300, |s| s.h);

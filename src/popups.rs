@@ -11,7 +11,7 @@ use crate::widgets;
 use smithay_client_toolkit::seat::keyboard::{KeyEvent, Keysym};
 
 /// виды всплывашек: `popup KIND`, `yami open KIND`, shot
-pub const KINDS: &[&str] = &["cal", "sound", "media", "net", "bt", "sys", "bat", "tray", "control", "wallhaven", "fan", "weather", "calc", "hidden"];
+pub const KINDS: &[&str] = &["cal", "sound", "media", "net", "bt", "sys", "bat", "tray", "control", "wallhaven", "fan", "weather", "calc", "clock", "hidden"];
 
 impl State {
     /// открыта всплывашка этого вида
@@ -93,6 +93,7 @@ pub fn draw(ui: &mut Ui, st: &State, w: i32, h: i32) {
         "control" => crate::control::draw(ui, st, body),
         "weather" => crate::weather::draw(ui, st, body),
         "calc" => crate::calc::draw(ui, st, body),
+        "clock" => crate::watch::draw(ui, st, body),
         "wallhaven" => crate::wallhaven::draw(ui, st, body),
         "fan" => crate::fan::draw(ui, st, body),
         "hidden" => crate::hide::draw(ui, st, body),
@@ -887,7 +888,7 @@ impl App {
         if self.st.drop.is_some() && e.keysym == Keysym::Escape {
             return self.drop_close();
         }
-        if self.wh_key(e) || self.calc_key_event(e) {
+        if self.wh_key(e) || self.calc_key_event(e) || self.watch_key_event(e) {
             return;
         }
         if self.st.field_focus == Some("wifi") {

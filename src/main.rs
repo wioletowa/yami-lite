@@ -44,6 +44,7 @@ mod notif;
 mod night;
 mod pam;
 mod panels;
+mod watch;
 mod peek;
 mod input;
 mod island;

@@ -305,6 +305,8 @@ pub struct State {
     pub timers: HashMap<u32, crate::timer::Timer>,
     /// вкладка калькулятора (calc.rs): выражение и история
     pub calc: crate::calc::Calc,
+    /// вкладка «часы» (watch.rs): секундомер и ввод времени таймера
+    pub watch: crate::watch::Watch,
     pub timer_wheel_at: HashMap<u32, Instant>,
     /// виджеты-заметки (notes.rs): текст файла, прокрутка, правка
     pub notes: HashMap<u32, crate::notes::Note>,
@@ -557,6 +559,7 @@ impl State {
             desk: Default::default(),
             timers: crate::timer::load(),
             calc: crate::calc::Calc::load(),
+            watch: Default::default(),
             timer_wheel_at: HashMap::new(),
             notes: HashMap::new(),
             bat_warn: 0,

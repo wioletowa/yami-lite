@@ -122,6 +122,8 @@ pub enum Act {
     CalcHist(usize),
     CalcClear,
     CalcList,
+    /// щель в выражении: курсор ввода туда (сколько знаков за ним)
+    CalcCaret(usize),
     /// большой эквалайзер вкладки музыки: следующий стиль
     CtlViz,
     /// рабочий стол: значок (имя в папке) и пустое место
@@ -131,6 +133,11 @@ pub enum Act {
     InfoClose,
     /// таймер: колесо над кольцом, запустить/пауза, сбросить
     TimerWheel(u32),
+    /// вкладка «часы»: кольцо таймера (колесо, тянуть, двойной щелчок — вписать), секундомер:
+    /// старт-пауза, круг-сброс
+    WatchTime,
+    SwGo,
+    SwLap,
     TimerGo(u32),
     TimerReset(u32),
     /// настройки виджета-таймера: громкость сигнала (ползунок) и «прослушать»
@@ -233,7 +240,7 @@ pub enum Act {
 
 impl Act {
     pub fn is_drag(&self) -> bool {
-        matches!(self, Act::SSlider(..) | Act::CtlVol | Act::CtlBright | Act::FanLevel | Act::VolSlider | Act::MicSlider | Act::AppVol(_) | Act::MediaSeek | Act::MDrag | Act::WDrag(_) | Act::SModDrag(..) | Act::SModNew(_) | Act::IslVol | Act::IslBright | Act::IslTile(_) | Act::IslSize(_) | Act::IslNew(_) | Act::IslMod(_) | Act::DeskItem(_) | Act::DeskBg | Act::TimerVol(_))
+        matches!(self, Act::SSlider(..) | Act::CtlVol | Act::CtlBright | Act::FanLevel | Act::VolSlider | Act::MicSlider | Act::AppVol(_) | Act::MediaSeek | Act::MDrag | Act::WDrag(_) | Act::SModDrag(..) | Act::SModNew(_) | Act::IslVol | Act::IslBright | Act::IslTile(_) | Act::IslSize(_) | Act::IslNew(_) | Act::IslMod(_) | Act::DeskItem(_) | Act::DeskBg | Act::TimerVol(_) | Act::WatchTime)
     }
 }
 

@@ -273,6 +273,12 @@ impl App {
                 self.settings_changed();
             }
             Act::VolSlider => audio::set_volume(frac as f64 * 1.0),
+            Act::WatchTime => {
+                if p.moved {
+                    self.watch_drag(dy);
+                }
+                return;
+            }
             Act::IslVol => {
                 self.st.island.held = Some((false, Instant::now()));
                 self.ctl_volume(frac as f64);
@@ -369,6 +375,13 @@ impl App {
         }
         if matches!(p.act, Act::IslTile(_) | Act::IslSize(_) | Act::IslNew(_) | Act::IslMod(_)) {
             self.island_drop();
+        }
+        if p.act == Act::WatchTime {
+            self.st.watch.drag_from = None;
+            // протянули — это не щелчок: двойной не считать
+            if p.moved {
+                self.st.watch.click_at = None;
+            }
         }
         if let (Act::MediaSeek, Some(f)) = (&p.act, self.st.seek.take()) {
             // одна перемотка на отпускание, а не процесс playerctl на каждое движение

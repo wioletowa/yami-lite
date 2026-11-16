@@ -2,7 +2,7 @@
 // лёгкой вуалью и аптайм системы; снизу — два вертикальных пиксельных ползунка (громкость и яркость,
 // как в OSD: клетки, значок, процент) и плитки на выбор (controlTiles, от 1 до 5).
 // Слева у панели — столбик вкладок: сеть, bluetooth, музыка, система, погода, календарь,
-// калькулятор. Каждая
+// калькулятор, часы. Каждая
 // вкладка — свой вид всплывашки, окно у всех одного размера; модули бара открывают панель сразу на
 // своей.
 
@@ -23,6 +23,7 @@ pub const TABS: &[(&str, &str, &str)] = &[
     ("weather", "cloud", "погода"),
     ("cal", "cal", "календарь"),
     ("calc", "calc", "калькулятор"),
+    ("clock", "clock", "часы"),
 ];
 /// содержимое любой вкладки — один размер окна на всю панель
 pub const TAB_SIZE: (i32, i32) = (660, 372);
@@ -44,9 +45,11 @@ pub fn tab_step(kind: &str, up: bool) -> &'static str {
 pub fn rail(ui: &mut Ui, kind: &str, r: R) {
     let t = ui.t;
     let n = TABS.len() as i32;
+    // во всю высоту, ровными промежутками: первая — у верха, последняя — у низа
     let cell = ((r.h - (n - 1) * 4) / n).min(36);
+    let gap = if n > 1 { (r.h - n * cell) / (n - 1) } else { 0 };
     for (i, (k, icon, _)) in TABS.iter().enumerate() {
-        let c = R::new(r.x, r.y + i as i32 * (cell + 4), r.w, cell);
+        let c = R::new(r.x, r.y + i as i32 * (cell + gap), r.w, cell);
         let on = *k == kind;
         let hov = ui.hover(c);
         if on {

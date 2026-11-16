@@ -1,7 +1,8 @@
 // Калькулятор: вкладка панели управления. Слева — кнопки (цифры, + − × ÷, скобки, степени, √, %,
 // π), справа — выражение с ответом и история под ним. Считает по мере набора (ответ бледный), «=»
 // кладёт строку в историю; щелчок по строке истории — её ответ обратно в выражение. С клавиатуры —
-// тоже: цифры, знаки, Enter, Backspace, Delete. История — в ~/.local/state/yami-lite/calc.json.
+// тоже: цифры, знаки, Enter, Backspace, Delete. Курсор ввода ставится щелчком по выражению и
+// стрелками; набор и стирание — у него. История — в ~/.local/state/yami-lite/calc.json.
 
 use crate::app::{App, SKind, State};
 use crate::font::{self, PX};
@@ -19,6 +20,9 @@ pub struct Calc {
     /// выражение, как набрано
     #[serde(skip)]
     pub expr: String,
+    /// курсор ввода: сколько знаков выражения за ним (0 — в конце)
+    #[serde(skip)]
+    pub tail: usize,
     /// только что нажали «=»: цифра начнёт новое выражение, знак — продолжит ответ
     #[serde(skip)]
     pub done: bool,
@@ -50,8 +54,32 @@ impl Calc {
         }
     }
 
+    /// где в строке выражения курсор ввода (байт)
+    fn cut(&self) -> usize {
+        let n = self.expr.chars().count();
+        self.expr.char_indices().nth(n.saturating_sub(self.tail)).map_or(self.expr.len(), |(i, _)| i)
+    }
+
+    /// курсор ввода: tail знаков за ним; после «=» ответ становится выражением для правки
+    pub fn set_tail(&mut self, tail: usize) {
+        self.tail = tail.min(self.expr.chars().count());
+        if self.done {
+            self.done = false;
+            self.fly = Some(std::time::Instant::now());
+        }
+    }
+
     /// кнопка или клавиша: "0"…"9", ".", знаки, "(", ")", "√", "π", "x²", "C", "del", "="
     pub fn press(&mut self, k: &str) {
+        // правка — у курсора: всё, что за ним, отложить и вернуть после («C» и «=» — про всё)
+        let tail = if matches!(k, "C" | "=") { String::new() } else { self.expr.split_off(self.cut()) };
+        self.press_at(k);
+        self.tail = tail.chars().count();
+        self.expr.push_str(&tail);
+    }
+
+    /// press на выражении до курсора
+    fn press_at(&mut self, k: &str) {
         let op = matches!(k, "+" | "−" | "×" | "÷" | "^" | "%" | "x²");
         let was_done = self.done;
         if self.done && !op && !matches!(k, "del" | "=") {
@@ -292,27 +320,56 @@ pub fn draw(ui: &mut Ui, st: &State, b: R) {
     let rw = b.right() - rx;
     // правый край — как у ответов в истории
     let inner = R::new(rx + 8, b.y + 4, rw - 16, 92);
-    let val = eval(&c.expr);
-    // выражение — хвостом, если не влезает
-    let mut shown = c.expr.as_str();
-    while ui.w(PX, shown) > inner.w && !shown.is_empty() {
-        let mut it = shown.chars();
-        it.next();
-        shown = it.as_str();
+    // сверху — пример крупно в одну строку с курсором ввода; после «=» там ответ
+    let (line, col) = if c.expr.is_empty() { ("0", t.text_faint) } else { (c.expr.as_str(), t.text_hi) };
+    let caret = if c.done { 0 } else { 4 };
+    let room = inner.w - caret;
+    // длинное — мельче, а уж совсем длинное — хвостом
+    let face = [48, 32, 24].into_iter().map(font::px).find(|&f| ui.w(f, line) <= room).unwrap_or(font::px(24));
+    // не влезает — срезать слева, а дойдя до курсора — справа: курсор всегда на виду
+    let chars: Vec<char> = line.chars().collect();
+    let n = chars.len();
+    let at = if c.expr.is_empty() { n } else { n - c.tail.min(n) };
+    let (mut s, mut e) = (0, n);
+    while s < e && ui.w(face, &chars[s..e].iter().collect::<String>()) > room {
+        if s < at {
+            s += 1;
+        } else {
+            e -= 1;
+        }
     }
-    let expr_line = if c.done { c.history.first().map_or("", |h| h.0.as_str()) } else { shown };
-    ui.text_right(PX, R::new(inner.x, inner.y, inner.w, 18), expr_line, t.text_dim);
-    let (ans, col) = match (&val, c.expr.is_empty()) {
-        (_, true) => ("0".to_string(), t.text_faint),
-        (Ok(v), _) if c.done => (fmt(*v), t.text_hi),
-        (Ok(v), _) => (fmt(*v), t.text_dim),
-        (Err(_), _) => ("…".to_string(), t.text_faint),
-    };
-    let ans = if c.done { c.expr.clone() } else { ans };
-    // крупно, а длинное — мельче, чтобы влезло
-    let face = [48, 32, 24, 16].into_iter().map(font::px).find(|&f| ui.w(f, &ans) <= inner.w).unwrap_or(PX);
+    let shown: String = chars[s..e].iter().collect();
     let fh = ui.f.line(face);
-    ui.text_right(face, R::new(inner.x, inner.bottom() - fh, inner.w, fh), &ans, col);
+    let lr = R::new(inner.x, inner.y, room, fh);
+    ui.text_right(face, lr, &shown, col);
+    // левый край текста — как у text_right: правый край чернил у края строки
+    let x0 = ui.f.ink(face, &shown).map_or(lr.right(), |(lo, w)| lr.right() - w - lo);
+    let xs: Vec<i32> = (s..=e).map(|j| x0 + ui.w(face, &chars[s..j].iter().collect::<String>())).collect();
+    if !c.done {
+        // в щели перед следующим знаком: его чернила начинаются сразу у границы
+        let cx = xs[at.clamp(s, e) - s] - 1;
+        ui.cv.fill(R::new(cx.clamp(inner.x, inner.right() - 2), inner.y, 2, fh), t.text_hi);
+    }
+    // щелчок между знаками ставит туда курсор: у каждой щели — полоса до середин соседних знаков
+    if !c.expr.is_empty() {
+        for (i, &x) in xs.iter().enumerate() {
+            let l = if i == 0 { inner.x } else { (xs[i - 1] + x) / 2 };
+            let r = if i + 1 == xs.len() { inner.right() } else { (x + xs[i + 1]) / 2 };
+            ui.zone(R::new(l, inner.y, r - l, fh), Act::CalcCaret(n - (s + i)), Cur::Text);
+        }
+    }
+    // под ним — ответ поменьше; после «=» — пример, из которого он вышел
+    let small = font::px(24);
+    let sub = if c.done {
+        c.history.first().map_or(String::new(), |h| h.0.clone())
+    } else if c.expr.is_empty() {
+        String::new()
+    } else {
+        eval(&c.expr).map(fmt).unwrap_or_default()
+    };
+    let sh = ui.f.line(small);
+    let sface = if ui.w(small, &sub) <= inner.w { small } else { PX };
+    ui.text_right(sface, R::new(inner.x, inner.bottom() - sh, inner.w, sh), &sub, t.text_dim);
     // ── история ──
     let hy = b.y + 112;
     ui.cv.icon("clock", rx, hy + 3, 2, t.red);
@@ -385,14 +442,27 @@ impl App {
         self.dirty(&SKind::Popup);
     }
 
+    /// курсор ввода: tail знаков за ним (щелчок по выражению, стрелки)
+    pub fn calc_caret(&mut self, tail: usize) {
+        self.st.calc.set_tail(tail);
+        self.dirty(&SKind::Popup);
+    }
+
     pub fn calc_hist(&mut self, i: usize) {
         let c = &mut self.st.calc;
         if let Some((_, a)) = c.history.get(i).cloned() {
-            // после знака — дописать к выражению, иначе заменить
+            // после знака (у курсора) — вставить, иначе заменить всё выражение
+            let tail = c.expr.split_off(c.cut());
             if c.done || !c.expr.ends_with(['+', '−', '×', '÷', '^', '(']) {
                 c.expr.clear();
+                c.tail = 0;
+            } else {
+                c.tail = tail.chars().count();
             }
             c.expr.push_str(&a);
+            if c.tail > 0 {
+                c.expr.push_str(&tail);
+            }
             if c.done {
                 c.fly = Some(std::time::Instant::now());
             }
@@ -411,6 +481,20 @@ impl App {
     pub fn calc_key_event(&mut self, e: &KeyEvent) -> bool {
         if !self.st.popup_is("calc") || self.st.field_focus.is_some() {
             return false;
+        }
+        // курсор ввода: стрелки, Home, End
+        let n = self.st.calc.expr.chars().count();
+        let tail = self.st.calc.tail;
+        let to = match e.keysym {
+            Keysym::Left => Some(tail + 1),
+            Keysym::Right => Some(tail.saturating_sub(1)),
+            Keysym::Home => Some(n),
+            Keysym::End => Some(0),
+            _ => None,
+        };
+        if let Some(to) = to {
+            self.calc_caret(to);
+            return true;
         }
         let k = match e.keysym {
             Keysym::Return | Keysym::KP_Enter => "=",
@@ -493,5 +577,18 @@ mod tests {
         assert_eq!(c.history.len(), 2);
         c.press("5");
         assert_eq!(c.expr, "5");
+        // правка у курсора: «12+3», курсор за «12»: стёрли — «1+3», цифра — «19+3»; «=» — про всё
+        c.press("C");
+        for k in ["1", "2", "+", "3"] {
+            c.press(k);
+        }
+        c.set_tail(2);
+        c.press("del");
+        c.press("9");
+        assert_eq!((c.expr.as_str(), c.tail), ("19+3", 2));
+        c.press("×");
+        assert_eq!(c.expr, "19×+3");
+        c.press("=");
+        assert_eq!((c.expr.as_str(), c.tail), ("57", 0));
     }
 }

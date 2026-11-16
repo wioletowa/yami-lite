@@ -13,7 +13,9 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 /// больше — некуда: 23:59:45
-const MAX: u32 = 24 * 3600 - 15;
+pub const MAX: u32 = 24 * 3600 - 15;
+/// таймер вкладки «часы» (watch.rs) — не виджет, свой id
+pub const TAB: u32 = u32::MAX;
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -127,22 +129,27 @@ pub fn draw(ui: &mut Ui, st: &State, id: u32, size: &str, r: R, c: C) {
         "l" => 48,
         _ => 32,
     });
-    let s = fmt(shown);
+    let edit = if id == TAB { st.watch.edit.as_deref() } else { None };
+    let s = edit.map_or_else(|| fmt(shown), crate::watch::edit_text);
     let lh = ui.f.line(face);
-    let col = if tm.done && blink { t.ember } else { t.text_hi };
+    let col = if edit.is_some() { t.red } else if tm.done && blink { t.ember } else { t.text_hi };
     ui.text_center(face, R::new(ring.x, cy - lh / 2 - 6, ring.w, lh), &s, col);
-    let hint = if tm.done {
+    let hint = if edit.is_some() {
+        crate::i18n::tr("цифры и Enter")
+    } else if tm.done {
         crate::i18n::tr("время!")
     } else if tm.running() {
         crate::i18n::tr("идёт")
     } else if tm.left > 0 {
         crate::i18n::tr("пауза")
+    } else if id == TAB {
+        crate::i18n::tr("крути, тяни, два щелчка")
     } else {
         crate::i18n::tr("крути колесо")
     };
     ui.text_center(PX, R::new(ring.x, cy + lh / 2 - 2, ring.w, 18), hint, t.text_faint);
-    // колесо — над кольцом (пока не идёт)
-    ui.zone(ring, Act::TimerWheel(id), Cur::Default);
+    // колесо — над кольцом (пока не идёт); у вкладки его ещё тянут и вписывают время (watch.rs)
+    ui.zone(ring, if id == TAB { Act::WatchTime } else { Act::TimerWheel(id) }, Cur::Default);
     let by = r.bottom() - 28;
     let bw = (r.w - 8) / 2;
     // подписи без значков: «запустить» и «сбросить» влезают и в маленький таймер
@@ -164,9 +171,36 @@ impl App {
     }
 
     fn timer_changed(&mut self, id: u32) {
-        self.st.timers.retain(|k, _| self.st.set.widgets.iter().any(|w| w.id == *k));
+        self.st.timers.retain(|k, _| *k == TAB || self.st.set.widgets.iter().any(|w| w.id == *k));
         save(&self.st.timers);
-        self.dirty(&SKind::Widget(id));
+        self.timer_dirty(id);
+    }
+
+    /// таймер на экране: виджет или вкладка «часы»
+    fn timer_dirty(&mut self, id: u32) {
+        if id == TAB {
+            self.dirty(&SKind::Popup);
+        } else {
+            self.dirty(&SKind::Widget(id));
+        }
+    }
+
+    /// громкость сигнала: у виджета — своя; у вкладки — первого виджета-таймера
+    pub fn timer_volume(&self, id: u32) -> f32 {
+        let ws = &self.st.set.widgets;
+        let w = if id == TAB { ws.iter().find(|w| w.kind == "timer") } else { ws.iter().find(|w| w.id == id) };
+        w.map_or(0.7, |w| w.volume)
+    }
+
+    /// выбрать время (стоящему таймеру): колесо, мышь, ввод
+    pub fn timer_set(&mut self, id: u32, secs: u32) {
+        let t = self.timer_mut(id);
+        if t.running() || t.left > 0 {
+            return;
+        }
+        t.done = false;
+        t.set = secs.min(MAX);
+        self.timer_changed(id);
     }
 
     /// колесо над кольцом: шаг по скорости, вверх — больше
@@ -224,13 +258,12 @@ impl App {
         }
         let live: Vec<u32> = self.st.timers.iter().filter(|(_, t)| t.running() || t.done).map(|(id, _)| *id).collect();
         for id in live {
-            self.dirty(&SKind::Widget(id));
+            self.timer_dirty(id);
         }
         if !rang.is_empty() {
             save(&self.st.timers);
             for &(id, _) in &rang {
-                let vol = self.st.set.widgets.iter().find(|w| w.id == id).map_or(0.7, |w| w.volume);
-                crate::sound::chime(vol);
+                crate::sound::chime(self.timer_volume(id));
             }
             for (_, set) in rang {
                 self.toast_note(crate::i18n::tr("таймер"), &crate::tf!("прошло {}", "{} is up", fmt(set)));
