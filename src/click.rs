@@ -398,6 +398,12 @@ impl App {
             Act::TimerWheel(id) => self.timer_wheel(id, up),
             Act::WatchTime => self.timer_wheel(crate::timer::TAB, up),
             Act::CalcList | Act::CalcHist(_) => self.calc_scroll(up),
+            // уведомления в календаре: колесо над списком или карточкой
+            Act::NotifList | Act::NotifClick(_) | Act::NotifDel(_) if self.st.popup_is("cal") => {
+                let max = self.st.notif_scroll_max.get();
+                self.st.notif_scroll = (self.st.notif_scroll.min(max) + if up { -40 } else { 40 }).clamp(0, max);
+                self.dirty(&SKind::Popup);
+            }
             Act::NotesBody(id) => {
                 let h = self.surfs.values().find(|s| s.kind == SKind::Widget(id)).map_or(300, |s| s.h);
                 self.notes_scroll(id, up, h - 40);

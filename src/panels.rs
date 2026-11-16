@@ -177,6 +177,7 @@ impl App {
                 // история показана — прочитано
                 self.st.notifs.seen = Some(std::time::Instant::now());
                 self.st.cal_month = 0;
+                self.st.notif_scroll = 0;
                 self.st.cal_pick = None;
             }
             "wallhaven" => self.wh_opened(),

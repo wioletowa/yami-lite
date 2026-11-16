@@ -100,7 +100,7 @@ pub fn scroll_of(st: &State) -> i32 {
 }
 
 /// полоса прокрутки: клетки дорожки и бегунок
-fn scrollbar(ui: &mut Ui, r: R, view: i32, full: i32, at: i32) {
+pub(crate) fn scrollbar(ui: &mut Ui, r: R, view: i32, full: i32, at: i32) {
     let t = ui.t;
     if full <= view {
         return;

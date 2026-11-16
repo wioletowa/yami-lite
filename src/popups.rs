@@ -160,20 +160,49 @@ pub(crate) fn cal(ui: &mut Ui, st: &State, b: R) {
         }
         return;
     }
-    notif_cards(ui, st, nr, y, 0);
+    // не влезают — листаются колесом, полоса прокрутки справа
+    let view = nr.bottom() - y;
+    let full: i32 = st.notifs.history.iter().map(|n| card_h(n) + 6).sum::<i32>() - 6;
+    let max = (full - view).max(0);
+    st.notif_scroll_max.set(max);
+    let off = st.notif_scroll.min(max);
+    let lr = if max > 0 {
+        crate::settings::scrollbar(ui, R::new(nr.right() - 4, y, 4, view), view, full, off);
+        R::new(nr.x, nr.y, nr.w - 10, nr.h)
+    } else {
+        nr
+    };
+    ui.zone(R::new(lr.x, y, lr.w, view), Act::NotifList, Cur::Default);
+    notif_cards(ui, st, lr, y, 0, off);
 }
 
-/// история уведомлений карточками от y до низа nr: щелчок — действие, × — убрать; при «тихо
-/// само» текст под пиксельным шумом (календарь во всплывашке, большой вид островка)
-pub(crate) fn notif_cards(ui: &mut Ui, st: &State, nr: R, mut y: i32, skip: usize) {
+/// высота карточки уведомления: с текстом под заголовком — выше
+fn card_h(n: &crate::notif::Note) -> i32 {
+    if n.body.is_empty() {
+        52
+    } else {
+        70
+    }
+}
+
+/// история уведомлений карточками от y до низа nr, сдвинутая вверх на off px: щелчок — действие,
+/// × — убрать; при «тихо само» текст под пиксельным шумом (календарь во всплывашке, большой вид
+/// островка)
+pub(crate) fn notif_cards(ui: &mut Ui, st: &State, nr: R, top: i32, skip: usize, off: i32) {
     let t = ui.t;
-    ui.cv.push_clip(R::new(nr.x, y, nr.w, nr.bottom() - y));
+    ui.cv.push_clip(R::new(nr.x, top, nr.w, nr.bottom() - top));
     let hide = st.auto_quiet();
+    let mut y = top - off;
     for note in st.notifs.history.iter().skip(skip) {
         if y > nr.bottom() {
             break;
         }
-        let ch = if note.body.is_empty() { 52 } else { 70 };
+        let ch = card_h(note);
+        // ушедшие вверх не рисовать
+        if y + ch < top {
+            y += ch + 6;
+            continue;
+        }
         let r = R::new(nr.x, y, nr.w, ch);
         let hov = ui.hover(r);
         ui.cv.pxbox(r, &BoxStyle::new(if hov { t.surface_hi } else { t.surface }, if note.critical { t.ember } else { t.border }));

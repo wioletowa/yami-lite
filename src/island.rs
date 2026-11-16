@@ -1014,7 +1014,7 @@ fn big_view(ui: &mut Ui, st: &State, kind: &str, b: R) {
                 ui.text_in(PX, R::new(b.x + 40 + tw, b.y, 60, 18), &n.to_string(), t.text_faint);
                 // листается колесом (notif_skip — сколько карточек сверху пропущено)
                 let skip = st.island.notif_skip.min(n - 1);
-                crate::popups::notif_cards(ui, st, body, body.y, skip);
+                crate::popups::notif_cards(ui, st, body, body.y, skip, 0);
                 if skip > 0 {
                     ui.text_right(PX, R::new(b.x, b.y, b.w - 66, 18), &format!("↑{skip}"), t.text_faint);
                 }

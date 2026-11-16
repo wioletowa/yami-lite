@@ -294,6 +294,9 @@ pub struct State {
     pub bt_open: String,
     /// вкладка bluetooth: прокрутка колонок (мои, рядом) в строках и докуда можно (с прошлого кадра)
     pub bt_scroll: [i32; 2],
+    /// уведомления в календаре: прокручено px, и сколько можно (из отрисовки)
+    pub notif_scroll: i32,
+    pub notif_scroll_max: std::cell::Cell<i32>,
     pub bt_scroll_max: std::cell::Cell<[i32; 2]>,
     /// сколько строк пропущено на деле: раскрытое у конца списка докручивается в кадре
     pub bt_shown: std::cell::Cell<[i32; 2]>,
@@ -553,6 +556,8 @@ impl State {
             wifi_target: String::new(),
             bt_open: String::new(),
             bt_scroll: [0, 0],
+            notif_scroll: 0,
+            notif_scroll_max: Default::default(),
             bt_scroll_max: Default::default(),
             bt_shown: Default::default(),
             procs: Default::default(),
