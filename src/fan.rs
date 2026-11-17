@@ -28,6 +28,8 @@ const T_LO: f32 = 20.0;
 const T_HI: f32 = 100.0;
 /// обороты «100 %», пока больших не видели (полные у P53 — около 5300)
 const RPM_FULL: u32 = 5000;
+/// выше — не обороты, а сбой датчика
+const RPM_SANE: u32 = 9000;
 
 /// всплывашка: шкала слева на всю высоту, график справа, CPU / GPU / FAN под ним
 pub const SIZE: (i32, i32) = (440, 250);
@@ -147,9 +149,12 @@ impl Fan {
         if let Some(dir) = hwmon() {
             self.cpu = temp_by_label(dir, "CPU");
             self.gpu = temp_by_label(dir, "GPU");
-            self.rpm = read_num(&dir.join("fan1_input")).map(|v| v as u32);
-            self.rpm2 = read_num(&dir.join("fan2_input")).map(|v| v as u32);
-            self.rpm_max = self.rpm_max.max(RPM_FULL).max(self.rpm.unwrap_or(0)).max(self.rpm2.unwrap_or(0));
+            // датчик иногда отдаёт мусор (65535 на разгоне или остановке): такое — не обороты, и в
+            // максимум не идёт — иначе процент в баре навсегда проседал бы до единиц
+            let sane = |v: f64| (v >= 0.0 && v <= RPM_SANE as f64).then_some(v as u32);
+            self.rpm = read_num(&dir.join("fan1_input")).and_then(sane);
+            self.rpm2 = read_num(&dir.join("fan2_input")).and_then(sane);
+            self.rpm_max = self.rpm_max.max(RPM_FULL).max(self.rpm.unwrap_or(0)).max(self.rpm2.unwrap_or(0)).min(RPM_SANE);
         }
         let conf = fs::read_to_string(config_path()).unwrap_or_default();
         self.curve = kv(&conf, "enabled") == Some("true");
