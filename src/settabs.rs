@@ -241,7 +241,7 @@ pub(crate) fn tab_look(ui: &mut Ui, st: &State, b: R) {
     num_btn(ui, R::new(b.x + half + 20, y, half, 26), "размер курсора", cs, "cursor_size");
     y += 38;
     // размытие рисует niri (ext-background-effect), если оно включено в его конфиге
-    ui.toggle(R::new(b.x, y, b.w, 26), "размытие под панелями (если включено в niri)", "", s.blur_shell, Act::SBool("blur_shell"));
+    ui.toggle(R::new(b.x, y, b.w, 26), "размытие под панелями (если включено в компоновщике)", "", s.blur_shell, Act::SBool("blur_shell"));
     y += 38;
     y = title(ui, b.x, y, b.w, "анимации");
     ui.toggle(R::new(b.x, y, half, 26), "анимации", "", s.animations, Act::SBool("animations"));
@@ -442,7 +442,7 @@ pub(crate) fn tab_about(ui: &mut Ui, st: &State, b: R) {
     let rows = [
         ("память шелла", crate::tf!("{:.1} МБ", "{:.1} MB", st.rss)),
         ("работает", crate::tf!("{} ч {} мин", "{} h {} min", up / 3600, up / 60 % 60)),
-        ("окон", st.niri.wins.len().to_string()),
+        ("окон", st.wm.wins.len().to_string()),
         ("уведомлений в истории", st.notifs.history.len().to_string()),
         ("настройки", "~/.config/yami-lite/settings.json".to_string()),
         ("команды", "yami-lite msg power|settings|lock|…".to_string()),

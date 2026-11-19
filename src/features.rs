@@ -10,8 +10,12 @@ pub const WALLHAVEN: bool = cfg!(feature = "wallhaven");
 pub const DESKTOP: bool = cfg!(feature = "desktop");
 /// перекраска значков папок в акцент
 pub const RECOLOR: bool = cfg!(feature = "recolor");
-/// приватность окон: скрытие из трансляции экрана
-pub const PRIVACY: bool = cfg!(feature = "privacy");
+/// компоновщик (wm/): sway и Hyprland — по фиче, иначе niri
+pub const SWAY: bool = cfg!(feature = "sway");
+pub const HYPRLAND: bool = cfg!(feature = "hyprland");
+pub const NIRI: bool = !SWAY && !HYPRLAND;
+/// приватность окон: скрытие из трансляции экрана (правилами окон niri — только у него)
+pub const PRIVACY: bool = cfg!(feature = "privacy") && NIRI;
 /// визуализатор звука по краям экрана (edge.rs)
 pub const VISUALIZER: bool = cfg!(feature = "visualizer");
 
@@ -37,5 +41,5 @@ pub fn popup_on(kind: &str) -> bool {
 
 /// собранные модули — для «о шелле» и `yami-lite version`
 pub fn list() -> Vec<&'static str> {
-    [("fan", FAN), ("wallhaven", WALLHAVEN), ("desktop", DESKTOP), ("recolor", RECOLOR), ("privacy", PRIVACY), ("visualizer", VISUALIZER)].into_iter().filter(|m| m.1).map(|m| m.0).collect()
+    [("sway", SWAY), ("hyprland", HYPRLAND), ("fan", FAN), ("wallhaven", WALLHAVEN), ("desktop", DESKTOP), ("recolor", RECOLOR), ("privacy", PRIVACY), ("visualizer", VISUALIZER)].into_iter().filter(|m| m.1).map(|m| m.0).collect()
 }

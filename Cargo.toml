@@ -38,6 +38,9 @@ recolor = []
 privacy = []
 visualizer = []
 full = ["fan", "wallhaven", "desktop", "recolor", "privacy", "visualizer"]
+# компоновщик (install.sh --sway / --hyprland); без них — niri. Вместе нельзя
+sway = []
+hyprland = []
 
 [workspace]
 members = ["px"]

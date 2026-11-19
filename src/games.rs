@@ -33,9 +33,9 @@ pub struct GameMode {
 impl App {
     /// после событий niri: что в фокусе — игра, на весь экран?
     pub fn game_sync(&mut self) {
-        let (game, full) = match self.st.niri.focused_win() {
+        let (game, full) = match self.st.wm.focused_win() {
             Some(w) => {
-                let out = w.ws.and_then(|i| self.st.niri.ws.iter().find(|x| x.id == i)).map(|x| x.output.clone()).unwrap_or_default();
+                let out = w.ws.and_then(|i| self.st.wm.ws.iter().find(|x| x.id == i)).map(|x| x.output.clone()).unwrap_or_default();
                 let (ow, oh) = self.output_size(&out);
                 let full = w.layout.size.0 >= ow as f64 && w.layout.size.1 >= oh as f64;
                 (is_game(&self.st.set, &w.app_id), full)
@@ -71,5 +71,5 @@ pub fn tab(ui: &mut Ui, st: &State, b: R) {
     ui.field(R::new(b.x, y, b.w - 130, 26), &st.game_field, "свои игры: app-id через запятую, osu!, minecraft*", focused, false, Act::SField("game_apps"));
     ui.button(R::new(b.right() - 120, y, 120, 26), "применить", "check", crate::ui::Tone::Plain, false, true, Act::SCycle("game_apply"));
     y += 30;
-    ui.text_in(crate::font::PX, R::new(b.x, y, b.w, 18), "Steam и gamescope — всегда. app-id окна видно в «niri msg windows»", t.text_faint);
+    ui.text_in(crate::font::PX, R::new(b.x, y, b.w, 18), &crate::tf!("Steam и gamescope — всегда. app-id окна видно в «{}»", "Steam and gamescope always. A window's app-id is in «{}»", crate::wm::APPID_HINT), t.text_faint);
 }

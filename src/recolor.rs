@@ -20,9 +20,10 @@ pub const APPS: &[(&str, &str, &str)] = &[
     ("icons", "значки папок", "Neuwaita — папка цвета акцента, Papirus — ближайший цвет папок"),
 ];
 
-/// программы, что можно перекрасить в этой сборке: значки папок — только с фичей recolor
+/// программы, что можно перекрасить в этой сборке: значки папок — только с фичей recolor, рамки
+/// niri — только в сборке под niri
 pub fn apps() -> impl Iterator<Item = &'static (&'static str, &'static str, &'static str)> + Clone {
-    APPS.iter().filter(|a| a.0 != "icons" || crate::features::RECOLOR)
+    APPS.iter().filter(|a| (a.0 != "icons" || crate::features::RECOLOR) && (a.0 != "niri" || crate::features::NIRI))
 }
 
 /// метка наших строк и файлов
@@ -196,7 +197,9 @@ pub fn apply(p: &Pal, apps: &[String]) {
     foot(p, on("foot"));
     alacritty(p, on("alacritty"));
     fuzzel(p, on("fuzzel"));
-    niri(p, on("niri"));
+    if crate::features::NIRI {
+        niri(p, on("niri"));
+    }
     icons(p, on("icons") && crate::features::RECOLOR);
 }
 

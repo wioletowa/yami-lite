@@ -114,7 +114,7 @@ impl App {
     pub fn bar_tucked(&self, out: &str) -> bool {
         match self.st.set.bar_hide.as_str() {
             "always" => true,
-            "smart" => self.st.niri.active_ws(out).is_some_and(|w| self.st.niri.has_windows(w.id)),
+            "smart" => self.st.wm.active_ws(out).is_some_and(|w| self.st.wm.has_windows(w.id)),
             _ => false,
         }
     }

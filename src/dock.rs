@@ -10,7 +10,7 @@ use crate::font::PX;
 use crate::gfx::{BoxStyle, R};
 use crate::icons::{self, App as DApp};
 use crate::menu::{MAct, MItem, MenuState};
-use crate::niri::Win;
+use crate::wm::Win;
 use crate::ui::{Act, Cur, Ui};
 use smithay_client_toolkit::shell::wlr_layer::{Anchor, KeyboardInteractivity, Layer};
 use std::time::Instant;
@@ -58,12 +58,12 @@ pub fn items(st: &State) -> Vec<Item> {
     for id in &s.dock_pins {
         let a = st.apps.iter().find(|a| &a.id == id);
         // закреплённое, но не установленное — не показываем
-        if a.is_none() && !st.niri.wins.iter().any(|w| key_of(&st.apps, w) == *id) {
+        if a.is_none() && !st.wm.wins.iter().any(|w| key_of(&st.apps, w) == *id) {
             continue;
         }
         out.push(Item { id: id.clone(), name: a.map(|a| a.name.clone()).unwrap_or_else(|| id.clone()), icon: a.map(|a| a.icon.clone()).unwrap_or_else(|| id.clone()), exec: a.map(|a| a.exec.clone()).unwrap_or_default(), terminal: a.map(|a| a.terminal).unwrap_or(false), pinned: true, wins: vec![] });
     }
-    let mut wins: Vec<Win> = st.niri.wins.iter().filter(|w| !w.app_id.is_empty()).cloned().collect();
+    let mut wins: Vec<Win> = st.wm.wins.iter().filter(|w| !w.app_id.is_empty()).cloned().collect();
     wins.sort_by_key(|w| w.id);
     for w in wins {
         let k = key_of(&st.apps, &w);
@@ -238,7 +238,7 @@ pub fn draw(ui: &mut Ui, st: &State, w: i32, h: i32) {
         // крупнее при наведении — ступенями по 2 px, без сглаживания (значок рисуется сразу нужного размера)
         let isz = sz + ((grow * amount / 2.0).round() as i32) * 2;
         let ic = lift(R::new(r.x + (r.w - isz) / 2, r.y + (r.h - isz) / 2 - if vert { 0 } else { 2 }, isz, isz), up);
-        let dim = !it.wins.is_empty() && it.wins.iter().all(|w| st.niri.is_min(w));
+        let dim = !it.wins.is_empty() && it.wins.iter().all(|w| st.wm.is_min(w));
         ui.app_icon(&it.icon, ic.x, ic.y, isz, if dim { 0.5 } else { 1.0 });
         // огоньки окон: до трёх квадратиков, фокусное — широкой чертой
         let n = it.wins.len().min(3) as i32;
@@ -314,7 +314,7 @@ impl App {
     fn dock_shown(&self, out: &str) -> bool {
         match self.st.set.dock_hide.as_str() {
             "never" => true,
-            "smart" => self.st.niri.active_ws(out).map(|ws| self.st.niri.windows_on(ws.id).is_empty()).unwrap_or(true) || self.st.dock_hover,
+            "smart" => self.st.wm.active_ws(out).map(|ws| self.st.wm.windows_on(ws.id).is_empty()).unwrap_or(true) || self.st.dock_hover,
             _ => self.st.dock_hover,
         }
     }
@@ -473,17 +473,17 @@ impl App {
                 ws.sort_by(|a, b| b.ts.partial_cmp(&a.ts).unwrap_or(std::cmp::Ordering::Equal));
                 if let Some(f) = ws.iter().position(|w| w.focused) {
                     if ws.len() == 1 {
-                        self.st.niri.toggle_minimize(ws[0].id);
+                        self.st.wm.toggle_minimize(ws[0].id);
                     } else {
                         // по кругу: следующее по id после фокусного
                         let mut by_id = it.wins.clone();
                         by_id.sort_by_key(|w| w.id);
                         let k = by_id.iter().position(|w| w.id == ws[f].id).unwrap_or(0);
                         let next = by_id[(k + 1) % by_id.len()].id;
-                        self.st.niri.toggle_minimize(next);
+                        self.st.wm.toggle_minimize(next);
                     }
                 } else {
-                    self.st.niri.toggle_minimize(ws[0].id);
+                    self.st.wm.toggle_minimize(ws[0].id);
                 }
             }
         }
@@ -500,7 +500,7 @@ impl App {
         let k = by_id.iter().position(|w| w.focused).unwrap_or(0) as i32;
         let n = by_id.len() as i32;
         let next = by_id[((k + if up { -1 } else { 1 }).rem_euclid(n)) as usize].id;
-        self.st.niri.act(serde_json::json!({"FocusWindow": {"id": next}}));
+        self.st.wm.focus(next);
     }
 
     /// где поверхность дока на мониторе: она прибита к середине края, а не к углу
@@ -525,7 +525,7 @@ impl App {
         for w in &it.wins {
             let t = if w.title.is_empty() { it.name.clone() } else { w.title.clone() };
             let t: String = t.chars().take(40).collect();
-            items.push(MItem::new(&t, if self.st.niri.is_min(w) { "min" } else { "max" }, MAct::Win(w.id, "focus")));
+            items.push(MItem::new(&t, if self.st.wm.is_min(w) { "min" } else { "max" }, MAct::Win(w.id, "focus")));
         }
         if !items.is_empty() {
             items.push(MItem::sep());
@@ -585,7 +585,7 @@ impl App {
             "close" => {
                 if let Some(it) = it {
                     for w in it.wins {
-                        self.st.niri.close_window(w.id);
+                        self.st.wm.close_window(w.id);
                     }
                 }
                 return;

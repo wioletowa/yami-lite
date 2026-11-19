@@ -137,14 +137,14 @@ impl App {
             Act::Power => self.toggle_modal(Modal::Power),
             Act::Settings => self.toggle_settings(),
             Act::Ws(id) => {
-                if let Some(ws) = self.st.niri.ws.iter().find(|w| w.id == id).cloned() {
-                    self.st.niri.focus_ws(&ws);
+                if let Some(ws) = self.st.wm.ws.iter().find(|w| w.id == id).cloned() {
+                    self.st.wm.focus_ws(&ws);
                 }
             }
             Act::Task(id) => match button {
                 RMB => self.open_window_menu(id, &out, ax - 20, ay + 2),
-                MMB => self.st.niri.close_window(id),
-                _ => self.st.niri.toggle_minimize(id),
+                MMB => self.st.wm.close_window(id),
+                _ => self.st.wm.toggle_minimize(id),
             },
             Act::Tray(svc) => {
                 let Some(it) = self.st.tray.iter().find(|t| t.service == svc) else { return };
@@ -173,7 +173,7 @@ impl App {
                     }
                 }
             }
-            Act::Kb => self.st.niri.act(serde_json::json!({"SwitchLayout": {"layout": "Next"}})),
+            Act::Kb => self.st.wm.kb(crate::wm::Kb::Next),
             Act::Popup(k) => match (k, button) {
                 ("sound", RMB) => audio::toggle_mute(),
                 ("sound", MMB) => App::spawn(&["pavucontrol".into()]),
@@ -392,7 +392,7 @@ impl App {
                 }
             }
             Act::Ws(_) => {
-                self.st.niri.act(if up { serde_json::json!({"FocusWorkspaceUp": {}}) } else { serde_json::json!({"FocusWorkspaceDown": {}}) });
+                self.st.wm.act(crate::wm::Do::WsStep(up));
             }
             Act::DockItem(i) => self.dock_wheel(i, up),
             Act::TimerWheel(id) => self.timer_wheel(id, up),
@@ -426,7 +426,7 @@ impl App {
                     self.switch_tab(k);
                 }
             }
-            Act::Kb => self.st.niri.act(serde_json::json!({"SwitchLayout": {"layout": if up { "Prev" } else { "Next" }}})),
+            Act::Kb => self.st.wm.kb(if up { crate::wm::Kb::Prev } else { crate::wm::Kb::Next }),
             Act::CalMonth(_) | Act::Popup("cal") => {
                 self.st.cal_month += if up { -1 } else { 1 };
                 self.dirty(&SKind::Popup);

@@ -302,8 +302,8 @@ impl App {
 
     /// меню окна у курсора (ПКМ по окну в баре или по заголовку)
     pub fn open_window_menu(&mut self, id: u64, out: &str, x: i32, y: i32) {
-        let Some(w) = self.st.niri.win(id).cloned() else { return };
-        let min = self.st.niri.is_min(&w);
+        let Some(w) = self.st.wm.win(id).cloned() else { return };
+        let min = self.st.wm.is_min(&w);
         let mut items = vec![
             MItem::new(if min { "вернуть" } else { "свернуть" }, if min { "up" } else { "min" }, MAct::Win(id, "minimize")),
             MItem::new("развернуть", "max", MAct::Win(id, "maximize")),
@@ -313,9 +313,9 @@ impl App {
         ];
         // на другой стол
         let mut wsm = vec![];
-        for ws in self.st.niri.ws.iter().filter(|x| x.output == out) {
+        for ws in self.st.wm.ws.iter().filter(|x| x.output == out) {
             let name = ws.name.clone().unwrap_or_else(|| crate::tf!("стол {}", "workspace {}", ws.idx));
-            wsm.push(MItem::new(&name, "right", MAct::Win(id, Box::leak(format!("ws{}", ws.idx).into_boxed_str()))));
+            wsm.push(MItem::new(&name, "right", MAct::Win(id, Box::leak(format!("ws{}", ws.id).into_boxed_str()))));
         }
         if !wsm.is_empty() {
             items.push(MItem::sub("на стол", "right", wsm));
@@ -328,35 +328,26 @@ impl App {
     }
 
     pub fn window_op(&mut self, id: u64, op: &str) {
-        use serde_json::json;
-        let n = &mut self.st.niri;
+        use crate::wm::Do;
+        let n = &mut self.st.wm;
         match op {
             "minimize" => n.toggle_minimize(id),
-            "maximize" => {
-                if n.win(id).map(|w| w.floating).unwrap_or(false) {
-                    n.act(json!({"MaximizeWindowToEdges": {"id": id}}));
-                } else {
-                    n.act(json!({"FocusWindow": {"id": id}}));
-                    n.act(json!({"MaximizeColumn": {}}));
-                }
-            }
-            "fullscreen" => n.act(json!({"FullscreenWindow": {"id": id}})),
-            "float" => n.act(json!({"ToggleWindowFloating": {"id": id}})),
-            "center" => {
-                n.act(json!({"FocusWindow": {"id": id}}));
-                n.act(json!({"CenterWindow": {"id": id}}));
-            }
+            "maximize" => n.act(Do::Maximize { id, floating: n.win(id).map(|w| w.floating).unwrap_or(false) }),
+            "fullscreen" => n.act(Do::Fullscreen(id)),
+            "float" => n.act(Do::ToggleFloat(id)),
+            "center" => n.act(Do::Center(id)),
             "close" => n.close_window(id),
             "focus" => {
                 if n.win(id).map(|w| n.is_min(w)).unwrap_or(false) {
                     n.restore(id);
                 } else {
-                    n.act(json!({"FocusWindow": {"id": id}}));
+                    n.focus(id);
                 }
             }
+            // ws<id стола>
             o if o.starts_with("ws") => {
-                if let Ok(idx) = o[2..].parse::<u32>() {
-                    n.act(json!({"MoveWindowToWorkspace": {"window_id": id, "reference": {"Index": idx}, "focus": false}}));
+                if let Some(ws) = o[2..].parse::<u64>().ok().and_then(|w| n.ws.iter().find(|x| x.id == w)).cloned() {
+                    n.act(Do::MoveToWs(id, ws));
                 }
             }
             _ => {}

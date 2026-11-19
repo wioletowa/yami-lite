@@ -122,6 +122,9 @@ pub fn draw(ui: &mut Ui, st: &State, out: &str, w: i32, h: i32) -> Option<R> {
     if let Some((px, _)) = ui.ptr {
         ui.ptr = Some((px, ((H - 1) / 2) as f64));
     }
+    // середина строк 1..H-1 (линия сверху: плашка, нижняя полоса), а модули рисуют от (H-1)/2 —
+    // как у верхней полосы, где линия снизу. Сдвиг холста на 1 px; зоны всё равно во всю высоту
+    ui.cv.oy = if !strip(set) || low(set) { 1 } else { 0 };
     let mid = set.num("bar_mid");
     let (pad_l, pad_r) = (set.num("bar_pad_l"), set.num("bar_pad_r"));
     // окна стола (#28) — модуль как все, в любой группе: своя ширина по числу окон, а когда места
@@ -158,6 +161,7 @@ pub fn draw(ui: &mut Ui, st: &State, out: &str, w: i32, h: i32) -> Option<R> {
     for z in ui.zones.iter_mut().filter(|z| z.act != Act::BarBg) {
         z.r = R::new(z.r.x, 0, z.r.w, H + SHADE);
     }
+    ui.cv.oy = 0;
     None
 }
 
@@ -255,7 +259,7 @@ fn attention(ui: &mut Ui, x: i32, y: i32) {
 
 /// столы точками: пустой — тусклая точка, с окнами — светлая, активный — квадрат цвета акцента,
 /// в который точка вырастает ступенями по 2 px (и обратно у прошлого); в обзоре — тире
-pub(crate) fn workspace_dots(ui: &mut Ui, st: &State, list: &[crate::niri::Ws], x: i32, cy: i32) {
+pub(crate) fn workspace_dots(ui: &mut Ui, st: &State, list: &[crate::wm::Ws], x: i32, cy: i32) {
     let t = ui.t;
     let active = list.iter().find(|w| w.active).map_or(0, |w| w.id);
     let (mut cur, mut prev, mut at) = st.ws_anim.get();
@@ -272,24 +276,24 @@ pub(crate) fn workspace_dots(ui: &mut Ui, st: &State, list: &[crate::niri::Ws], 
     let size = |grow: f32| 4 + ((grow * 5.0).round() as i32) * 2;
     for (i, ws) in list.iter().enumerate() {
         let r = R::new(x + i as i32 * 18, cy - 9, 18, 18);
-        let busy = st.niri.has_windows(ws.id);
+        let busy = st.wm.has_windows(ws.id);
         let hov = ui.hover(r);
         let grow = if ws.id == cur { k } else if ws.id == prev { 1.0 - k } else { 0.0 };
         let (cx, cyy) = (r.x + 7, r.cy());
-        if ws.active && st.niri.overview {
-            ui.cv.fill(R::new(cx - 6, cyy - 1, 14, 4), t.red);
+        if ws.active && st.wm.overview {
+            ui.cv.fill(R::new(cx - 7, cyy - 2, 14, 4), t.red);
         } else {
             let sz = size(grow);
             let base = if hov { t.text } else if busy { t.text_dim } else { t.border };
             let c = if grow > 0.0 { base.lerp(t.red, grow) } else { base };
-            ui.cv.fill(R::new(cx + 1 - sz / 2, cyy + 1 - sz / 2, sz, sz), c);
+            ui.cv.fill(R::new(cx - sz / 2, cyy - sz / 2, sz, sz), c);
             if grow >= 1.0 {
                 // у активного — светлая фаска сверху слева, как у пиксельных кнопок
-                ui.cv.fill(R::new(cx + 1 - sz / 2, cyy + 1 - sz / 2, sz, 2), t.ember);
+                ui.cv.fill(R::new(cx - sz / 2, cyy - sz / 2, sz, 2), t.ember);
             }
         }
         if ws.urgent && !ws.active {
-            attention(ui, cx - 2, r.y - 1);
+            attention(ui, cx - 3, r.y - 1);
         }
         ui.zone(r, Act::Ws(ws.id), Cur::Pointer);
     }
@@ -317,7 +321,7 @@ pub(crate) fn module(ui: &mut Ui, st: &State, out: &str, m: &str, x: i32, measur
             26
         }
         "workspaces" => {
-            let list = st.niri.bar_ws(out);
+            let list = st.wm.bar_ws(out);
             let dots = st.set.ws_style == "dots";
             let step = if dots { 18 } else { 26 };
             let w = list.len() as i32 * step - 4;
@@ -330,9 +334,9 @@ pub(crate) fn module(ui: &mut Ui, st: &State, out: &str, m: &str, x: i32, measur
                 let mut wx = x;
                 for ws in list {
                     let r = R::new(wx, cy - 11, 22, 22);
-                    let busy = st.niri.has_windows(ws.id);
+                    let busy = st.wm.has_windows(ws.id);
                     let hov = ui.hover(r);
-                    if ws.active && st.niri.overview {
+                    if ws.active && st.wm.overview {
                         // обзор: активный стол — пиксельное тире
                         ui.cv.fill(R::new(r.x + 3, r.cy() - 2, 16, 4), t.red);
                     } else {
@@ -358,12 +362,13 @@ pub(crate) fn module(ui: &mut Ui, st: &State, out: &str, m: &str, x: i32, measur
             let icons: Vec<&crate::dbus::TrayItem> = crate::popups::tray_items(st).filter(|it| crate::popups::tray_in_bar(st, it)).collect();
             let rest: Vec<&crate::dbus::TrayItem> = crate::popups::tray_items(st).filter(|it| !crate::popups::tray_in_bar(st, it)).collect();
             let arrow = !rest.is_empty();
-            let w = icons.len() as i32 * 24 + if arrow { 22 + if icons.is_empty() { 0 } else { 2 } } else { -2 };
+            // ширина — по нарисованному: рамки наведения свисают на 3 px с краёв
+            let w = icons.len() as i32 * 24 + if arrow { 22 + if icons.is_empty() { 0 } else { 2 } } else { -2 } - 6;
             if measure || w <= 0 {
                 return w.max(0);
             }
             // стрелка первой, закреплённые значки — за ней
-            let mut ix = x;
+            let mut ix = x - 3;
             if arrow {
                 // стрелка: точка — кто-то из спрятанных зовёт
                 let r = R::new(ix, cy - 11, 22, 22);
@@ -464,11 +469,12 @@ pub(crate) fn module(ui: &mut Ui, st: &State, out: &str, m: &str, x: i32, measur
             w
         }
         "kb" => {
-            let s = st.niri.kb_short();
+            let s = st.wm.kb_short();
             let s = if s.is_empty() { "??".to_string() } else { s };
-            let w = ui.w(PX, &s) + 12;
+            // без рамки, как шестерёнка: рамка — только при наведении и свисает за буквы
+            let w = ui.w(PX, &s);
             if !measure {
-                ui.button(R::new(x, cy - 11, w, 22), &s, "", Tone::Plain, false, true, Act::Kb);
+                ui.button(R::new(x - 6, cy - 11, w + 12, 22), &s, "", Tone::Ghost, false, true, Act::Kb);
             }
             w
         }
@@ -510,7 +516,9 @@ pub(crate) fn module(ui: &mut Ui, st: &State, out: &str, m: &str, x: i32, measur
             // у диска истории нет: «график» — шкалой
             let style = if m == "disk" && st.set.cpu_style == "graph" { "gauge" } else { st.set.cpu_style.as_str() };
             let gw = if style == "number" { 0 } else { 48 };
-            let w = lw + 6 + gw + if gw > 0 { 6 } else { 0 } + 34;
+            // число — в слоте по двузначному: без хвоста пустоты до соседа
+            let nw = ui.w(PX, &txt).max(ui.w(PX, "88%"));
+            let w = lw + 6 + gw + if gw > 0 { 6 } else { 0 } + nw;
             if measure {
                 return w;
             }
@@ -537,14 +545,15 @@ pub(crate) fn module(ui: &mut Ui, st: &State, out: &str, m: &str, x: i32, measur
                 ui.cv.gauge(R::new(gx, cy - 5, 48, 10), 6, v, col, t.surface_hi.lerp(t.border, 0.45), 2);
             }
             let tx = gx + gw + if gw > 0 { 6 } else { 0 };
-            ui.text_in(PX, R::new(tx, 0, 34, H - 1), &txt, if hot { t.ember } else { t.text_dim });
+            ui.text_in(PX, R::new(tx, 0, nw, H - 1), &txt, if hot { t.ember } else { t.text_dim });
             ui.zone(r, Act::Popup("sys"), Cur::Pointer);
             w
         }
         "vol" => {
             let a = &st.audio;
             let s = if a.muted { "—".to_string() } else { format!("{}", (a.volume * 100.0).round()) };
-            let w = 14 + 5 + ui.w(PX, "100");
+            // слот по двузначному, как у чисел нагрузки
+            let w = 14 + 5 + ui.w(PX, &s).max(ui.w(PX, "88"));
             if !measure {
                 let r = R::new(x, 0, w, H - 1);
                 let hov = ui.hover(r);
@@ -559,7 +568,9 @@ pub(crate) fn module(ui: &mut Ui, st: &State, out: &str, m: &str, x: i32, measur
             if me.title.is_empty() {
                 return 0;
             }
-            let w = 200;
+            let label = if me.artist.is_empty() { me.title.clone() } else { format!("{} — {}", me.artist, me.title) };
+            // не шире названия: короткий трек не оставляет дыры до соседей
+            let w = (20 + ui.w(PX, &label)).min(200);
             if !measure {
                 let r = R::new(x, 0, w, H - 1);
                 let hov = ui.hover(r);
@@ -574,7 +585,6 @@ pub(crate) fn module(ui: &mut Ui, st: &State, out: &str, m: &str, x: i32, measur
                 } else {
                     ui.cv.icon("music", x, cy - 6, 2, if me.playing() { t.red } else { t.text_faint });
                 }
-                let label = if me.artist.is_empty() { me.title.clone() } else { format!("{} — {}", me.artist, me.title) };
                 ui.text_in(PX, R::new(x + 20, 0, w - 20, H - 1), &label, if hov { t.text_hi } else { t.text_dim });
                 ui.zone(r, Act::Popup("media"), Cur::Pointer);
             }
@@ -632,7 +642,9 @@ pub(crate) fn module(ui: &mut Ui, st: &State, out: &str, m: &str, x: i32, measur
                 let label = "fan";
                 let lw = ui.w(PX, label);
                 let gw = if st.set.fan_style == "number" { 0 } else { 48 };
-                let w = lw + 6 + gw + if gw > 0 { 6 } else { 0 } + 34;
+                let txt = format!("{}%", (f.pct() * 100.0).round());
+                let nw = ui.w(PX, &txt).max(ui.w(PX, "88%"));
+                let w = lw + 6 + gw + if gw > 0 { 6 } else { 0 } + nw;
                 if measure {
                     return w;
                 }
@@ -652,7 +664,7 @@ pub(crate) fn module(ui: &mut Ui, st: &State, out: &str, m: &str, x: i32, measur
                     ui.cv.gauge(R::new(gx, cy - 5, 48, 10), 6, f.pct(), col, t.surface_hi.lerp(t.border, 0.45), 2);
                 }
                 let tx = gx + gw + if gw > 0 { 6 } else { 0 };
-                ui.text_in(PX, R::new(tx, 0, 34, H - 1), &format!("{}%", (f.pct() * 100.0).round()), if f.critical { t.ember } else { t.text_dim });
+                ui.text_in(PX, R::new(tx, 0, nw, H - 1), &txt, if f.critical { t.ember } else { t.text_dim });
                 ui.zone(r, Act::Popup("fan"), Cur::Pointer);
                 return w;
             }
@@ -699,6 +711,38 @@ pub(crate) fn module(ui: &mut Ui, st: &State, out: &str, m: &str, x: i32, measur
             }
             14
         }
+        // цель динамического потока niri (set-dynamic-cast-window / -monitor): что сейчас видят
+        // в трансляции; виден, только пока такой поток есть
+        "cast" => {
+            use crate::wm::CastTarget;
+            let Some(target) = st.wm.dynamic_cast() else { return 0 };
+            let win = match target {
+                CastTarget::Window(id) => st.wm.win(*id),
+                _ => None,
+            };
+            // цель сброшена — один тусклый значок
+            let idle = *target == CastTarget::Nothing;
+            let label = match target {
+                CastTarget::Window(_) => win.map(|w| if w.title.is_empty() { w.app_id.clone() } else { w.title.clone() }).unwrap_or_default(),
+                CastTarget::Output(n) => n.clone(),
+                CastTarget::Nothing => String::new(),
+            };
+            let tw = ui.w(PX, &label).min(160);
+            let w = if idle { 14 } else { 14 + 6 + if win.is_some() { 22 } else { 0 } + tw };
+            if !measure {
+                ui.cv.icon("screen", x, cy - 7, 2, if idle { t.text_faint } else { crate::privacy::RED });
+                let mut tx = x + 20;
+                if let Some(w) = win {
+                    let icon = icons::icon_for(&st.apps, &w.app_id);
+                    ui.app_icon(&icon, tx, cy - 8, 16, 1.0);
+                    tx += 22;
+                }
+                if !idle {
+                    ui.text_in(PX, R::new(tx, 0, tw, H - 1), &label, t.text);
+                }
+            }
+            w
+        }
         // замок приватности (hide.rs): виден всегда — тусклый, пока ничего не спрятано из
         // трансляции, акцентом — когда спрятано
         "privacy_hidden" => {
@@ -731,25 +775,25 @@ pub(crate) fn module(ui: &mut Ui, st: &State, out: &str, m: &str, x: i32, measur
         }
         "settings" => {
             if !measure {
-                ui.button(R::new(x, cy - 11, 26, 22), "", "gear", Tone::Ghost, st.settings_shown, true, Act::Settings);
+                ui.button(R::new(x - 6, cy - 11, 26, 22), "", "gear", Tone::Ghost, st.settings_shown, true, Act::Settings);
             }
-            26
+            14
         }
         "power" => {
             if !measure {
-                ui.button(R::new(x, cy - 11, 26, 22), "", "power", Tone::Danger, st.modal == Some(crate::app::Modal::Power), true, Act::Power);
+                ui.button(R::new(x - 6, cy - 11, 26, 22), "", "power", Tone::Danger, st.modal == Some(crate::app::Modal::Power), true, Act::Power);
             }
-            26
+            14
         }
         _ => 0,
     }
 }
 
 /// окна стола на мониторе: на его активном столе и свёрнутые
-fn task_list(st: &State, out: &str) -> Vec<crate::niri::Win> {
-    let Some(ws) = st.niri.active_ws(out) else { return Vec::new() };
-    let mut list = st.niri.windows_on(ws.id);
-    list.extend(st.niri.minimized());
+fn task_list(st: &State, out: &str) -> Vec<crate::wm::Win> {
+    let Some(ws) = st.wm.active_ws(out) else { return Vec::new() };
+    let mut list = st.wm.windows_on(ws.id);
+    list.extend(st.wm.minimized());
     list
 }
 
@@ -784,7 +828,7 @@ fn tasks(ui: &mut Ui, st: &State, out: &str, area: R) {
     let mut x = area.x;
     for w in list {
         let r = R::new(x, area.cy() - 12, iw, 24);
-        let hidden = st.niri.is_min(&w);
+        let hidden = st.wm.is_min(&w);
         let hov = ui.hover(r);
         let fill = if w.focused { t.selection } else if hov { t.surface_hi } else if hidden { CLEAR } else { t.surface };
         let outline = if w.focused || hov { t.red } else if hidden { t.border.fade(0.6) } else { t.border };

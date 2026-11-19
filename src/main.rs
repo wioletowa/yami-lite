@@ -39,7 +39,7 @@ mod menu;
 mod msgs;
 mod net;
 mod notes;
-mod niri;
+mod wm;
 mod notif;
 mod night;
 mod pam;

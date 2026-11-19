@@ -715,13 +715,13 @@ fn live_w(ui: &mut Ui, st: &State, l: &Live) -> i32 {
         Live::Osd("caps") => 14 + 10 + ui.w(PX, "Caps Lock") + 10 + ui.w(PX, "выключен"),
         Live::Osd("num") => 14 + 10 + ui.w(PX, "Num Lock") + 10 + ui.w(PX, "выключен"),
         Live::Osd(_) => {
-            let name = st.niri.kb_names.get(st.niri.kb_idx).cloned().unwrap_or_default();
-            ui.w(PX, &st.niri.kb_short()) + 12 + 10 + ui.w(PX, &name).min(260)
+            let name = st.wm.kb_names.get(st.wm.kb_idx).cloned().unwrap_or_default();
+            ui.w(PX, &st.wm.kb_short()) + 12 + 10 + ui.w(PX, &name).min(260)
         }
         Live::Track(title, artist) => 16 + 10 + ui.w(PX, title).min(260) + if artist.is_empty() { 0 } else { 14 + ui.w(PX, artist).min(180) } + 10 + 14,
         Live::Power(on, pct) => 14 + 10 + ui.w(PX, if *on { "зарядка" } else { "от батареи" }) + 14 + ui.w(PX, &format!("{pct}%")),
         Live::Bt(name, on) => 14 + 10 + ui.w(PX, name).min(220) + 14 + ui.w(PX, if *on { "подключено" } else { "отключено" }),
-        Live::Ws(out) => (st.niri.bar_ws(out).len() as i32 * 18 - 4).max(14),
+        Live::Ws(out) => (st.wm.bar_ws(out).len() as i32 * 18 - 4).max(14),
     }
 }
 
@@ -744,12 +744,12 @@ fn live_draw(ui: &mut Ui, st: &State, l: &Live, r: R) {
             ui.text_in(PX, R::new(x + 34 + lw, 0, r.w, H - 1), if on { "включён" } else { "выключен" }, if on { t.red } else { t.text_faint });
         }
         Live::Osd(_) => {
-            let short = st.niri.kb_short();
+            let short = st.wm.kb_short();
             let bw = ui.w(PX, &short) + 12;
             let b = R::new(x, cy - 10, bw, 20);
             ui.cv.pxbox(b, &BoxStyle::new(t.red, t.ember).bevel(true));
             ui.text_center(PX, b, &short, t.on_accent);
-            let name = st.niri.kb_names.get(st.niri.kb_idx).cloned().unwrap_or_default();
+            let name = st.wm.kb_names.get(st.wm.kb_idx).cloned().unwrap_or_default();
             ui.text_in(PX, R::new(x + bw + 10, 0, r.right() - x - bw - 10, H - 1), &name, t.text);
         }
         Live::Track(title, artist) => {
@@ -772,7 +772,7 @@ fn live_draw(ui: &mut Ui, st: &State, l: &Live, r: R) {
             ui.text_in(PX, R::new(x + 38 + lw, 0, r.w, H - 1), &format!("{pct}%"), if *on { t.ok } else { t.text_dim });
         }
         // столы точками, активный вырастает в квадрат — та же анимация, что у столов в баре
-        Live::Ws(out) => crate::bar::workspace_dots(ui, st, &st.niri.bar_ws(out), x, cy),
+        Live::Ws(out) => crate::bar::workspace_dots(ui, st, &st.wm.bar_ws(out), x, cy),
         Live::Bt(name, on) => {
             ui.cv.icon("bt", x, cy - 7, 2, if *on { t.red } else { t.text_faint });
             let lw = ui.text_in(PX, R::new(x + 24, 0, 220, H - 1), name, t.text);
@@ -1666,7 +1666,7 @@ impl App {
 
     /// niri сменил стол в фокусе (old — прошлый id): на каком мониторе теперь
     pub fn island_ws(&mut self, old: Option<u64>) {
-        let now = self.st.niri.ws.iter().find(|w| w.focused).map(|w| (w.id, w.output.clone()));
+        let now = self.st.wm.ws.iter().find(|w| w.focused).map(|w| (w.id, w.output.clone()));
         if let (Some(o), Some((id, out))) = (old, now) {
             if o != id {
                 self.island_live(Live::Ws(out));

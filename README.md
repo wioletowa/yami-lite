@@ -37,6 +37,24 @@ cd yami-lite
 
 Что собрано — `yami-lite version` и настройки → «о шелле».
 
+## sway и Hyprland
+
+По умолчанию шелл собирается под niri. Под другой компоновщик — флагом, вместе с любыми модулями:
+
+| флаг | фича | компоновщик |
+|---|---|---|
+| `--sway` | `sway` | sway (i3-IPC, `$SWAYSOCK`) |
+| `--hyprland` | `hyprland` | Hyprland (сокеты `$HYPRLAND_INSTANCE_SIGNATURE`) |
+
+```sh
+./install.sh --sway --all
+```
+
+Флаги взаимоисключающие. В такой сборке нет того, что умеет только niri: обзора, индикатора и цели
+показа экрана, приватности окон (`--privacy` пропускается), рамок niri в перекраске. Свёрнутые окна
+уходят в scratchpad (sway) или на спрятанный `special:yami` (Hyprland), «развернуть» у sway — на весь
+экран. Автозапуск — `exec yami-lite` в конфиге sway или `exec-once = yami-lite` у Hyprland.
+
 В `~/.config/niri/config.kdl`:
 
 ```kdl

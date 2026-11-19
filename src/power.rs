@@ -50,7 +50,7 @@ impl App {
                 self.lock_now();
                 App::sh("sleep 0.6; systemctl suspend");
             }
-            "logout" => self.st.niri.act(serde_json::json!({"Quit": {"skip_confirmation": true}})),
+            "logout" => self.st.wm.act(crate::wm::Do::Quit),
             "reboot" => App::spawn(&["systemctl".into(), "reboot".into()]),
             "poweroff" => App::spawn(&["systemctl".into(), "poweroff".into()]),
             _ => {}

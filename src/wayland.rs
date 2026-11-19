@@ -302,12 +302,16 @@ impl Dispatch<ext_idle_notifier_v1::ExtIdleNotifierV1, ()> for App {
 }
 impl Dispatch<ext_idle_notification_v1::ExtIdleNotificationV1, u8> for App {
     fn event(app: &mut Self, _: &ext_idle_notification_v1::ExtIdleNotificationV1, e: ext_idle_notification_v1::Event, kind: &u8, _: &Connection, _: &QueueHandle<Self>) {
-        if let ext_idle_notification_v1::Event::Idled = e {
-            if *kind == 0 {
-                app.lock_now();
-            } else {
-                app.st.niri.act(serde_json::json!({"PowerOffMonitors": {}}));
+        match e {
+            ext_idle_notification_v1::Event::Idled => {
+                if *kind == 0 {
+                    app.lock_now();
+                } else {
+                    app.st.wm.act(crate::wm::Do::MonitorsOff);
+                }
             }
+            ext_idle_notification_v1::Event::Resumed if *kind != 0 => app.st.wm.act(crate::wm::Do::MonitorsOn),
+            _ => {}
         }
     }
 }

@@ -16,7 +16,7 @@ impl App {
         // окно на весь экран (игра): что под ним, не рисуем — останется грязным до выхода из него
         let covered = if self.st.game.fullscreen { Some(self.focus_out()) } else { None };
         // в обзоре окно уже не на весь экран: кайма в его фоне видна
-        let overview = self.st.niri.overview;
+        let overview = self.st.wm.overview;
         // бар поднят поверх полноэкранного (peek.rs) — виден, рисуется
         let peek = self.st.peek.on;
         let under = |s: &Surf| covered.as_deref() == Some(s.output.as_str()) && ((s.kind == SKind::Bar && !peek) || matches!(s.kind, SKind::Widget(_) | SKind::Dock | SKind::Wall) || (matches!(s.kind, SKind::Edge) && !overview));

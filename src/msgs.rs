@@ -2,31 +2,31 @@
 // ложатся в State; что поменялось — помечается к перерисовке.
 
 use crate::app::*;
-use crate::{dbus, niri};
+use crate::{dbus, wm};
 use std::time::Duration;
 
 impl App {
     // ── сообщения нитей ─────────────────────────────────────────────────────
     pub(crate) fn on_msg(&mut self, m: Msg) {
         match m {
-            Msg::Niri(v) => {
-                let layout_only = v.get("WindowLayoutsChanged").is_some();
-                let overview = self.st.niri.overview;
-                let ws_before = self.st.niri.ws.iter().find(|w| w.focused).map(|w| w.id);
-                let evs = self.st.niri.handle(v);
+            Msg::Wm(v) => {
+                let layout_only = wm::layout_only(&v);
+                let overview = self.st.wm.overview;
+                let ws_before = self.st.wm.ws.iter().find(|w| w.focused).map(|w| w.id);
+                let evs = self.st.wm.handle(v);
                 self.island_ws(ws_before);
                 self.tuck_sync();
                 // фокус мог уйти на другой монитор: полоса у края — за ним
                 self.peek_sync();
-                if self.st.niri.overview != overview {
+                if self.st.wm.overview != overview {
                     // поверх игры кайма видна только в обзоре: захват звука — тоже
                     self.viz_sync();
                 }
                 for e in evs {
                     match e {
-                        niri::Ev::KbSwitched => self.show_osd("layout"),
-                        niri::Ev::NewWindow(id) => self.on_new_window(id),
-                        niri::Ev::Changed => {}
+                        wm::Ev::KbSwitched => self.show_osd("layout"),
+                        wm::Ev::NewWindow(id) => self.on_new_window(id),
+                        wm::Ev::Changed => {}
                     }
                 }
                 self.game_sync();

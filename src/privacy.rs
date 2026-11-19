@@ -16,11 +16,11 @@ pub fn users(st: &State, kind: &str) -> Vec<String> {
         "mic" => st.audio.recorders.clone(),
         "cam" => st.camera.clone(),
         _ => {
-            if !st.niri.casting {
+            if !st.wm.casting {
                 return vec![];
             }
             // у потоков PipeWire niri программу не знает (pid есть только у wlr-screencopy)
-            let named: Vec<String> = st.niri.casts.iter().filter_map(|c| c.1).filter_map(|p| std::fs::read_to_string(format!("/proc/{p}/comm")).ok()).map(|s| s.trim().to_string()).collect();
+            let named: Vec<String> = st.wm.casts.iter().filter_map(|c| c.pid).filter_map(|p| std::fs::read_to_string(format!("/proc/{p}/comm")).ok()).map(|s| s.trim().to_string()).collect();
             if named.is_empty() {
                 vec![crate::i18n::tr("через портал").to_string()]
             } else {

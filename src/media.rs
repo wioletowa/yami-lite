@@ -315,7 +315,7 @@ impl App {
     /// захват звука для эквалайзера — пока тот где-то виден и музыка играет; для каймы по краям —
     /// всегда, кроме окна на весь экран (она под ним не видна, пока не открыт обзор)
     pub fn viz_sync(&self) {
-        let edge = crate::edge::on(&self.st) && (!self.st.game.fullscreen || self.st.niri.overview);
+        let edge = crate::edge::on(&self.st) && (!self.st.game.fullscreen || self.st.wm.overview);
         viz_wanted((self.media_visible() && self.st.media.playing()) || edge);
     }
 

@@ -176,9 +176,9 @@ impl App {
         self.close_all();
         self.st.locked = true;
         self.st.lock_at = Some(Instant::now());
-        if let Some(en) = self.st.niri.kb_english().filter(|&en| en != self.st.niri.kb_idx) {
-            self.st.lock_kb = Some(self.st.niri.kb_idx);
-            self.st.niri.act(serde_json::json!({"SwitchLayout": {"layout": {"Index": en}}}));
+        if let Some(en) = self.st.wm.kb_english().filter(|&en| en != self.st.wm.kb_idx) {
+            self.st.lock_kb = Some(self.st.wm.kb_idx);
+            self.st.wm.kb(crate::wm::Kb::Index(en));
         }
         // первый кадр — на копии обоев, полная догонит
         self.wall_need();
@@ -228,8 +228,8 @@ impl App {
     /// вернуть раскладку, что была до блокировки, если на экране пароля её не меняли
     fn restore_kb(&mut self) {
         let Some(prev) = self.st.lock_kb.take() else { return };
-        if self.st.niri.kb_english() == Some(self.st.niri.kb_idx) {
-            self.st.niri.act(serde_json::json!({"SwitchLayout": {"layout": {"Index": prev}}}));
+        if self.st.wm.kb_english() == Some(self.st.wm.kb_idx) {
+            self.st.wm.kb(crate::wm::Kb::Index(prev));
         }
     }
 

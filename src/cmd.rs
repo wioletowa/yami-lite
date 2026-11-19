@@ -72,7 +72,7 @@ impl Sty {
 
 fn banner(y: &Sty) {
     println!();
-    println!(" {} {}  {}", y.acc("▚▞"), y.head(&format!("YAMI-LITE {}", env!("CARGO_PKG_VERSION"))), y.dim(&crate::tf!("пиксельный шелл для niri", "pixel shell for niri")));
+    println!(" {} {}  {}", y.acc("▚▞"), y.head(&format!("YAMI-LITE {}", env!("CARGO_PKG_VERSION"))), y.dim(&crate::tf!("пиксельный шелл для {}", "pixel shell for {}", crate::wm::NAME)));
 }
 
 fn help(y: &Sty) {
@@ -139,7 +139,7 @@ fn send(y: &Sty, cmd: &str) -> i32 {
     if crate::ipc::send(cmd) {
         0
     } else {
-        eprintln!(" {} {}", y.bad("✕"), crate::tf!("шелл не запущен (yami-lite или войди в сеанс niri)", "the shell is not running (run yami-lite, or log into a niri session)"));
+        eprintln!(" {} {}", y.bad("✕"), crate::tf!("шелл не запущен (yami-lite или войди в сеанс {})", "the shell is not running (run yami-lite, or log into a {} session)", crate::wm::NAME));
         1
     }
 }
@@ -195,7 +195,7 @@ fn palette(y: &Sty, args: &[&str]) -> i32 {
 }
 
 fn restart(y: &Sty, force: bool) -> i32 {
-    if !force && crate::niri::game_focused() {
+    if !force && crate::wm::game_focused() {
         eprintln!(" {} {}", y.warn("!"), crate::tf!("в фокусе игра — не перезапускаю (yami-lite restart --force)", "a game has focus: not restarting (yami-lite restart --force)"));
         return 3;
     }

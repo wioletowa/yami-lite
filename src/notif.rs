@@ -278,12 +278,12 @@ pub fn draw_osd(ui: &mut Ui, st: &State, w: i32, _h: i32) {
     } else {
         let b = R::new(10, 12, 44, 32);
         ui.cv.pxbox(b, &BoxStyle::new(t.red, t.ember).bevel(true));
-        ui.text_center(font::PX24, b, &st.niri.kb_short(), t.on_accent);
-        let name = st.niri.kb_names.get(st.niri.kb_idx).cloned().unwrap_or_default();
+        ui.text_center(font::PX24, b, &st.wm.kb_short(), t.on_accent);
+        let name = st.wm.kb_names.get(st.wm.kb_idx).cloned().unwrap_or_default();
         ui.text_in(PX, R::new(66, 10, fr.w - 76, 20), &name, t.text);
         let mut x = 66;
-        for i in 0..st.niri.kb_names.len() {
-            let on = i == st.niri.kb_idx;
+        for i in 0..st.wm.kb_names.len() {
+            let on = i == st.wm.kb_idx;
             ui.cv.fill(R::new(x, 36, if on { 16 } else { 8 }, 4), if on { t.red } else { t.border });
             x += if on { 20 } else { 12 };
         }

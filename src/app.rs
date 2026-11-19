@@ -4,7 +4,7 @@
 use crate::config::{self, Settings};
 use crate::gfx::R;
 use crate::icons::{self, Icons};
-use crate::niri::{self, Niri};
+use crate::wm::{self, Wm};
 use crate::sys::Sys;
 use crate::theme::Theme;
 use crate::ui::{Act, Field, Zone};
@@ -144,7 +144,7 @@ pub struct LockSurf {
 }
 
 pub enum Msg {
-    Niri(serde_json::Value),
+    Wm(wm::Raw),
     Ipc(String),
     Audio(audio::AudioState),
     Viz(Vec<f32>),
@@ -220,7 +220,7 @@ pub struct Popup {
 pub struct State {
     pub set: Settings,
     pub t: Theme,
-    pub niri: Niri,
+    pub wm: Wm,
     pub sys: Sys,
     pub apps: Vec<icons::App>,
     pub modal: Option<Modal>,
@@ -488,7 +488,7 @@ impl State {
     /// «не беспокоить» на деле: включено руками, игра в фокусе или идёт показ экрана — после игры и
     /// демонстрации уведомления снова приходят сами
     pub fn quiet(&self) -> bool {
-        self.set.dnd || (self.set.game_dnd && (self.game.game || self.game.fullscreen)) || (self.set.cast_dnd && self.niri.casting)
+        self.set.dnd || (self.set.game_dnd && (self.game.game || self.game.fullscreen)) || (self.set.cast_dnd && self.wm.casting)
     }
 
     /// тихо само (игра, окно на весь экран, демонстрация), а не «не беспокоить» руками: в истории
@@ -499,11 +499,11 @@ impl State {
 }
 
 impl State {
-    pub fn new(set: Settings, niri: Niri) -> State {
+    pub fn new(set: Settings, wm: Wm) -> State {
         yami_px::gfx::set_reveal(yami_px::gfx::Reveal::from_id(&set.reveal), set.reveal_grain);
         State {
             t: Theme::new(set.accent_rgb(), set.tint, set.glass, set.lift, set.inner, set.light).with_accent2(set.accent2_rgb()).apply(),
-            niri,
+            wm,
             sys: Sys::new(),
             apps: icons::load_apps(),
             modal: None,
@@ -623,7 +623,7 @@ pub fn run() {
     crate::proc::note_inherited();
     // из TTY или по ssh: понятная строка вместо паники
     let Ok(conn) = Connection::connect_to_env() else {
-        eprintln!("yami-lite: no Wayland display (start it inside niri, or set WAYLAND_DISPLAY)");
+        eprintln!("yami-lite: no Wayland display (start it inside {}, or set WAYLAND_DISPLAY)", wm::NAME);
         std::process::exit(1);
     };
     let (globals, mut queue) = registry_queue_init::<App>(&conn).expect("wayland registry");
@@ -661,9 +661,9 @@ pub fn run() {
     let set_font = set.font_shell.clone();
     let set_wfont = if set.font_widgets.is_empty() { set.font_shell.clone() } else { set.font_widgets.clone() };
 
-    let niri = Niri::new();
+    let wm = Wm::new();
 
-    let st = State::new(set, niri);
+    let st = State::new(set, wm);
 
     let mut app = App {
         conn: conn.clone(),
@@ -731,8 +731,8 @@ pub fn run() {
     // нити: niri, IPC, D-Bus (уведомления, трей), звук, музыка
     {
         let tx = tx.clone();
-        niri::spawn_stream(move |v| {
-            let _ = tx.send(Msg::Niri(v));
+        wm::spawn_stream(move |v| {
+            let _ = tx.send(Msg::Wm(v));
         });
     }
     crate::ipc::serve(tx.clone());
@@ -803,7 +803,7 @@ impl App {
     }
     /// монитор, на котором сейчас работает человек
     pub fn focus_out(&self) -> String {
-        let f = self.st.niri.focused_output();
+        let f = self.st.wm.focused_output();
         if !f.is_empty() && self.output_names().contains(&f) {
             return f;
         }

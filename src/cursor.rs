@@ -144,7 +144,12 @@ fn apply(theme: &str, size: i32) {
         return;
     }
     *CURRENT.lock().unwrap_or_else(|e| e.into_inner()) = Some((theme.to_string(), size));
-    niri(theme, size);
+    // niri — правкой config.kdl, sway и Hyprland — командой
+    #[cfg(any(feature = "sway", feature = "hyprland"))]
+    crate::wm::set_cursor(theme, size);
+    if crate::features::NIRI {
+        niri(theme, size);
+    }
     if crate::proc::which("gsettings") {
         for (k, v) in [("cursor-theme", theme.to_string()), ("cursor-size", size.to_string())] {
             let _ = std::process::Command::new("gsettings").args(["set", "org.gnome.desktop.interface", k, &v]).output();

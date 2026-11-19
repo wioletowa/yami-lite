@@ -3,6 +3,7 @@
 #   ./install.sh                         — только ядро
 #   ./install.sh --fan --desktop         — ядро и выбранные модули
 #   ./install.sh --all                   — всё
+#   ./install.sh --sway --all            — под sway (--hyprland — под Hyprland; без них — niri)
 #   ./install.sh --all --no-install      — только собрать (target/release/yami-lite)
 set -eu
 
@@ -18,6 +19,10 @@ yami-lite installer
   --visualizer  pixel sound visualizer along the screen edges
   --all         every module above
 
+  --sway        build for sway instead of niri
+  --hyprland    build for Hyprland instead of niri
+                (privacy needs niri: it is left out of these builds)
+
   --prefix DIR  install into DIR (default ~/.local/bin)
   --no-install  only build
   -h, --help    this help
@@ -27,6 +32,7 @@ EOF
 features=""
 prefix="${HOME}/.local/bin"
 install=1
+wm=""
 add() { features="${features:+$features,}$1"; }
 
 while [ $# -gt 0 ]; do
@@ -38,6 +44,12 @@ while [ $# -gt 0 ]; do
         --privacy) add privacy ;;
         --visualizer) add visualizer ;;
         --all) add full ;;
+        --sway | --hyprland)
+            if [ -n "$wm" ] && [ "$wm" != "${1#--}" ]; then
+                echo "--sway and --hyprland are mutually exclusive" >&2
+                exit 2
+            fi
+            wm="${1#--}" ;;
         --prefix) shift; prefix="$1" ;;
         --no-install) install=0 ;;
         -h | --help) usage; exit 0 ;;
@@ -46,8 +58,10 @@ while [ $# -gt 0 ]; do
     shift
 done
 
+[ -n "$wm" ] && add "$wm"
+
 cd "$(dirname "$0")"
-echo "building yami-lite with: ${features:-core only}"
+echo "building yami-lite for ${wm:-niri} with: ${features:-core only}"
 if [ -n "$features" ]; then
     cargo build --release --features "$features"
 else
@@ -73,7 +87,7 @@ if [ "$install" = 1 ]; then
     echo "desktop entry: $data/applications/yami-lite.desktop (icon yami-lite)"
     "$prefix/yami-lite" version
     # запустить новый бинарник в фоне: работающий шелл перезапускается сам (exec на месте —
-    # остаётся ребёнком niri), иначе — новый сеанс без терминала, вывод в никуда
+    # остаётся ребёнком компоновщика), иначе — новый сеанс без терминала, вывод в никуда
     if [ -n "${WAYLAND_DISPLAY:-}" ]; then
         if "$prefix/yami-lite" msg ping >/dev/null 2>&1; then
             "$prefix/yami-lite" restart && echo "shell restarted" || echo "shell not restarted: yami-lite restart --force"
